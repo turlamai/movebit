@@ -277,6 +277,9 @@ struct MubiCompanion {
     }
     // Float above normal windows without stealing focus; never in the
     // taskbar (the TOOLWINDOW ex-style already keeps it out).
+    // UpdateLayeredWindow does not set the visible bit on its own —
+    // a layered window stays hidden until explicitly shown.
+    ::ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   }
