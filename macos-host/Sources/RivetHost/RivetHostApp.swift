@@ -444,14 +444,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.cueDisplayed(cue.id)
     }
 
-    /// The actionable health advice in the character's speech bubble — plain
-    /// text, independent of the gesture animation.
+    /// One small, genuinely actionable invitation. When the Racket backend
+    /// merges several due kinds (including after Focus), the bubble must name
+    /// EVERY kind — the character pose alone communicates only the priority.
     private func cueMessage(_ cue: HealthCue) -> String {
+        if cue.kinds.count > 1 {
+            var parts: [String] = []
+            if cue.kinds.contains(.sit) { parts.append(L10n.t("notif.sitTitle")) }
+            if cue.kinds.contains(.water) { parts.append(L10n.t("notif.waterTitle")) }
+            if cue.kinds.contains(.micro) { parts.append(L10n.t("micro.defaultTitle")) }
+            return parts.joined(separator: " · ")
+        }
         switch cue.action {
         case .drink_water: return CopyPool.pickWater()
-        case .rest_eyes: return L10n.t("micro.hint")
-        default:
-            return L10n.t("notif.sitTitle")
+        // Unlike micro.hint, this doesn't incorrectly promise clicking the
+        // entirely pointer-through character to dismiss the notification.
+        case .rest_eyes: return L10n.t("micro.defaultTitle")
+        default: return L10n.t("notif.sitTitle")
         }
     }
 
