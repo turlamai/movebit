@@ -1,0 +1,58 @@
+name: Linux AppImage Release Build and Extraction
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/appimage-release-smoke.yml'
+      - '.github/workflows/release.yml'
+      - 'scripts/acceptance/check-appimage-package.sh'
+      - 'scripts/make-update-manifest.sh'
+      - 'scripts/check-signed-appimage-feed.py'
+      - 'racket/movebit/update.rkt'
+      - 'rivet.rktd'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appimage-smoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  release-build:
+    name: Native AppImage build and extract (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify smoke script syntax
+        run: bash -n scripts/acceptance/check-appimage-package.sh
+      - name: Build/cache embeddable Racket CS
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@4383203ef30c5d1374cd26f4c3a927b46bf73484
+      - name: Install GTK4 and native packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            libgtk-4-dev libsecret-1-dev liblz4-dev zlib1g-dev \
+            libncurses-dev libx11-dev libxtst-dev xauth xvfb \
+            file binutils desktop-file-utils squashfs-tools rpm
+      - name: Install Rivet from the release pin
+        run: |
+          raco pkg install --auto --no-docs \
+            'https://github.com/turlamai/rivet.git#9d766b4acab672844093204cb4845ef4ef933d2c'
+      - name: Build actual unsigned Linux release AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: xvfb-run -a raco rivet release --development --without-updates
+      - name: Validate AppImage ELF, runtime and extracted filesystem
+        run: bash scripts/acceptance/check-appimage-package.sh '${{ matrix.arch }}'
