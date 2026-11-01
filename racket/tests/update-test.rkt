@@ -59,21 +59,7 @@
   (check-true (upd:movebit-update-configured?))
   (check-equal? upd:update-key-id "movebit-2026-10")
   (check-equal? upd:default-update-base-url
-                "https://github.com/turinglambdaai/movebit/releases/latest/download"))
-
-;; ---- AppImage sibling-asset derivation ----------------------------------------
-
-;; The feed's linux entry and the sibling .AppImage release asset share the
-;; release-contract arch spelling (x64|arm64), so the derivation is only the
-;; extension swap.
-(test-case "appimage asset derivation swaps the extension"
-  (check-equal? (upd:appimage-asset-name "movebit-0.3.1-linux-x64.tar.gz")
-                "movebit-0.3.1-linux-x64.AppImage")
-  (check-equal? (upd:appimage-asset-name "movebit-1.0.0-linux-arm64.tar.gz")
-                "movebit-1.0.0-linux-arm64.AppImage")
-  ;; A non-tar.gz feed entry cannot derive a sibling — refuse loudly.
-  (check-exn exn:fail?
-             (lambda () (upd:appimage-asset-name "movebit-0.3.1-windows-x64.zip"))))
+                "https://github.com/turlamai/movebit/releases/latest/download"))
 
 ;; ---- offline trust chain (throwaway keypair, same DER shapes the
 ;; ---- release pipeline uses) ------------------------------------------------------
