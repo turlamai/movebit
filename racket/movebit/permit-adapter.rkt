@@ -1,30 +1,56 @@
 #lang racket/base
 
-;; Optional, client-side Permit adapter. The app must bundle Permit and a
-;; trusted issuer public-key store before enabling any Pro functionality.
-;; Never load provider credentials or signing material here.
+;; Optional Permit integration, isolated from the Free application build.
+;; The calling product must ship a pinned Permit runtime and an authenticated,
+;; application-owned PUBLIC trust store before enabling Pro licensing.
 ;;
-;; This module is intentionally not imported by backend.rkt until the
-;; commercial feature set and deployment policy are approved.
+;; A downloaded checkout result, raw claims or a user-writable trust store
+;; must NEVER count as proof of rights. The private issuer key belongs only
+;; in Commerce's isolated signing environment.
 
-(require permit
-         "commercial-policy.rkt")
+(require "commercial-policy.rkt")
 
-(provide permit-feature-available?)
+(provide permit-feature-available?
+         permit-feature-available/from-file?)
 
-;; Only a verified credential object may reach policy evaluation.
-;; Every signature, trust, issuer, wrong-product, expiration and other
-;; authorization error is a negative decision, never a checkout-based grant.
-;; Callers choose how/where to load a public trust store and credential.
+;; Dynamic imports keep raco test racket/ and the Free host build independent
+;; of Permit until a product explicitly opts into commercial authorization.
+;; A missing/unsupported crypto runtime or package always denies paid access.
+(define (permit-client-api)
+  (values (dynamic-require 'permit 'verified-credential?)
+          (dynamic-require 'permit 'edition-entitled?)
+          (dynamic-require 'permit 'feature-entitled?)
+          (dynamic-require 'permit 'verify-credential)
+          (dynamic-require 'permit 'trust-store?)))
+
 (define (permit-feature-available? feature credential)
   (cond
     [(free-feature? feature) #t]
     [(not (pro-feature? feature)) #f]
-    [(not (verified-credential? credential)) #f]
     [else
      (with-handlers ([exn:fail? (lambda (_) #f)])
-       (and (credential-usable? credential)
-            (feature-entitled? credential
-                               movebit-product-id
-                               (symbol->string feature))
+       (define-values (verified? edition? feature? _verify _store?)
+         (permit-client-api))
+       (and (verified? credential)
+            ;; An explicit Pro edition or an explicit feature grant can
+            ;; authorize one of the independently reviewed Pro feature IDs.
+            ;; Permit evaluates validity, expiry, product and constraints.
+            (or (edition? credential movebit-product-id "pro")
+                (feature? credential movebit-product-id
+                          (symbol->string feature)))
             #t))]))
+
+(define (permit-feature-available/from-file? feature credential-source trusted-store)
+  (cond
+    [(free-feature? feature) #t]
+    [(not (pro-feature? feature)) #f]
+    [else
+     (with-handlers ([exn:fail? (lambda (_) #f)])
+       (define-values (_verified _edition _feature verify store?)
+         (permit-client-api))
+       (and (store? trusted-store)
+            ;; This is the only supported persisted-license path: signature
+            ;; and trust verification BEFORE policy evaluation.
+            (permit-feature-available?
+             feature
+             (verify credential-source trusted-store))))]))
