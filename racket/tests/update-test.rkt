@@ -359,12 +359,16 @@
           (check-equal? swapped (path->string image-path)))
         (check-equal? (sha256-file/hex image-path) digest)
         (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
-        (check-equal? (length (directory-list image-dir)) 1)
+        (check-equal? (length (directory-list image-dir)) 2)
+        (check-equal? (file->bytes (string-append (path->string image-path) ".previous"))
+                      original)
         (check-not-false
          (memq 'execute (file-or-directory-permissions image-path #f))))
       (lambda ()
         (putenv "APPIMAGE" (or old-appimage ""))
         (when (file-exists? image-path) (delete-file image-path))
+        (let ([previous (string-append (path->string image-path) ".previous")])
+          (when (file-exists? previous) (delete-file previous)))
         (delete-directory image-dir)
         (stop-server!)))))
 
