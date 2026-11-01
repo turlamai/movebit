@@ -515,8 +515,15 @@ struct MubiCompanion {
         float const py = static_cast<float>(size.cy) - pill_h - 4.0f * dp;
         Gdiplus::SolidBrush pill(dark ? argb(230, "#33302B")
                                       : argb(235, "#FFFDFB"));
-        graphics.FillRoundedRectangle(
-            &pill, px, py, pill_w, pill_h, 10.0f * dp);
+        // GDI+ has no rounded-rect fill: a pill is two half-cap arcs
+        // closed by the top and bottom edges.
+        Gdiplus::GraphicsPath pill_path;
+        float const cap_d = pill_h;
+        pill_path.AddArc(px, py, cap_d, cap_d, 180, 180);
+        pill_path.AddArc(px + pill_w - cap_d, py, cap_d, cap_d, 270,
+                         180);
+        pill_path.CloseFigure();
+        graphics.FillPath(&pill, &pill_path);
         Gdiplus::FontFamily family(IsCjkText(text) ? L"Microsoft YaHei UI"
                                                    : L"Segoe UI");
         Gdiplus::Font font(&family, static_cast<float>(12 * dp),
@@ -535,7 +542,7 @@ struct MubiCompanion {
     mubi_detail::premultiply(static_cast<BYTE*>(bits), size.cx * size.cy);
 
     // Content + dock positioning in one atomic UpdateLayeredWindow.
-    POINT const dst = dock_position(size);
+    POINT dst = dock_position(size);
     POINT const src{0, 0};
     BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
     if (!::UpdateLayeredWindow(hwnd, screen, &dst, &size, mem, &src, 0,
