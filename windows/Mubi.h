@@ -2,142 +2,35 @@
 
 // Mubi（沐比）for the WinUI host — the canonical character from the v1
 // design system (issue #56; assets/mubi/tokens.json + docs/MUBI-DESIGN-
-// SYSTEM.md). Renders the canonical path data with XAML Path elements and
-// delivers character-planned health cues (issue #51: reminders first).
+// SYSTEM.md). Renders the canonical path data with GDI+ into a per-pixel-
+// alpha layered window (UpdateLayeredWindow), so the character floats
+// free on the desktop exactly like the macOS panel — no card behind it.
+// Pixels where alpha is 0 are click-through automatically; the whole
+// window never activates.
 //
-// Safety contract (issue #54): the companion window is non-activating and
-// fully pointer-through (WS_EX_TRANSPARENT | WS_EX_NOACTIVATE); Done /
-// Later / Hide / Focus live in the tray menu. WinUI 3 window surfaces are
-// opaque, so Mubi sits on a compact rounded card (light/dark art-directed)
-// — a documented platform difference from the macOS free-floating panel.
+// Safety contract (issue #54): WS_EX_TRANSPARENT | WS_EX_NOACTIVATE |
+// WS_EX_TOOLWINDOW; Done / Later / Hide / Focus live in the tray menu on
+// every host.
 //
-// Geometry: path strings below are the canonical master data (generator:
+// Geometry: the path data below is the canonical master data (generator:
 // scripts/gen-mubi-art.mjs). Verify against assets/mubi/tokens.json when
 // touching art — never redraw or approximate.
 
 #include "pch.h"
 #include "I18n.h"
-// The C++/WinRT projection only materializes the namespaces a translation
-// unit includes explicitly; Mubi draws with XAML shapes.
-#include "winrt/Microsoft.UI.Xaml.Shapes.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <string>
+#include <utility>
+#include <vector>
+
+#include <gdiplus.h>
 
 namespace winrt::RivetHost::implementation {
-
-using namespace winrt::Microsoft::UI::Xaml;
-using namespace winrt::Microsoft::UI::Xaml::Shapes;
-using namespace winrt::Microsoft::UI::Xaml::Media;
-
-// ---- minimal SVG path parser (canonical data is absolute M/L/C/Z only) ----
-
-namespace mubi_detail {
-
-inline void skip_separators(std::wstring::const_iterator& it,
-                            std::wstring::const_iterator end) {
-  while (it != end && (*it == L' ' || *it == L',')) ++it;
-}
-
-inline double read_number(std::wstring::const_iterator& it,
-                          std::wstring::const_iterator end) {
-  skip_separators(it, end);
-  std::wstring digits;
-  if (it != end && *it == L'-') {
-    digits.push_back(L'-');
-    ++it;
-  }
-  while (it != end && (iswdigit(*it) || *it == L'.')) {
-    digits.push_back(*it);
-    ++it;
-  }
-  return _wtof(digits.c_str());
-}
-
-inline Windows::Foundation::Point read_point(
-    std::wstring::const_iterator& it, std::wstring::const_iterator end) {
-  double const x = read_number(it, end);
-  double const y = read_number(it, end);
-  return {static_cast<float>(x), static_cast<float>(y)};
-}
-
-// Builds a WinUI PathGeometry from a canonical M path string.
-inline Media::PathGeometry parse(std::wstring const& d) {
-  Media::PathGeometry geometry;
-  auto figure = Media::PathFigure();
-  bool open = false;
-  auto it = d.begin();
-  auto const end = d.end();
-  while (it != end) {
-    skip_separators(it, end);
-    if (it == end) break;
-    wchar_t const command = *it;
-    ++it;
-    if (command == L'M') {
-      if (open) {
-        figure.IsClosed(true);
-        geometry.Figures().Append(figure);
-        figure = Media::PathFigure();
-      }
-      figure.StartPoint(read_point(it, end));
-      open = true;
-    } else if (command == L'L') {
-      auto segment = Media::LineSegment();
-      segment.Point(read_point(it, end));
-      figure.Segments().Append(segment);
-    } else if (command == L'C') {
-      auto p1 = read_point(it, end);
-      auto p2 = read_point(it, end);
-      auto p3 = read_point(it, end);
-      auto segment = Media::BezierSegment();
-      segment.Point1(p1);
-      segment.Point2(p2);
-      segment.Point3(p3);
-      figure.Segments().Append(segment);
-    } else if (command == L'Z') {
-      if (open) {
-        figure.IsClosed(true);
-        open = false;
-      }
-    }
-  }
-  if (open) figure.IsClosed(true);
-  geometry.Figures().Append(figure);
-  return geometry;
-}
-
-inline Media::Brush solid(char const* hex, double opacity = 1.0) {
-  Media::SolidColorBrush brush;
-  brush.Color(color_from(hex));
-  brush.Opacity(opacity);
-  return brush;
-}
-
-inline Shapes::Path path_shape(wchar_t const* d, Media::Brush const& brush) {
-  Shapes::Path path;
-  path.Data(parse(d));
-  path.Fill(brush);
-  path.Stretch(Stretch::None);
-  path.StrokeThickness(0);
-  return path;
-}
-
-inline Shapes::Path stroke_shape(wchar_t const* d, Media::Brush const& brush,
-                                double width) {
-  Shapes::Path path;
-  path.Data(parse(d));
-  path.Fill(nullptr);
-  path.Stroke(brush);
-  path.StrokeThickness(width);
-  path.StrokeStartLineCap(PenLineCap::Round);
-  path.StrokeEndLineCap(PenLineCap::Round);
-  path.Stretch(Stretch::None);
-  return path;
-}
-
-}  // namespace mubi_detail
-
-// ---- the character card ----------------------------------------------------
 
 // Headless packaged acceptance skips the companion so the UIA probe sees
 // exactly the main window (mirrors the macOS acceptance posture).
@@ -152,8 +45,8 @@ inline bool acceptance_mode() {
 }
 
 // Stage tracer for packaged-desktop diagnosis: appends one line per step to
-// %TEMP%\RivetHost-mubi.log so a crash during cue delivery names the exact
-// stage it died in (no debugger required on the test machine).
+// %TEMP%\RivetHost-mubi.log so a broken companion names the exact stage
+// (no debugger required on the test machine).
 inline void mubi_trace(char const* stage) {
   wchar_t path[MAX_PATH]{};
   DWORD const n = ::GetTempPathW(MAX_PATH, path);
@@ -175,35 +68,118 @@ inline void mubi_trace(char const* stage) {
   ::CloseHandle(h);
 }
 
+namespace mubi_detail {
+
+// ---- GDI+ lifetime ---------------------------------------------------------
+
+inline ULONG_PTR gdiplus_token() {
+  static ULONG_PTR token = [] {
+    Gdiplus::GdiplusStartupInput input;
+    ULONG_PTR t = 0;
+    GdiplusStartup(&t, &input, nullptr);
+    return t;
+  }();
+  return token;
+}
+
+// ---- canonical path parsing (absolute M/L/C/Z only) ------------------------
+
+inline void skip_separators(char const*& it, char const* end) {
+  while (it != end && (*it == ' ' || *it == ',')) ++it;
+}
+
+inline double read_number(char const*& it, char const* end) {
+  skip_separators(it, end);
+  std::string digits;
+  if (it != end && (*it == '-' || *it == '+')) {
+    digits.push_back(*it);
+    ++it;
+  }
+  while (it != end && (isdigit(static_cast<unsigned char>(*it)) ||
+                       *it == '.')) {
+    digits.push_back(*it);
+    ++it;
+  }
+  return digits.empty() ? 0.0 : std::atof(digits.c_str());
+}
+
+inline Gdiplus::PointF read_point(char const*& it, char const* end) {
+  double const x = read_number(it, end);
+  double const y = read_number(it, end);
+  return Gdiplus::PointF(static_cast<REAL>(x), static_cast<REAL>(y));
+}
+
+// Builds a closed/ open GDI+ path from a canonical M path string.
+inline Gdiplus::GraphicsPath parse_path(char const* d, bool closed) {
+  Gdiplus::GraphicsPath path;
+  Gdiplus::PointF current(0, 0);
+  char const* it = d;
+  char const* end = d + std::strlen(d);
+  while (it != end) {
+    skip_separators(it, end);
+    if (it == end) break;
+    char const command = *it;
+    ++it;
+    if (command == 'M') {
+      current = read_point(it, end);
+      path.StartFigure();
+    } else if (command == 'L') {
+      Gdiplus::PointF const p = read_point(it, end);
+      path.AddLine(current, p);
+      current = p;
+    } else if (command == 'C') {
+      Gdiplus::PointF const c1 = read_point(it, end);
+      Gdiplus::PointF const c2 = read_point(it, end);
+      Gdiplus::PointF const p3 = read_point(it, end);
+      path.AddBezier(current, c1, c2, p3);
+      current = p3;
+    } else if (command == 'Z') {
+      path.CloseFigure();
+    }
+  }
+  if (closed) path.CloseFigure();
+  return path;
+}
+
+inline Gdiplus::Color argb(BYTE a, char const* hex) {
+  unsigned r = 0, g = 0, b = 0;
+  sscanf_s(hex, "#%02x%02x%02x", &r, &g, &b);
+  return Gdiplus::Color(a, static_cast<BYTE>(r), static_cast<BYTE>(g),
+                        static_cast<BYTE>(b));
+}
+
+// Premultiplies a 32bpp top-down DIB in place (UpdateLayeredWindow needs
+// premultiplied alpha; GDI+ paints straight alpha).
+inline void premultiply(BYTE* bits, int pixels) {
+  for (int i = 0; i < pixels; ++i) {
+    BYTE* px = bits + i * 4;
+    BYTE const a = px[3];
+    if (a == 255) continue;
+    px[0] = static_cast<BYTE>(px[0] * a / 255);
+    px[1] = static_cast<BYTE>(px[1] * a / 255);
+    px[2] = static_cast<BYTE>(px[2] * a / 255);
+  }
+}
+
+}  // namespace mubi_detail
+
+// ---- the floating character ------------------------------------------------
+
 struct MubiCompanion {
-  Window window{nullptr};
-  Controls::Canvas canvas{nullptr};
-  Controls::Border card{nullptr};
-  Controls::Border capsule{nullptr};
-  Controls::TextBlock capsule_text{nullptr};
-  Controls::Grid root{nullptr};
-  Media::ScaleTransform canvas_scale{nullptr};
+  enum class MubiState { Idle, Water, Stand, Eyes, Ack, Focus };
 
   double body_height = 78;   // logical px (S 60 / M 78 / L 104)
   std::string motion = "subtle";
   std::string dock = "bottom-right";
   bool labels_always = false;
   bool quiet = false;
-  bool pointer_through_applied = false;
 
-  // Gesture animation (#56 §4): one expressive motion per cue, timer-driven
-  // (WinRT setters return void, so no storyboards — a 33 ms tick updating
-  // the live elements is small and dependency-free). still = static.
+  HWND hwnd = nullptr;
   Microsoft::UI::Dispatching::DispatcherQueueTimer anim_timer{nullptr};
-  double anim_progress = 0.0;   // 0..1
-  std::int64_t anim_total_ticks = 0;
-  Media::CompositeTransform cup_transform{nullptr};
-  std::vector<Shapes::Path> stand_arcs;
-  Shapes::Path ack_glint{nullptr};
-
-  // Label auto-return (#56 §4: the label reads ~5 s, then the card returns
-  // to its calm pose — the label's disappearance is NOT Done).
   Microsoft::UI::Dispatching::DispatcherQueueTimer label_timer{nullptr};
+  double anim_progress = 0.0;
+  std::int64_t anim_total_ticks = 0;
+  MubiState anim_state = MubiState::Idle;
 
   static double body_height_for(std::string const& size) {
     if (size == "S") return 60;
@@ -217,18 +193,16 @@ struct MubiCompanion {
     motion = m;
     dock = d;
     labels_always = labels == "always";
-    if (window != nullptr) {
-      Rebuild();
+    if (hwnd != nullptr) {
+      Render(quiet ? MubiState::Focus : MubiState::Idle, L"");
     }
   }
 
   void SetQuiet(bool enabled) {
     quiet = enabled;
-    if (window == nullptr && acceptance_mode()) return;
+    if (acceptance_mode()) return;
     Show(quiet ? MubiState::Focus : MubiState::Idle, L"");
   }
-
-  enum class MubiState { Idle, Water, Stand, Eyes, Ack, Focus };
 
   void Show(MubiState state, std::wstring const& message) {
     if (acceptance_mode()) return;
@@ -236,18 +210,13 @@ struct MubiCompanion {
     try {
       EnsureWindow();
       mubi_trace("show:ensure-ok");
-      Rebuild(state, message);
-      mubi_trace("show:rebuild-ok");
-      Position();
-      mubi_trace("show:position-ok");
-      window.Activate();
-      mubi_trace("show:activate-ok");
-      ApplyPointerThrough();
-      mubi_trace("show:pointer-ok");
+      anim_state = state;
+      current_message = message;
+      Render(state, message);
+      mubi_trace("show:render-ok");
       StartGesture(state);
-      mubi_trace("show:gesture-ok");
       StartLabelTimer(message);
-      mubi_trace("show:label-ok");
+      mubi_trace("show:timers-ok");
     } catch (...) {
       mubi_trace("show:caught");
       // The reminder surface must never take the tray app down; the cue
@@ -256,11 +225,7 @@ struct MubiCompanion {
     }
   }
 
-  // The companion is a launch-visible surface: the first idle call creates
-  // the card, so the pet is present from startup instead of appearing with
-  // the first cue (~20 minutes in). Safe to create eagerly again — the
-  // crash root causes (#73 dead theme probe, #78 torn projection) are
-  // fixed, and Show() catches everything into Dismiss().
+  // Launch-visible: the first idle call creates the floating character.
   void ShowIdle() {
     if (acceptance_mode()) return;
     Show(quiet ? MubiState::Focus : MubiState::Idle, L"");
@@ -273,243 +238,313 @@ struct MubiCompanion {
 
   void Dismiss() {
     mubi_trace("dismiss:enter");
-    if (window != nullptr) {
-      window.Close();
-      window = {nullptr};
-      canvas = {nullptr};
-      card = {nullptr};
-      capsule = {nullptr};
-      capsule_text = {nullptr};
-      root = {nullptr};
-      canvas_scale = {nullptr};
-      cup_transform = {nullptr};
-      ack_glint = {nullptr};
-      stand_arcs.clear();
-      pointer_through_applied = false;
-      if (anim_timer) anim_timer.Stop();
-      if (label_timer) label_timer.Stop();
+    if (hwnd != nullptr) {
+      ::DestroyWindow(hwnd);
+      hwnd = nullptr;
     }
+    if (anim_timer) anim_timer.Stop();
+    if (label_timer) label_timer.Stop();
   }
 
  private:
-  void EnsureWindow() {
-    if (window != nullptr) return;
-    window = Window{};
-    strip_chrome(window);
-    apply_window_icon(window);
+  std::wstring current_message;
+
+  // 120x140 design grid + capsule row; scaled by the Mubi size and DPI.
+  SIZE pixel_size() const {
+    UINT dpi = 96;
+    if (hwnd != nullptr) dpi = ::GetDpiForWindow(hwnd);
+    double const dp = static_cast<double>(dpi) / 96.0;
+    double const s = body_height / 108.0;
+    int const w = static_cast<int>((120.0 * s + 8.0) * dp);
+    int const h = static_cast<int>((140.0 * s + 8.0) * dp);
+    return SIZE{w, h};
   }
 
-  // Full rebuild: WinUI has no cheap partial update path here, and the card
-  // is tiny. dark = the app follows the system theme.
-  void Rebuild(MubiState state = MubiState::Idle,
-               std::wstring const& message = L"") {
-    bool const dark =_root_is_dark();
-    double const s = body_height / 108.0;
-    double const card_pad = 12.0;
-    double const canvas_w = 120.0 * s;
-    double const canvas_h = 140.0 * s;
-    double const card_w = canvas_w + card_pad * 2;
-    double const card_h = canvas_h + card_pad * 2;
+  void EnsureWindow() {
+    mubi_detail::gdiplus_token();
+    if (hwnd != nullptr) return;
+    WNDCLASSW wc{};
+    wc.lpfnWndProc = ::DefWindowProcW;
+    wc.hInstance = ::GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"MoveBitMubi";
+    ::RegisterClassW(&wc);
+    hwnd = ::CreateWindowExW(
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE |
+            WS_EX_TOOLWINDOW,
+        L"MoveBitMubi", L"Mubi", WS_POPUP, 0, 0, 1, 1, nullptr, nullptr,
+        wc.hInstance, nullptr);
+    if (hwnd == nullptr) {
+      throw std::runtime_error("mubi window creation failed");
+    }
+    // Float above normal windows without stealing focus; never in the
+    // taskbar (the TOOLWINDOW ex-style already keeps it out).
+    ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  }
 
+  // Screen coordinates for the docked window, physical pixels.
+  POINT dock_position(SIZE size) const {
+    HMONITOR monitor = ::MonitorFromWindow(
+        hwnd != nullptr ? hwnd : ::GetDesktopWindow(),
+        MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{sizeof(MONITORINFO)};
+    if (!::GetMonitorInfoW(monitor, &info)) return POINT{0, 0};
+    auto const wa = info.rcWork;
+    int const clearance = 16;
+    int x = 0;
+    int y = 0;
+    if (dock == "bottom-left") {
+      x = wa.left + clearance;
+      y = wa.bottom - size.cy - clearance;
+    } else if (dock == "top-right") {
+      x = wa.right - size.cx - clearance;
+      y = wa.top + clearance;
+    } else {  // bottom-right
+      x = wa.right - size.cx - clearance;
+      y = wa.bottom - size.cy - clearance;
+    }
+    return POINT{x, y};
+  }
+
+  // Paints the current pose into a 32bpp ARGB DIB and presents it through
+  // UpdateLayeredWindow (which also moves the window into place).
+  void Render(MubiState state, std::wstring const& message) {
+    if (hwnd == nullptr) return;
     using namespace mubi_detail;
 
-    auto accent = [&](char const* hex) { return solid(hex); };
-    cup_transform = {nullptr};
-    canvas_scale = {nullptr};
-    stand_arcs.clear();
-    ack_glint = {nullptr};
-
-    // Canvas: 120x140 design units scaled up by s.
-    canvas = Controls::Canvas{};
-    canvas.Width(120);
-    canvas.Height(140);
-    canvas_scale = Media::ScaleTransform();
-    canvas_scale.ScaleX(s);
-    canvas_scale.ScaleY(s);
-    // Stand stretches the body upward from the docked bottom edge.
-    canvas_scale.CenterY(124);
-    canvas.RenderTransform(canvas_scale);
-
-    auto dark_or = [&](char const* light_hex) {
-      return dark ? "#E4D6BC" : light_hex;
-    };
-
-    canvas.Children().Append(
-        path_shape(L"M 52 24 C 47 13, 40 7, 32 6 C 30 14, 36 23, 45 27 C 48 28.2, 51 26.5, 52 24 Z",
-                   solid(dark_or("#F1E4CC"))));
-    canvas.Children().Append(
-        path_shape(L"M 74 23 C 71 14, 66.5 8, 60.5 6 C 58.5 13, 62.5 21.5, 70 25 C 72.3 25.9, 73.8 25, 74 23 Z",
-                   solid(dark_or("#F1E4CC"))));
-    canvas.Children().Append(
-        path_shape(L"M 48 22 C 44.5 15.5, 39.5 10.5, 34.5 8.5 C 33.5 13.5, 38 20.5, 45 24.5 Z",
-                   solid("#D8C8B5", 0.35)));
-    canvas.Children().Append(
-        path_shape(L"M 58 16 C 82 18, 106 46, 109 82 C 111 104, 92 124, 60 124 C 33 124, 12.5 106, 11 84 C 9.5 52, 34 14, 58 16 Z",
-                   solid(dark ? "#EDE2CC" : "#F6EEDF")));
-
-    // Face at the frozen placement; state decides open/closed/props.
-    auto eye = [&](double cx, double cy) {
-      auto ellipse = Shapes::Ellipse{};
-      ellipse.Width(6);
-      ellipse.Height(7.2);
-      ellipse.Fill(solid("#2D2A28"));
-      Controls::Canvas::SetLeft(ellipse, cx - 3);
-      Controls::Canvas::SetTop(ellipse, cy - 3.6);
-      canvas.Children().Append(ellipse);
-    };
-    auto closed_arc = [&](wchar_t const* d) {
-      canvas.Children().Append(
-          stroke_shape(d, solid("#2D2A28"), 2.2));
-    };
-    if (state == MubiState::Eyes || state == MubiState::Focus) {
-      closed_arc(L"M 43 65 C 45 67.6, 48 67.6, 50 65");
-      closed_arc(L"M 70 65 C 72 67.6, 75 67.6, 77 65");
-    } else {
-      eye(46.5, 65);
-      eye(73.5, 65);
-      if (state == MubiState::Ack) {
-        canvas.Children().Append(
-            stroke_shape(L"M 57.5 74 C 59 75.4, 61 75.4, 62.5 74",
-                         solid("#2D2A28"), 1.6));
-      }
-    }
-
-    // Per-state props (static state artwork on this leg; the motion budget
-    // tuning happens with packaged desktop review, documented in #56 D3).
-    if (state == MubiState::Water) {
-      auto cup = Controls::Grid{};
-      cup.Children().Append(
-          path_shape(L"M -7 -9 L 7 -9 L 5.4 9 C 5.2 10.6, 4 11.5, 2.4 11.5 L -2.4 11.5 C -4 11.5, -5.2 10.6, -5.4 9 Z",
-                     solid("#62B6FF")));
-      cup.Children().Append(
-          path_shape(L"M -4.6 -6.5 L 4.4 -6.5 L 3.6 1.5 L -4 1.5 Z",
-                     solid("#8FCBFF", 0.85)));
-      // WinRT setters return void — compose the transform explicitly.
-      cup_transform = Media::CompositeTransform{};
-      cup_transform.TranslateX(97);
-      cup_transform.TranslateY(51 - 12 * anim_progress);
-      cup_transform.Rotation(-10);
-      cup_transform.ScaleX(0.9);
-      cup_transform.ScaleY(0.9);
-      cup.RenderTransform(cup_transform);
-      canvas.Children().Append(cup);
-    } else if (state == MubiState::Stand) {
-      auto left = stroke_shape(L"M 42 11 C 47 4, 53 2, 58 4",
-                               accent("#FF8C6B"), 3);
-      left.Opacity(0.3 + 0.7 * anim_progress);
-      stand_arcs.push_back(left);
-      canvas.Children().Append(left);
-      auto right = stroke_shape(L"M 78 11 C 73 4, 67 2, 62 4",
-                                accent("#FF8C6B"), 3);
-      right.Opacity((0.3 + 0.7 * anim_progress) * 0.65);
-      stand_arcs.push_back(right);
-      canvas.Children().Append(right);
-    } else if (state == MubiState::Eyes) {
-      canvas.Children().Append(
-          stroke_shape(L"M 92 38 C 96.5 40.5, 99 45, 98 50", accent("#65C8B8"), 3));
-    } else if (state == MubiState::Ack) {
-      ack_glint =
-          path_shape(L"M 84 56 L 86 60.5 L 90.5 62 L 86 63.5 L 84 68 L 82 63.5 L 77.5 62 L 82 60.5 Z",
-                     accent("#F2C96B"));
-      ack_glint.Opacity(0.4 + 0.6 * anim_progress);
-      canvas.Children().Append(ack_glint);
-    } else if (state == MubiState::Focus) {
-      auto moon = Shapes::Ellipse{};
-      moon.Width(16);
-      moon.Height(16);
-      moon.Fill(solid("#8DA1B5", 0.75));
-      Controls::Canvas::SetLeft(moon, 88);
-      Controls::Canvas::SetTop(moon, 30);
-      canvas.Children().Append(moon);
-    }
-
-    // Card + capsule layout.
-    card = Controls::Border{};
-    card.Background(solid(dark ? "#33302B" : "#FFFDFB"));
-    card.BorderBrush(solid(dark ? "#4A463F" : "#E2DCCC"));
-    card.BorderThickness(Thickness{1, 1, 1, 1});
-    card.CornerRadius(CornerRadius{18, 18, 18, 18});
-    card.Padding(Thickness{card_pad, card_pad, card_pad, card_pad});
-    card.Child(canvas);
-
-    root = Controls::Grid{};
-    root.RowDefinitions().Append(Controls::RowDefinition{});
-    auto auto_row = Controls::RowDefinition{};
-    auto_row.Height(GridLengthHelper::Auto());
-    root.RowDefinitions().Append(auto_row);
-
-    Controls::Grid::SetRow(card, 0);
-    root.Children().Append(card);
-
-    // The window surface is opaque, so the label row is always reserved and
-    // the idle card reads "MoveBit": cue cycles swap the text but never
-    // resize the window — users read a grow/shrink as the pet misbehaving
-    // (#56 feedback). macOS keeps its free-floating transparent panel there.
-    bool const show_label = true;
-    if (show_label) {
-      capsule = Controls::Border{};
-      capsule.Background(solid(dark ? "#2A2723" : "#FFFDFB"));
-      capsule.CornerRadius(CornerRadius{12, 12, 12, 12});
-      capsule.Padding(Thickness{12, 6, 12, 6});
-      capsule.Margin(Thickness{0, 8, 0, 0});
-      capsule.HorizontalAlignment(HorizontalAlignment::Center);
-      capsule.VerticalAlignment(VerticalAlignment::Bottom);
-      // Contextual state icon; the text carries the meaning (#56 §5).
-      wchar_t const* icon = L"";
-      switch (state) {
-        // UTF-16 surrogate pairs (Windows wchar_t is 16-bit):
-        // 💧 U+1F4A7? no — the droplet glyph here is ✃… use: 💧 = U+1F4A7
-        case MubiState::Water: icon = L"\xD83D\xDCA7 "; break;   // 💧
-        case MubiState::Stand: icon = L"\xD83E\xDDCD "; break;   // 🧍
-        case MubiState::Eyes: icon = L"\xD83D\xDC41 "; break;    // 👁
-        case MubiState::Ack: icon = L"\x2713 "; break;            // ✓
-        case MubiState::Focus: icon = L"\xD83C\xDF19 "; break;   // 🌙
-        case MubiState::Idle: break;
-      }
-      std::wstring labeled = icon +
-          (message.empty() ? std::wstring(L"MoveBit") : message);
-      capsule_text = make_text(winrt::hstring(labeled),
-                               12, true, dark ? "#F1EEE7" : "#2D2A28");
-      capsule_text.TextAlignment(TextAlignment::Center);
-      capsule.Child(capsule_text);
-      Controls::Grid::SetRow(capsule, 1);
-      root.Children().Append(capsule);
-    }
-
-    // The window surface is opaque; the card IS the window content.
-    Controls::Grid outer;
-    outer.Background(brush_from(dark ? "#33302B" : "#FFFDFB"));
-    outer.CornerRadius(CornerRadius{20, 20, 20, 20});
-    outer.Children().Append(root);
-    window.Content(outer);
-
-    double const label_h = show_label ? 40.0 : 0.0;
-    // AppWindow().Resize() speaks PHYSICAL pixels; the card math above is
-    // in logical units. Without the per-window DPI factor a 200% display
-    // got a quarter-area window — the canvas overflowed it and the
-    // character showed only as a sliver (launch-visible feedback).
-    UINT dpi = 96;
-    if (auto window_native = window.try_as<::IWindowNative>()) {
-      HWND hwnd = nullptr;
-      if (SUCCEEDED(window_native->get_WindowHandle(&hwnd)) && hwnd) {
-        dpi = ::GetDpiForWindow(hwnd);
-      }
-    }
+    double const s = body_height / 108.0;
+    UINT dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
-    window.AppWindow().Resize(
-        {static_cast<int>((card_w + 2) * dp),
-         static_cast<int>((card_h + label_h + 2) * dp)});
+    SIZE const size = pixel_size();
+
+    HDC screen = ::GetDC(nullptr);
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = size.cx;
+    bi.bmiHeader.biHeight = -size.cy;  // top-down
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP dib = ::CreateDIBSection(screen, &bi, DIB_RGB_COLORS, &bits,
+                                     nullptr, 0);
+    HDC mem = ::CreateCompatibleDC(screen);
+    HGDIOBJ old = ::SelectObject(mem, dib);
+
+    {
+      Gdiplus::Graphics graphics(mem);
+      graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+      graphics.SetTextRenderingHint(
+          Gdiplus::TextRenderingHintAntiAliasGridFit);
+      graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+
+      // Design grid 120x140 centered in the surface, scaled.
+      double const grid_w = 120.0 * s * dp;
+      double const grid_h = 140.0 * s * dp;
+      REAL const ox = static_cast<REAL>((size.cx - grid_w) / 2.0);
+      REAL const oy = static_cast<REAL>((size.cy - grid_h) / 2.0);
+      graphics.TranslateTransform(ox, oy);
+      graphics.ScaleTransform(static_cast<REAL>(s * dp),
+                              static_cast<REAL>(s * dp));
+      // Everything below paints in the 120x140 canonical grid.
+
+      // Stand stretches the body upward from the docked bottom edge.
+      if (state == MubiState::Stand) {
+        graphics.TranslateTransform(0, 124);
+        graphics.ScaleTransform(1.0f, static_cast<REAL>(1.0 + 0.06 *
+                                                          anim_progress));
+        graphics.TranslateTransform(0, -124);
+      }
+
+      bool const dark = IsDark();
+      char const* fin_hex = "#F1E4CC";
+      char const* body_light = "#FBF5E9";
+      char const* body_mid = "#F6EEDF";
+      char const* body_deep = "#E8D7BE";
+      char const* shadow_hex = "#D8C8B5";
+      char const* ink_hex = "#2D2A28";
+      if (dark) {
+        fin_hex = "#E4D6BC";
+        body_light = "#EDE2CC";
+        body_mid = "#E4D6BC";
+        body_deep = "#CDBB9F";
+        shadow_hex = "#5A5245";
+        ink_hex = "#F1EEE7";
+      }
+
+      // Fins.
+      {
+        Gdiplus::GraphicsPath fin = parse_path(
+            "M 52 24 C 47 13, 40 7, 32 6 C 30 14, 36 23, 45 27 "
+            "C 48 28.2, 51 26.5, 52 24 Z", true);
+        Gdiplus::SolidBrush brush(argb(255, fin_hex));
+        graphics.FillPath(&brush, &fin);
+        Gdiplus::GraphicsPath fin2 = parse_path(
+            "M 74 23 C 71 14, 66.5 8, 60.5 6 C 58.5 13, 62.5 21.5, 70 25 "
+            "C 72.3 25.9, 73.8 25, 74 23 Z", true);
+        graphics.FillPath(&brush, &fin2);
+        Gdiplus::GraphicsPath shade = parse_path(
+            "M 48 22 C 44.5 15.5, 39.5 10.5, 34.5 8.5 "
+            "C 33.5 13.5, 38 20.5, 45 24.5 Z", true);
+        Gdiplus::SolidBrush shade_brush(argb(90, "#D8C8B5"));
+        graphics.FillPath(&shade_brush, &shade);
+      }
+
+      // Body with the volume gradient (tokens: body.light -> body -> deep).
+      {
+        Gdiplus::GraphicsPath body = parse_path(
+            "M 58 16 C 82 18, 106 46, 109 82 C 111 104, 92 124, 60 124 "
+            "C 33 124, 12.5 106, 11 84 C 9.5 52, 34 14, 58 16 Z", true);
+        Gdiplus::LinearGradientBrush brush(
+            Gdiplus::PointF(20, 14), Gdiplus::PointF(95, 124),
+            argb(255, body_light), argb(255, body_deep));
+        Gdiplus::Color stops[] = {
+            argb(255, body_light), argb(255, body_mid),
+            argb(255, body_deep)};
+        brush.SetInterpolationColors(stops, 3);
+        graphics.FillPath(&brush, &body);
+      }
+
+      // Lower form shade.
+      {
+        Gdiplus::GraphicsPath lower = parse_path(
+            "M 16 96 C 24 118, 42 126, 60 126 C 80 126, 98 116, 105 94 "
+            "C 100 116, 84 128, 60 128 C 38 128, 20 114, 16 96 Z", true);
+        Gdiplus::LinearGradientBrush brush(
+            Gdiplus::PointF(0, 94), Gdiplus::PointF(0, 128),
+            argb(0, shadow_hex), argb(140, shadow_hex));
+        graphics.FillPath(&brush, &lower);
+      }
+
+      // Face at the frozen placement; state decides open/closed/props.
+      auto eye = [&](double cx, double cy) {
+        graphics.FillEllipse(&Gdiplus::SolidBrush(argb(255, ink_hex)),
+                             static_cast<REAL>(cx - 3), static_cast<REAL>(cy - 3.6),
+                             6.0f, 7.2f);
+      };
+      auto closed_arc = [&](char const* d) {
+        Gdiplus::GraphicsPath arc = parse_path(d, false);
+        Gdiplus::Pen pen(argb(255, ink_hex), 2.2f);
+        pen.SetStartCap(Gdiplus::LineCapRound);
+        pen.SetEndCap(Gdiplus::LineCapRound);
+        graphics.DrawPath(&pen, &arc);
+      };
+      if (state == MubiState::Eyes || state == MubiState::Focus) {
+        closed_arc("M 43 65 C 45 67.6, 48 67.6, 50 65");
+        closed_arc("M 70 65 C 72 67.6, 75 67.6, 77 65");
+      } else {
+        eye(46.5, 65);
+        eye(73.5, 65);
+        if (state == MubiState::Ack) {
+          closed_arc("M 57.5 74 C 59 75.4, 61 75.4, 62.5 74");
+        }
+      }
+
+      // Per-state props (one expressive gesture per cue, #56 §4).
+      if (state == MubiState::Water) {
+        graphics.TranslateTransform(97, static_cast<REAL>(51 -
+                                                         12 * anim_progress));
+        graphics.RotateTransform(-10);
+        graphics.ScaleTransform(0.9f, 0.9f);
+        Gdiplus::GraphicsPath cup = parse_path(
+            "M -7 -9 L 7 -9 L 5.4 9 C 5.2 10.6, 4 11.5, 2.4 11.5 "
+            "L -2.4 11.5 C -4 11.5, -5.2 10.6, -5.4 9 Z", true);
+        graphics.FillPath(&Gdiplus::SolidBrush(argb(255, "#62B6FF")), &cup);
+        Gdiplus::GraphicsPath water = parse_path(
+            "M -4.6 -6.5 L 4.4 -6.5 L 3.6 1.5 L -4 1.5 Z", true);
+        graphics.FillPath(&Gdiplus::SolidBrush(argb(217, "#8FCBFF")),
+                          &water);
+      } else if (state == MubiState::Stand) {
+        BYTE const a = static_cast<BYTE>((0.3 + 0.7 * anim_progress) * 255);
+        Gdiplus::Pen pen(argb(a, "#FF8C6B"), 3.0f);
+        pen.SetStartCap(Gdiplus::LineCapRound);
+        pen.SetEndCap(Gdiplus::LineCapRound);
+        Gdiplus::GraphicsPath left = parse_path(
+            "M 42 11 C 47 4, 53 2, 58 4", false);
+        graphics.DrawPath(&pen, &left);
+        Gdiplus::Pen pen2(argb(static_cast<BYTE>(a * 0.65), "#FF8C6B"),
+                          3.0f);
+        pen2.SetStartCap(Gdiplus::LineCapRound);
+        pen2.SetEndCap(Gdiplus::LineCapRound);
+        Gdiplus::GraphicsPath right = parse_path(
+            "M 78 11 C 73 4, 67 2, 62 4", false);
+        graphics.DrawPath(&pen2, &right);
+      } else if (state == MubiState::Eyes) {
+        Gdiplus::Pen pen(argb(255, "#65C8B8"), 3.0f);
+        pen.SetStartCap(Gdiplus::LineCapRound);
+        pen.SetEndCap(Gdiplus::LineCapRound);
+        Gdiplus::GraphicsPath arc = parse_path(
+            "M 92 38 C 96.5 40.5, 99 45, 98 50", false);
+        graphics.DrawPath(&pen, &arc);
+      } else if (state == MubiState::Ack) {
+        Gdiplus::GraphicsPath glint = parse_path(
+            "M 84 56 L 86 60.5 L 90.5 62 L 86 63.5 L 84 68 L 82 63.5 "
+            "L 77.5 62 L 82 60.5 Z", true);
+        BYTE a = static_cast<BYTE>((0.4 + 0.6 * anim_progress) * 255);
+        graphics.FillPath(&Gdiplus::SolidBrush(argb(a, "#F2C96B")),
+                          &glint);
+      } else if (state == MubiState::Focus) {
+        graphics.FillEllipse(&Gdiplus::SolidBrush(argb(190, "#8DA1B5")),
+                             88.0f, 30.0f, 16.0f, 16.0f);
+      }
+
+      graphics.ResetTransform();
+
+      // Label capsule: contextual pill during cues (or always, per the
+      // Label setting). Painted into the same alpha surface — no second
+      // window anywhere.
+      bool const show_label = labels_always || !message.empty();
+      if (show_label) {
+        std::wstring const text = message.empty() ? L"MoveBit" : message;
+        REAL const pill_w = 120.0f * s * dp;
+        REAL const pill_h = 30.0f * dp;
+        REAL const px = (static_cast<REAL>(size.cx) - pill_w) / 2.0f;
+        REAL const py = static_cast<REAL>(size.cy) - pill_h - 4.0f * dp;
+        Gdiplus::SolidBrush pill(dark ? argb(230, "#33302B")
+                                      : argb(235, "#FFFDFB"));
+        graphics.FillRoundedRectangle(
+            &pill, px, py, pill_w, pill_h, 10.0f * dp);
+        Gdiplus::FontFamily family(IsCjkText(text) ? L"Microsoft YaHei UI"
+                                                   : L"Segoe UI");
+        Gdiplus::Font font(&family, static_cast<REAL>(12 * dp),
+                           Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush text_brush(dark ? argb(255, "#F1EEE7")
+                                            : argb(255, "#2D2A28"));
+        Gdiplus::StringFormat format;
+        format.SetAlignment(Gdiplus::StringAlignmentCenter);
+        format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        Gdiplus::RectF box(px, py, pill_w, pill_h);
+        graphics.DrawString(text.c_str(), -1, &font, box, &format,
+                            &text_brush);
+      }
+    }
+
+    mubi_detail::premultiply(static_cast<BYTE*>(bits), size.cx * size.cy);
+
+    // Content + dock positioning in one atomic UpdateLayeredWindow.
+    POINT const dst = dock_position(size);
+    POINT const src{0, 0};
+    BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    if (!::UpdateLayeredWindow(hwnd, screen, &dst, &size, mem, &src, 0,
+                               &blend, ULW_ALPHA)) {
+      mubi_trace("render:ulw-failed");
+    }
+    ::SelectObject(mem, old);
+    ::DeleteObject(dib);
+    ::DeleteDC(mem);
+    ::ReleaseDC(nullptr, screen);
   }
 
-  // Dark-mode probe for art direction. Deliberately does NOT touch the
-  // companion window's XAML tree: the window is created lazily on the first
-  // cue, and after a Close() the Content() projection stays non-null while
-  // the backing object is gone — a null check cannot catch that torn-down
-  // state, and ActualTheme() on it is the null-vtable AV behind issue #78.
-  // The registry value below is the same user setting XAML's ActualTheme
-  // resolves, without walking any possibly-dead projection. High contrast
-  // still forces dark. const: art direction per card build is stable.
-  bool _root_is_dark() const {
+  static bool IsCjkText(std::wstring const& text) {
+    for (wchar_t ch : text) {
+      if (ch >= 0x2E80) return true;
+    }
+    return false;
+  }
+
+  // Art direction per card build: the same setting XAML's ActualTheme
+  // resolves, read from the registry (never touches any window tree).
+  static bool IsDark() {
     HIGHCONTRAST hc{sizeof(HIGHCONTRAST)};
     if (::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0) &&
         (hc.dwFlags & HCF_HIGHCONTRASTON)) {
@@ -520,26 +555,11 @@ struct MubiCompanion {
     if (::RegGetValueW(HKEY_CURRENT_USER,
                        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes"
                        L"\\Personalize",
-                       L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light,
-                       &size) == ERROR_SUCCESS) {
+                       L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr,
+                       &light, &size) == ERROR_SUCCESS) {
       return light == 0;
     }
     return false;
-  }
-
-  void ApplyPointerThrough() {
-    if (pointer_through_applied) return;
-    if (auto window_native = window.try_as<::IWindowNative>()) {
-      HWND hwnd = nullptr;
-      if (SUCCEEDED(window_native->get_WindowHandle(&hwnd)) && hwnd) {
-        LONG_PTR const ex = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        // Whole-window pointer-through + never activate + no taskbar (#54).
-        ::SetWindowLongPtrW(hwnd, GWL_EXSTYLE,
-                            ex | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE |
-                                WS_EX_TOOLWINDOW);
-        pointer_through_applied = true;
-      }
-    }
   }
 
   // One expressive gesture per due moment (#56 §4); "still" stays static.
@@ -558,17 +578,10 @@ struct MubiCompanion {
     anim_total_ticks = ms / 33 + 1;
     if (!anim_timer) {
       anim_timer = make_timer(std::chrono::milliseconds(33), true, [this] {
-        anim_progress = std::min(1.0, anim_progress + 1.0 / static_cast<double>(anim_total_ticks));
-        if (cup_transform != nullptr) {
-          cup_transform.TranslateY(51 - 12 * anim_progress);
-        }
-        if (canvas_scale != nullptr) {
-          canvas_scale.ScaleY(1.0 + 0.06 * anim_progress);
-        }
-        for (auto const& arc : stand_arcs) {
-          if (arc) arc.Opacity(0.3 + 0.7 * anim_progress);
-        }
-        if (ack_glint) ack_glint.Opacity(0.4 + 0.6 * anim_progress);
+        anim_progress =
+            std::min(1.0, anim_progress + 1.0 /
+                                        static_cast<double>(anim_total_ticks));
+        Render(anim_state, current_message);
         if (anim_progress >= 1.0 && anim_timer) anim_timer.Stop();
       });
     }
@@ -580,39 +593,12 @@ struct MubiCompanion {
     if (label_timer) label_timer.Stop();
     if (message.empty() && !labels_always) return;
     if (!label_timer) {
-      label_timer = make_timer(std::chrono::milliseconds(5000), false, [this] {
-        ShowIdle();
-      });
+      label_timer = make_timer(std::chrono::milliseconds(5000), false,
+                               [this] {
+                                 ShowIdle();
+                               });
     }
     label_timer.Start();
-  }
-
-  void Position() {
-    if (auto window_native = window.try_as<::IWindowNative>()) {
-      HWND hwnd = nullptr;
-      if (SUCCEEDED(window_native->get_WindowHandle(&hwnd)) && hwnd) {
-        HMONITOR monitor = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO info{sizeof(MONITORINFO)};
-        if (::GetMonitorInfoW(monitor, &info)) {
-          auto const wa = info.rcWork;
-          auto const size = window.AppWindow().Size();
-          int const clearance = 16;
-          int x = 0;
-          int y = 0;
-          if (dock == "bottom-left") {
-            x = wa.left + clearance;
-            y = wa.bottom - size.Height - clearance;
-          } else if (dock == "top-right") {
-            x = wa.right - size.Width - clearance;
-            y = wa.top + clearance;
-          } else {  // bottom-right
-            x = wa.right - size.Width - clearance;
-            y = wa.bottom - size.Height - clearance;
-          }
-          window.AppWindow().Move({x, y});
-        }
-      }
-    }
   }
 };
 
