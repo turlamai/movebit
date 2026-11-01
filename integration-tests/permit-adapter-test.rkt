@@ -31,7 +31,9 @@
 (define (write-test-right path #:product [product "movebit"]
                           #:edition [edition "pro"]
                           #:features [features '()]
-                          #:expires [expires 'null])
+                          #:expires [expires 'null]
+                          #:installation-id [installation-id 'null]
+                          #:version-min [version-min 'null])
   (define claims
     (issuer:entitlement-payload
      #:issuer "movebit-ci-test"
@@ -41,7 +43,9 @@
      #:grants (list (issuer:grant #:products (list product)
                                  #:edition edition
                                  #:features features))
-     #:constraints (issuer:constraints #:use-expires-at expires)
+     #:constraints (issuer:constraints #:use-expires-at expires
+                                       #:installation-id installation-id
+                                       #:version-min version-min)
      #:issued-at "2026-01-01T00:00:00Z"))
   (issuer:write-issued-credential
    (issuer:issue-credential (issuer:payload->bytes claims)
@@ -58,6 +62,8 @@
    (define feature (build-path dir "feature-only.json"))
    (define other (build-path dir "wrong-product.json"))
    (define expired (build-path dir "expired.json"))
+   (define device-bound (build-path dir "device-bound.json"))
+   (define version-bound (build-path dir "version-bound.json"))
    (define tampered (build-path dir "tampered.json"))
    (write-test-right pro)
    (write-test-right feature
@@ -65,6 +71,8 @@
                      #:features '("advanced-work-insights"))
    (write-test-right other #:product "another-product")
    (write-test-right expired #:expires "2026-01-02T00:00:00Z")
+   (write-test-right device-bound #:installation-id "different-installation")
+   (write-test-right version-bound #:version-min "1.0.0")
 
    ;; A real signed license is verified and evaluated; raw claims or a
    ;; browser checkout result can never be passed through as authorization.
@@ -83,6 +91,12 @@
                  'advanced-work-insights other test-store))
    (check-false (permit-feature-available/from-file?
                  'advanced-work-insights expired test-store))
+   ;; Version- and installation-bound rights cannot be accepted without
+   ;; the required product context. A future paid host must supply both.
+   (check-false (permit-feature-available/from-file?
+                 'advanced-work-insights device-bound test-store))
+   (check-false (permit-feature-available/from-file?
+                 'advanced-work-insights version-bound test-store))
    (check-false (permit-feature-available/from-file?
                  'advanced-work-insights (build-path dir "missing.json")
                  test-store))
