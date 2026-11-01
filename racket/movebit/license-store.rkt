@@ -90,9 +90,15 @@
       (error 'import-signed-license! "not entitled to MoveBit Pro"))
     (define target (license-file-path #:local-dir dir))
     (when (file-exists? target)
-      (with-handlers ([exn:fail? (lambda (_) (void))])
-        (define old-bytes (read-credential-bytes target))
-        (define old (verified-from-bytes old-bytes trusted-store))
+      ;; Recovery from a genuinely damaged old file is allowed. Only the
+      ;; old parse/verify step may fail open; revision mismatches MUST abort.
+      (define prior
+        (with-handlers ([exn:fail? (lambda (_) #f)])
+          (define prior-bytes (read-credential-bytes target))
+          (cons prior-bytes (verified-from-bytes prior-bytes trusted-store))))
+      (when prior
+        (define old-bytes (car prior))
+        (define old (cdr prior))
         (define issuer (dynamic-require 'permit 'verified-credential-issuer))
         (define entitlement-id (dynamic-require 'permit 'verified-credential-entitlement-id))
         (define revision (dynamic-require 'permit 'verified-credential-revision))
