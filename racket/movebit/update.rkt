@@ -452,16 +452,26 @@
     (error 'download-appimage-with-progress!
            "candidate is not this architecture's signed AppImage artifact"))
   (define-values (self temporary) (appimage-download-target))
+  (define backup-temp
+    (make-temporary-file "movebit-backup-~a.AppImage" #f (path-only self)))
+  (define backup (string-append self ".previous"))
   (with-handlers ([exn?
                    (lambda (e)
-                     (when (file-exists? temporary) (delete-file temporary))
+                     (for ([path (in-list (list temporary backup-temp))])
+                       (when (file-exists? path) (delete-file path)))
                      (raise e))])
     ;; Rivet bounds bytes to the signed size, verifies both size and SHA-256,
     ;; and removes partial downloads on error. No sidecar is consulted.
     (download-with-progress! candidate temporary)
     (file-or-directory-permissions temporary #o755)
-    ;; Atomic replacement: on download/verify/chmod failure the original
-    ;; image remains intact. Rename is the final operation before returning.
+    ;; Preserve the previous runnable image for recovery. Copy into a unique
+    ;; sibling and rename atomically: never follow a pre-existing backup
+    ;; symlink or truncate an existing known-good backup in place.
+    (copy-file self backup-temp #t)
+    (file-or-directory-permissions backup-temp #o755)
+    (rename-file-or-directory backup-temp backup #t)
+    ;; On any failure before this final atomic rename the original remains.
+    ;; Keep .previous after success for manual recovery if startup fails.
     (rename-file-or-directory temporary self #t)
     self))
 
