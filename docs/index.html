@@ -618,7 +618,7 @@ html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}@media(
 
       // ---- release version badge: read-only lookup, the download links above
       // are static alias URLs that GitHub resolves to the latest release ----
-      fetch('https://api.github.com/repos/turinglambdaai/movebit/releases/latest', { headers: { 'Accept': 'application/vnd.github+json' } })
+      fetch('https://api.github.com/repos/turlamai/movebit/releases/latest', { headers: { 'Accept': 'application/vnd.github+json' } })
         .then(function (response) { if (!response.ok) throw new Error('release lookup failed'); return response.json(); })
         .then(function (release) {
           if (release && release.tag_name) document.getElementById('release-version').textContent = release.tag_name;
