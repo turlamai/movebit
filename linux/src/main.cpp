@@ -589,7 +589,7 @@ int on_motion_set(GtkSwitch*, gboolean state, gpointer) {
 static char const* const kMubiSizes[] = {"S", "M", "L"};
 static char const* const kMubiMotions[] = {"still", "subtle", "lively"};
 static char const* const kMubiDocks[] = {"bottom-right", "bottom-left",
-                                         "top-right"};
+                                         "top-right", "top-left"};
 static char const* const kMubiLabels[] = {"cue", "always"};
 static char const* const kLanguages[] = {"auto", "zh", "en"};
 
@@ -616,7 +616,7 @@ void on_mubi_motion_changed(GtkDropDown* drop, gpointer) {
 void on_mubi_dock_changed(GtkDropDown* drop, gpointer) {
   if (g_state.updating_settings) return;
   unsigned index = 0;
-  if (!dropdown_index_valid<3>(drop, index)) return;
+  if (!dropdown_index_valid<4>(drop, index)) return;
   mutate_config([&](auto& d) { d.companion_dock = kMubiDocks[index]; });
 }
 
@@ -963,7 +963,8 @@ void refresh_settings_widgets() {
                                : c.companion_motion == "lively" ? 2 : 1);
     gtk_drop_down_set_selected(mw.mubi_dock_drop,
                                c.companion_dock == "bottom-left" ? 1
-                               : c.companion_dock == "top-right" ? 2 : 0);
+                               : c.companion_dock == "top-right" ? 2
+                               : c.companion_dock == "top-left" ? 3 : 0);
     gtk_drop_down_set_selected(mw.mubi_labels_drop,
                                c.companion_labels == "always" ? 1 : 0);
     gtk_switch_set_active(mw.micro_switch, c.micro_break_enabled);
@@ -1775,12 +1776,14 @@ void build_main_content() {
     std::string const dock_br = l10n::t("mubi.dockBottomRight");
     std::string const dock_bl = l10n::t("mubi.dockBottomLeft");
     std::string const dock_tr = l10n::t("mubi.dockTopRight");
+    std::string const dock_tl = l10n::t("mubi.dockTopLeft");
     char const* dock_items[] = {dock_br.c_str(), dock_bl.c_str(),
-                                dock_tr.c_str(), nullptr};
+                                dock_tr.c_str(), dock_tl.c_str(), nullptr};
     auto* dock_drop = gtk_drop_down_new_from_strings(dock_items);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(dock_drop),
                                c.companion_dock == "bottom-left" ? 1
-                               : c.companion_dock == "top-right" ? 2 : 0);
+                               : c.companion_dock == "top-right" ? 2
+                               : c.companion_dock == "top-left" ? 3 : 0);
     g_signal_connect(dock_drop, "notify::selected",
                      G_CALLBACK(on_mubi_dock_changed), nullptr);
     box_append(GTK_BOX(mubi_dock_row), dock_drop);
@@ -2462,9 +2465,10 @@ void present(int state, std::string const& message, GtkApplication* app,
               static_cast<int>(work.width * xs) - px_w - px_clear;
       int y = static_cast<int>(work.y * xs) +
               static_cast<int>(work.height * xs) - px_h - px_clear;
-      if (s.mubi_dock == "bottom-left") {
+      if (s.mubi_dock == "bottom-left" || s.mubi_dock == "top-left") {
         x = static_cast<int>(work.x * xs) + px_clear;
-      } else if (s.mubi_dock == "top-right") {
+      }
+      if (s.mubi_dock == "top-right" || s.mubi_dock == "top-left") {
         y = static_cast<int>(work.y * xs) + px_clear;
       }
       XMoveWindow(xdisplay, xid, x, y);
