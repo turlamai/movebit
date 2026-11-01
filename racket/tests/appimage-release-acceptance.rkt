@@ -97,7 +97,7 @@
     (check-exn exn:fail?
                (lambda ()
                  (upd:download-appimage-with-progress!
-                  (signed-candidate (make-string 64 #\\0) source-size))))
+                  (signed-candidate (make-string 64 #\0) source-size))))
     (check-equal? (sha256-file/hex installed) original-digest)
     (check-exn exn:fail?
                (lambda ()
@@ -106,22 +106,21 @@
     (check-equal? (sha256-file/hex installed) original-digest)
     (check-false (file-exists? (string-append (path->string installed) ".previous")))
 
-    (define updated
-      (upd:download-appimage-with-progress!
-       (signed-candidate source-digest source-size)))
-    (check-equal? updated (path->string installed))
-    (check-equal? (sha256-file/hex installed) source-digest)
-    (check-equal? (file-size installed) source-size)
-    (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
-    (define backup (string-append (path->string installed) ".previous"))
-    (check-true (file-exists? backup))
-    (check-equal? (sha256-file/hex backup) original-digest)
-    (check-not-false (memq 'execute (file-or-directory-permissions installed #f)))
-    ;; The installed path itself still executes a valid AppImage runtime.
-    (unless (zero? (system*/exit-code installed "--appimage-version"))
-      (error 'appimage-release-acceptance "updated AppImage failed runtime launch"))
-    (printf "native ~a AppImage: signed real-byte download, tamper/size rejection, atomic swap, backup, relaunch PASS~%"
-            (upd:architecture-symbol)))
+    (let ([updated (upd:download-appimage-with-progress!
+                    (signed-candidate source-digest source-size))]
+          [backup (string-append (path->string installed) ".previous")])
+      (check-equal? updated (path->string installed))
+      (check-equal? (sha256-file/hex installed) source-digest)
+      (check-equal? (file-size installed) source-size)
+      (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
+      (check-true (file-exists? backup))
+      (check-equal? (sha256-file/hex backup) original-digest)
+      (check-not-false (memq 'execute (file-or-directory-permissions installed #f)))
+      ;; The installed path itself still executes a valid AppImage runtime.
+      (unless (zero? (system*/exit-code installed "--appimage-version"))
+        (error 'appimage-release-acceptance "updated AppImage failed runtime launch"))
+      (printf "native ~a AppImage: signed real-byte download, tamper/size rejection, atomic swap, backup, relaunch PASS~%"
+              (upd:architecture-symbol))))
   (lambda ()
     (putenv "APPIMAGE" (or old-appimage ""))
     (kill-thread server)
