@@ -452,7 +452,7 @@
     (error 'download-appimage-with-progress!
            "candidate is not this architecture's signed AppImage artifact"))
   (define-values (self temporary) (appimage-download-target))
-  (with-handlers ([exn:fail?
+  (with-handlers ([exn?
                    (lambda (e)
                      (when (file-exists? temporary) (delete-file temporary))
                      (raise e))])
@@ -525,9 +525,8 @@
                      (state-set! 'message (exn-message e))]))])
             (define path
               (if (appimage-flavor?)
-                  ;; AppImage: the sibling asset is sidecar-checked and swapped
-                  ;; over the running image in place; downloadedPath IS the
-                  ;; image path.
+                  ;; AppImage: only the manifest-signed payload is accepted;
+                  ;; downloadedPath is the atomically replaced image path.
                   (download-appimage-with-progress! candidate)
                   (download-with-progress! candidate destination)))
             (state-set! 'phase "downloaded")
