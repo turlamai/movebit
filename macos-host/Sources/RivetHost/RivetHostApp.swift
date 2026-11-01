@@ -403,6 +403,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model else { return }
 
         if cue.delivery == .character {
+            // Sound was only played on the notification fallback path.
+            // Character cues (water, move, eye rest, including merged kinds)
+            // must honor the same user-selected one-shot sound setting.
+            // Quiet/focus cues are normally withheld by the backend.
+            if model.config.sound_enabled && !model.quiet {
+                NSSound(named: "Ping")?.play()
+            }
             companion?.show(state: cue.action.mubiState,
                             message: cueMessage(cue))
             model.cueDisplayed(cue.id)
