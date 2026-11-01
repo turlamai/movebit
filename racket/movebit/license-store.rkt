@@ -82,45 +82,48 @@
                                 #:version [version #f]
                                 #:installation-id [installation-id #f])
   (with-handlers ([exn:fail? (lambda (_) #f)])
-    (define raw (read-credential-bytes source))
-    (define candidate (verified-from-bytes raw trusted-store))
-    (unless (pro-allowed? candidate
-                          #:version version
-                          #:installation-id installation-id)
-      (error 'import-signed-license! "not entitled to MoveBit Pro"))
-    (define target (license-file-path #:local-dir dir))
-    (when (file-exists? target)
-      ;; Recovery from a genuinely damaged old file is allowed. Only the
-      ;; old parse/verify step may fail open; revision mismatches MUST abort.
-      (define prior
-        (with-handlers ([exn:fail? (lambda (_) #f)])
-          (define prior-bytes (read-credential-bytes target))
-          (cons prior-bytes (verified-from-bytes prior-bytes trusted-store))))
-      (when prior
-        (define old-bytes (car prior))
-        (define old (cdr prior))
-        (define issuer (dynamic-require 'permit 'verified-credential-issuer))
-        (define entitlement-id (dynamic-require 'permit 'verified-credential-entitlement-id))
-        (define revision (dynamic-require 'permit 'verified-credential-revision))
-        (when (and (equal? (issuer old) (issuer candidate))
-                   (equal? (entitlement-id old) (entitlement-id candidate)))
-          (when (or (< (revision candidate) (revision old))
-                    (and (= (revision candidate) (revision old))
-                         (not (bytes=? raw old-bytes))))
-            (error 'import-signed-license! "stale or conflicting revision")))))
-    (make-directory* dir)
-    (define temporary (make-temporary-file "movebit-license-~a" #f dir))
-    (dynamic-wind
-      void
-      (lambda ()
-        (call-with-output-file temporary
-          (lambda (out) (write-bytes raw out))
-          #:exists 'truncate)
-        (rename-file-or-directory temporary target #t))
-      (lambda ()
-        (when (file-exists? temporary)
-          (delete-file temporary))))
-    #t))
+    (let* ([raw (read-credential-bytes source)]
+           [candidate (verified-from-bytes raw trusted-store)]
+           [target (license-file-path #:local-dir dir)])
+      (unless (pro-allowed? candidate
+                            #:version version
+                            #:installation-id installation-id)
+        (error 'import-signed-license! "not entitled to MoveBit Pro"))
+      (when (file-exists? target)
+        ;; Recovery from a damaged stored credential is allowed. Only the
+        ;; old parse/verify step may fail open; revision mismatches MUST abort.
+        (let ([prior
+               (with-handlers ([exn:fail? (lambda (_) #f)])
+                 (let ([prior-bytes (read-credential-bytes target)])
+                   (cons prior-bytes
+                         (verified-from-bytes prior-bytes trusted-store))))])
+          (when prior
+            (let* ([old-bytes (car prior)]
+                   [old (cdr prior)]
+                   [issuer (dynamic-require 'permit 'verified-credential-issuer)]
+                   [entitlement-id
+                    (dynamic-require 'permit 'verified-credential-entitlement-id)]
+                   [revision (dynamic-require 'permit 'verified-credential-revision)])
+              (when (and (equal? (issuer old) (issuer candidate))
+                         (equal? (entitlement-id old)
+                                 (entitlement-id candidate)))
+                (when (or (< (revision candidate) (revision old))
+                          (and (= (revision candidate) (revision old))
+                               (not (bytes=? raw old-bytes))))
+                  (error 'import-signed-license! "stale or conflicting revision")))))))
+      (make-directory* dir)
+      (let ([temporary (make-temporary-file "movebit-license-~a" #f dir)])
+        (dynamic-wind
+         void
+         (lambda ()
+           (call-with-output-file temporary
+             (lambda (out) (write-bytes raw out))
+             #:exists 'truncate)
+           (rename-file-or-directory temporary target #t))
+         (lambda ()
+           (when (file-exists? temporary)
+             (delete-file temporary)))))
+      #t)))
 
 ;; Explicit uninstall/reset action; never called by Free feature checks.
 (define (remove-local-license! #:local-dir [dir (default-data-dir)])
