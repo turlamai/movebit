@@ -725,7 +725,9 @@ struct MubiCompanion {
   // A mere Later reply uses 5s and cannot launch a second center visit.
   void StartLabelTimer(std::wstring const& message, MubiState state) {
     if (label_timer) label_timer.Stop();
-    if (message.empty() && !labels_always) return;
+    // "Always show label" means persistent idle text, NOT a recurring
+    // five-second idle timer that repeatedly wakes and recreates Mubi.
+    if (message.empty()) return;
     if (!label_timer) {
       label_timer = make_timer(std::chrono::milliseconds(5000), false,
                                [this] {
