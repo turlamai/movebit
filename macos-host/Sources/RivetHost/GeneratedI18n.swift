@@ -89,6 +89,7 @@ enum GeneratedI18n {
         "micro.windowTitle": ["zh": "微休息", "en": "Micro break"],
         "mubi.dockBottomLeft": ["zh": "左下", "en": "Bottom left"],
         "mubi.dockBottomRight": ["zh": "右下", "en": "Bottom right"],
+        "mubi.dockTopLeft": ["zh": "左上", "en": "Top left"],
         "mubi.dockTopRight": ["zh": "右上", "en": "Top right"],
         "mubi.labelsAlways": ["zh": "常显", "en": "Always"],
         "mubi.labelsCue": ["zh": "仅提醒时", "en": "During reminders"],
