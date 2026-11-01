@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -190,6 +191,12 @@ struct AppState {
   GtkLabel* mubi_capsule{nullptr};
   std::int64_t mubi_cue_id{0};
   guint mubi_expire_id{0};
+  // Bounded X11 reminder visit, independent of decorative idle animation.
+  guint mubi_visit_tick_id{0};
+  int mubi_visit_phase{0}; // 0 idle, 1 approaching, 2 holding, 3 returning
+  int mubi_visit_step{0};
+  int mubi_home_x{0}, mubi_home_y{0};
+  int mubi_target_x{0}, mubi_target_y{0};
   int mubi_state = 0;  // 0 idle, 1 water, 2 stand, 3 eyes, 4 ack, 5 focus
   std::string mubi_message;
   // Gesture animation (#56 §4): one expressive motion per cue, 33 ms ticks
@@ -2246,7 +2253,89 @@ double scale_for(std::string const& size) {
   return 78.0 / 108.0;
 }
 
+// Native repositioning is only attempted under X11. Wayland deliberately
+// uses the existing compositor-managed notification fallback.
+void stop_visit() {
+  if (g_state.mubi_visit_tick_id != 0) {
+    g_source_remove(g_state.mubi_visit_tick_id);
+    g_state.mubi_visit_tick_id = 0;
+  }
+  g_state.mubi_visit_phase = 0;
+  g_state.mubi_visit_step = 0;
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+void move_visit_window(int x, int y) {
+#ifdef GDK_WINDOWING_X11
+  if (g_state.mubi_window == nullptr) return;
+  auto* surface = gtk_native_get_surface(GTK_NATIVE(g_state.mubi_window));
+  if (surface == nullptr || !GDK_IS_X11_SURFACE(surface)) return;
+  auto* display = gdk_display_get_default();
+  if (!GDK_IS_X11_DISPLAY(display)) return;
+  Display* xdisplay = gdk_x11_display_get_xdisplay(GDK_X11_DISPLAY(display));
+  Window xid = gdk_x11_surface_get_xid(GDK_X11_SURFACE(surface));
+  XMoveWindow(xdisplay, xid, x, y);
+  XFlush(xdisplay);
+#else
+  (void)x;
+  (void)y;
+#endif
+}
+#pragma GCC diagnostic pop
+
+// The definition below owns the cue lifecycle; movement never issues Done.
+void present(int state, std::string const& message, GtkApplication* app,
+             std::int64_t cue_id);
+
+gboolean on_visit_tick(gpointer) {
+  auto& s = g_state;
+  bool const returning = s.mubi_visit_phase == 3;
+  if (!s.mubi_x11 || s.mubi_quiet || s.mubi_window == nullptr ||
+      (s.mubi_visit_phase != 1 && !returning)) {
+    s.mubi_visit_tick_id = 0;
+    s.mubi_visit_phase = 0;
+    return G_SOURCE_REMOVE;
+  }
+  int const steps = returning ? 12 : 18;
+  double const t = std::min(1.0,
+                            static_cast<double>(++s.mubi_visit_step) / steps);
+  double const eased = t * t * (3.0 - 2.0 * t);
+  int const x0 = returning ? s.mubi_target_x : s.mubi_home_x;
+  int const y0 = returning ? s.mubi_target_y : s.mubi_home_y;
+  int const x1 = returning ? s.mubi_home_x : s.mubi_target_x;
+  int const y1 = returning ? s.mubi_home_y : s.mubi_target_y;
+  move_visit_window(static_cast<int>(std::lround(x0 + (x1 - x0) * eased)),
+                    static_cast<int>(std::lround(y0 + (y1 - y0) * eased)));
+  if (t < 1.0) return G_SOURCE_CONTINUE;
+  s.mubi_visit_tick_id = 0;
+  if (returning) {
+    s.mubi_visit_phase = 0;
+    present(s.mubi_quiet ? 5 : 0, "", nullptr, 0);
+  } else {
+    s.mubi_visit_phase = 2; // hold until visual timeout
+  }
+  return G_SOURCE_REMOVE;
+}
+
+void begin_visit_return() {
+  auto& s = g_state;
+  if (s.mubi_visit_phase == 0) {
+    present(s.mubi_quiet ? 5 : 0, "", nullptr, 0);
+    return;
+  }
+  if (s.mubi_visit_phase == 3) return;
+  if (s.mubi_visit_tick_id != 0) {
+    g_source_remove(s.mubi_visit_tick_id);
+    s.mubi_visit_tick_id = 0;
+  }
+  s.mubi_visit_phase = 3;
+  s.mubi_visit_step = 0;
+  s.mubi_visit_tick_id = g_timeout_add(40, on_visit_tick, nullptr);
+}
+
 void close_window() {
+  stop_visit();
   if (g_state.mubi_expire_id != 0) {
     g_source_remove(g_state.mubi_expire_id);
     g_state.mubi_expire_id = 0;
@@ -2326,6 +2415,7 @@ void present(int state, std::string const& message, GtkApplication* app,
   if (app == nullptr) app = g_state.app;
   if (app == nullptr) return;
   auto& s = g_state;
+  stop_visit(); // new cue / Focus / Hide cancels all previous movement
   s.mubi_state = state;
   s.mubi_message = message;
   s.mubi_cue_id = cue_id;
@@ -2405,6 +2495,7 @@ void present(int state, std::string const& message, GtkApplication* app,
     gtk_widget_set_size_request(GTK_WIDGET(canvas),
                                 static_cast<int>(120 * scale),
                                 static_cast<int>(140 * scale));
+    gtk_widget_set_halign(GTK_WIDGET(canvas), GTK_ALIGN_CENTER);
     gtk_drawing_area_set_draw_func(canvas, draw, nullptr, nullptr);
     box_append(GTK_BOX(body_box), GTK_WIDGET(canvas));
     s.mubi_canvas = canvas;
@@ -2429,8 +2520,9 @@ void present(int state, std::string const& message, GtkApplication* app,
   // Explicit size: the window hugs the character (canvas + capsule area
   // while a label shows). Cue actions live in the tray menu, not here.
   bool const label_visible = s.mubi_labels_always || !s.mubi_message.empty();
-  int const win_w = canvas_w;
-  int const win_h = canvas_h + (label_visible ? 44 : 0);
+  bool const due = cue_id != 0 && state >= 1 && state <= 3;
+  int const win_w = due ? std::max(canvas_w, 270) : canvas_w;
+  int const win_h = canvas_h + (label_visible ? (due ? 64 : 44) : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
   gtk_window_present(s.mubi_window);
 
@@ -2473,18 +2565,46 @@ void present(int state, std::string const& message, GtkApplication* app,
       }
       XMoveWindow(xdisplay, xid, x, y);
       XFlush(xdisplay);
+      // A real health cue gets a brief central visit; a quiet/Still or
+      // GTK Reduce Motion preference receives readable static advice instead.
+      gboolean gtk_animations = TRUE;
+      if (auto* settings = gtk_settings_get_default()) {
+        g_object_get(G_OBJECT(settings), "gtk-enable-animations",
+                     &gtk_animations, nullptr);
+      }
+      if (due && s.mubi_motion != "still" && !s.mubi_quiet && gtk_animations) {
+        s.mubi_home_x = x;
+        s.mubi_home_y = y;
+        int const work_x = static_cast<int>(work.x * xs);
+        int const work_y = static_cast<int>(work.y * xs);
+        int const work_w = static_cast<int>(work.width * xs);
+        int const work_h = static_cast<int>(work.height * xs);
+        s.mubi_target_x = std::clamp(
+            work_x + (work_w - px_w) / 2, work_x + px_clear,
+            std::max(work_x + px_clear, work_x + work_w - px_w - px_clear));
+        s.mubi_target_y = std::clamp(
+            work_y + (work_h - px_h) / 2, work_y + px_clear,
+            std::max(work_y + px_clear, work_y + work_h - px_h - px_clear));
+        s.mubi_visit_phase = 1;
+        s.mubi_visit_step = 0;
+        s.mubi_visit_tick_id = g_timeout_add(40, on_visit_tick, nullptr);
+      }
     }
   }
 #pragma GCC diagnostic pop
 #endif
 
-  // The label reads ~5 s, then the card returns to its calm pose. The cue
-  // itself stays open in the backend ledger (#56: label fade is not Done).
+  // Visual timeout and return do not acknowledge the backend cue. Due health
+  // notices read for ~9s, then gently re-dock; casual messages last only 5s.
   s.mubi_expire_id = g_timeout_add(
-      5000,
+      due ? 9000 : 5000,
       +[](gpointer) -> int {
         g_state.mubi_expire_id = 0;
-        present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
+        if (g_state.mubi_visit_phase != 0) {
+          begin_visit_return();
+        } else {
+          present(g_state.mubi_quiet ? 5 : 0, "", nullptr, 0);
+        }
         return G_SOURCE_REMOVE;
       },
       nullptr);
