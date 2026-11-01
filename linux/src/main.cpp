@@ -1616,6 +1616,10 @@ void build_main_content() {
     box_append(GTK_BOX(cycle), counter_tile("💧", l10n::t("today.water").c_str(), &mw.today_water));
     box_append(GTK_BOX(cycle), counter_tile("👀", l10n::t("today.micro").c_str(), &mw.today_micro));
     box_append(GTK_BOX(card), cycle);
+    auto* counts_note = label_with(l10n::t("today.countsNote").c_str(), "caption");
+    gtk_label_set_wrap(GTK_LABEL(counts_note), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(counts_note), 0.0f);
+    box_append(GTK_BOX(card), counts_note);
     box_append(left, card);
   }
 
