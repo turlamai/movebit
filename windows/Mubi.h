@@ -388,7 +388,7 @@ struct MubiCompanion {
         parse_path(
             "M 48 22 C 44.5 15.5, 39.5 10.5, 34.5 8.5 "
             "C 33.5 13.5, 38 20.5, 45 24.5 Z", true, shade);
-        Gdiplus::SolidBrush shade_brush(argb(90, "#D8C8B5"));
+        Gdiplus::SolidBrush shade_brush(argb(90, shadow_hex));
         graphics.FillPath(&shade_brush, &shade);
       }
 
@@ -405,7 +405,8 @@ struct MubiCompanion {
         Gdiplus::Color stops[] = {
             argb(255, body_light), argb(255, body_mid),
             argb(255, body_deep)};
-        brush.SetInterpolationColors(stops, 3);
+        float const positions[] = {0.0f, 0.45f, 1.0f};
+        brush.SetInterpolationColors(stops, positions, 3);
         graphics.FillPath(&brush, &body);
       }
 
@@ -424,9 +425,10 @@ struct MubiCompanion {
 
       // Face at the frozen placement; state decides open/closed/props.
       auto eye = [&](double cx, double cy) {
-        graphics.FillEllipse(&Gdiplus::SolidBrush(argb(255, ink_hex)),
-                             static_cast<float>(cx - 3), static_cast<float>(cy - 3.6),
-                             6.0f, 7.2f);
+        Gdiplus::SolidBrush eye_brush(argb(255, ink_hex));
+        graphics.FillEllipse(
+            &eye_brush, static_cast<float>(cx - 3),
+            static_cast<float>(cy - 3.6), 6.0f, 7.2f);
       };
       auto closed_arc = [&](char const* d) {
         Gdiplus::GraphicsPath arc;
@@ -457,12 +459,13 @@ struct MubiCompanion {
         parse_path(
             "M -7 -9 L 7 -9 L 5.4 9 C 5.2 10.6, 4 11.5, 2.4 11.5 "
             "L -2.4 11.5 C -4 11.5, -5.2 10.6, -5.4 9 Z", true, cup);
-        graphics.FillPath(&Gdiplus::SolidBrush(argb(255, "#62B6FF")), &cup);
+        Gdiplus::SolidBrush cup_brush(argb(255, "#62B6FF"));
+        graphics.FillPath(&cup_brush, &cup);
         Gdiplus::GraphicsPath water;
         parse_path(
             "M -4.6 -6.5 L 4.4 -6.5 L 3.6 1.5 L -4 1.5 Z", true, water);
-        graphics.FillPath(&Gdiplus::SolidBrush(argb(217, "#8FCBFF")),
-                          &water);
+        Gdiplus::SolidBrush water_brush(argb(217, "#8FCBFF"));
+        graphics.FillPath(&water_brush, &water);
       } else if (state == MubiState::Stand) {
         BYTE const a = static_cast<BYTE>((0.3 + 0.7 * anim_progress) * 255);
         Gdiplus::Pen pen(argb(a, "#FF8C6B"), 3.0f);
@@ -491,11 +494,11 @@ struct MubiCompanion {
             "M 84 56 L 86 60.5 L 90.5 62 L 86 63.5 L 84 68 L 82 63.5 "
             "L 77.5 62 L 82 60.5 Z", true, glint);
         BYTE a = static_cast<BYTE>((0.4 + 0.6 * anim_progress) * 255);
-        graphics.FillPath(&Gdiplus::SolidBrush(argb(a, "#F2C96B")),
-                          &glint);
+        Gdiplus::SolidBrush glint_brush(argb(a, "#F2C96B"));
+        graphics.FillPath(&glint_brush, &glint);
       } else if (state == MubiState::Focus) {
-        graphics.FillEllipse(&Gdiplus::SolidBrush(argb(190, "#8DA1B5")),
-                             88.0f, 30.0f, 16.0f, 16.0f);
+        Gdiplus::SolidBrush moon_brush(argb(190, "#8DA1B5"));
+        graphics.FillEllipse(&moon_brush, 88.0f, 30.0f, 16.0f, 16.0f);
       }
 
       graphics.ResetTransform();
