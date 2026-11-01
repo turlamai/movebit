@@ -454,7 +454,9 @@ final class CompanionController: NSObject {
         let corners = ["bottom-right", "bottom-left", "top-left", "top-right"]
         let index = corners.firstIndex(of: dock) ?? 0
         dock = corners[(index + 1) % corners.count]
-        showIdle()
+        // Moving the pet must not dismiss a health invitation or turn
+        // it into an idle pose. Keep the active artwork and cue readable.
+        if panel?.isVisible == true { relayout() }
     }
 
     static func bodyHeight(for size: String) -> CGFloat {
