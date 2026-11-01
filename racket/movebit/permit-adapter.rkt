@@ -4,18 +4,21 @@
 ;; The calling product must ship a pinned Permit runtime and an authenticated,
 ;; application-owned PUBLIC trust store before enabling Pro licensing.
 ;;
-;; A downloaded checkout result, raw claims or a user-writable trust store
-;; must NEVER count as proof of rights. The private issuer key belongs only
-;; in Commerce's isolated signing environment.
+;; Checkout redirects, client-provided payment state, unverified claims, and
+;; user-selected trust stores are NEVER authorization evidence. Issuer private
+;; keys stay in the isolated Commerce signing service.
+;;
+;; This module is not imported by backend.rkt until the product has a
+;; reviewed Pro feature policy and cross-host acceptance.
 
 (require "commercial-policy.rkt")
 
 (provide permit-feature-available?
          permit-feature-available/from-file?)
 
-;; Dynamic imports keep raco test racket/ and the Free host build independent
-;; of Permit until a product explicitly opts into commercial authorization.
-;; A missing/unsupported crypto runtime or package always denies paid access.
+;; Keep free builds free from a mandatory Permit package dependency.
+;; Loading Permit or its native Ed25519 runtime may fail: paid rights then
+;; fail closed without disabling reminders, existing history, or recovery.
 (define (permit-client-api)
   (values (dynamic-require 'permit 'verified-credential?)
           (dynamic-require 'permit 'edition-entitled?)
@@ -23,7 +26,15 @@
           (dynamic-require 'permit 'verify-credential)
           (dynamic-require 'permit 'trust-store?)))
 
-(define (permit-feature-available? feature credential)
+;; Caller context matters: a verified signature alone is insufficient when
+;; Permit rights constrain product version, installation, or activation.
+;; Omitted context cannot satisfy a constraint. An activation credential must
+;; itself have been signature-verified with the application's trusted store.
+(define (permit-feature-available? feature credential
+                                   #:version [version #f]
+                                   #:installation-id [installation-id #f]
+                                   #:activation [activation #f]
+                                   #:published-at [published-at #f])
   (cond
     [(free-feature? feature) #t]
     [(not (pro-feature? feature)) #f]
@@ -32,15 +43,26 @@
        (define-values (verified? edition? feature? _verify _store?)
          (permit-client-api))
        (and (verified? credential)
-            ;; An explicit Pro edition or an explicit feature grant can
-            ;; authorize one of the independently reviewed Pro feature IDs.
-            ;; Permit evaluates validity, expiry, product and constraints.
-            (or (edition? credential movebit-product-id "pro")
+            (or (edition? credential movebit-product-id "pro"
+                          #:version version
+                          #:installation-id installation-id
+                          #:activation activation)
                 (feature? credential movebit-product-id
-                          (symbol->string feature)))
+                          (symbol->string feature)
+                          #:published-at published-at
+                          #:version version
+                          #:installation-id installation-id
+                          #:activation activation))
             #t))]))
 
-(define (permit-feature-available/from-file? feature credential-source trusted-store)
+;; A single persisted-license entrypoint: verify exact signed payload bytes
+;; against an application-owned public trust store before policy evaluation.
+;; This interface deliberately does not load trust roots from a user path.
+(define (permit-feature-available/from-file? feature credential-source trusted-store
+                                             #:version [version #f]
+                                             #:installation-id [installation-id #f]
+                                             #:activation [activation #f]
+                                             #:published-at [published-at #f])
   (cond
     [(free-feature? feature) #t]
     [(not (pro-feature? feature)) #f]
@@ -49,8 +71,10 @@
        (define-values (_verified _edition _feature verify store?)
          (permit-client-api))
        (and (store? trusted-store)
-            ;; This is the only supported persisted-license path: signature
-            ;; and trust verification BEFORE policy evaluation.
             (permit-feature-available?
              feature
-             (verify credential-source trusted-store))))]))
+             (verify credential-source trusted-store)
+             #:version version
+             #:installation-id installation-id
+             #:activation activation
+             #:published-at published-at)))]))
