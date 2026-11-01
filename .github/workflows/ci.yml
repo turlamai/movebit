@@ -43,6 +43,16 @@ jobs:
 
       - name: Domain core tests
         run: raco test racket/
+      # Permit is optional: ordinary Free/core and host builds have no
+      # commercial dependency. Only this Linux contract step installs it.
+      - name: Real signed Permit integration contract (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          raco pkg install --auto --no-docs --name permit \
+            'https://github.com/turlamai/permit.git#df47436013c5e3929c58dd809a97db77b2cfd423'
+          raco test integration-tests/permit-adapter-test.rkt
   # The Linux host needs an embeddable static libracketcs, which the standard
   # Racket installers do not ship; rivet's own composite action builds and
   # caches it (docs/ci.md — product workflows should not copy the recipe).
