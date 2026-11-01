@@ -59,7 +59,7 @@
   (check-true (upd:movebit-update-configured?))
   (check-equal? upd:update-key-id "movebit-2026-10")
   (check-equal? upd:default-update-base-url
-                "https://github.com/turinglambdaai/movebit/releases/latest/download"))
+                "https://github.com/turlamai/movebit/releases/latest/download"))
 
 ;; ---- AppImage sibling-asset derivation ----------------------------------------
 
