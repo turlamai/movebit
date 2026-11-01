@@ -43,7 +43,7 @@
    language                  ; "auto" | "zh" | "en"
    companion-size            ; "S" | "M" | "L" — Mubi BODY height 60/78/104
    companion-motion          ; "still" | "subtle" | "lively"
-   companion-dock            ; "bottom-right" | "bottom-left" | "top-right"
+   companion-dock            ; "bottom-right" | "bottom-left" | "top-right" | "top-left"
    companion-labels)         ; "always" | "cue"
   #:transparent)
 
@@ -62,7 +62,7 @@
 
 (define companion-size-choices '("S" "M" "L"))
 (define companion-motion-choices '("still" "subtle" "lively"))
-(define companion-dock-choices '("bottom-right" "bottom-left" "top-right"))
+(define companion-dock-choices '("bottom-right" "bottom-left" "top-right" "top-left"))
 (define companion-labels-choices '("always" "cue"))
 
 (define (bool-field c accessor)
