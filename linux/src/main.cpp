@@ -2491,14 +2491,20 @@ void present(int state, std::string const& message, GtkApplication* app,
 
   // The label reads ~5 s, then the card returns to its calm pose. The cue
   // itself stays open in the backend ledger (#56: label fade is not Done).
-  s.mubi_expire_id = g_timeout_add(
-      5000,
+  // An idle/focus character with no transient message needs NO timer.
+  // Previously this callback rescheduled itself every five seconds forever.
+  // Keep a short, self-ending 1.6s acknowledgment flourish; real due cues
+  // continue to use their own bounded timeout and never imply "Done".
+  if (!message.empty() || state == 4) {
+    s.mubi_expire_id = g_timeout_add(
+      (state == 4 ? 1600 : 5000),
       +[](gpointer) -> int {
         g_state.mubi_expire_id = 0;
         present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
         return G_SOURCE_REMOVE;
       },
       nullptr);
+  }
 }
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
