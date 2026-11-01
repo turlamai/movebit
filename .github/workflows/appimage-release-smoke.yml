@@ -6,6 +6,7 @@ on:
       - '.github/workflows/appimage-release-smoke.yml'
       - '.github/workflows/release.yml'
       - 'scripts/acceptance/check-appimage-package.sh'
+      - 'racket/tests/appimage-release-acceptance.rkt'
       - 'scripts/make-update-manifest.sh'
       - 'scripts/check-signed-appimage-feed.py'
       - 'racket/movebit/update.rkt'
@@ -56,3 +57,11 @@ jobs:
         run: xvfb-run -a raco rivet release --development --without-updates
       - name: Validate AppImage ELF, runtime and extracted filesystem
         run: bash scripts/acceptance/check-appimage-package.sh '${{ matrix.arch }}'
+      - name: Run signed real-AppImage in-place update and backup acceptance
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          shopt -s nullglob
+          images=(dist/movebit-*-linux-*.AppImage)
+          test "${#images[@]}" -eq 1
+          racket racket/tests/appimage-release-acceptance.rkt "${images[0]}"
