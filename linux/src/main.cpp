@@ -150,6 +150,7 @@ struct AppState {
   GtkButton* pause_button{nullptr};
   GtkButton* quit_button{nullptr};
   GtkButton* focus_button{nullptr};
+  GtkButton* move_button{nullptr};  // tray-less desktop fallback
   GtkBox* content_root{nullptr};  // cleared + rebuilt on language change
 
   std::unique_ptr<rivet::linux_runtime::Backend> backend;
@@ -839,6 +840,10 @@ void refresh_focus_button() {
 void refresh_header_buttons() {
   refresh_pause_button();
   refresh_focus_button();
+  if (g_state.move_button != nullptr) {
+    gtk_button_set_label(g_state.move_button, l10n::t("tray.moveAside").c_str());
+    gtk_widget_set_sensitive(GTK_WIDGET(g_state.move_button), g_state.mubi_x11);
+  }
   refresh_quit_button();
 }
 
@@ -1011,6 +1016,7 @@ void reload_history();
 // run before the companion window exists (the pose call no-ops there).
 namespace mubi {
 void set_quiet(bool enabled);
+void move_aside();
 }
 
 void on_pause_clicked(GtkButton*, gpointer) {
@@ -1035,6 +1041,10 @@ void on_quit_clicked(GtkButton*, gpointer) {
 // Focus (presentation silence): the backend queues cues and returns one
 // bounded summary; the character settles into its quiet pose. The pose
 // update is local so the toggle works even while the backend is down (#54).
+void on_move_clicked(GtkButton*, gpointer) {
+  if (g_state.mubi_x11) mubi::move_aside();
+}
+
 void on_focus_clicked(GtkButton*, gpointer) {
   auto const next = !g_state.model.quiet;
   g_state.model.quiet = next;
@@ -2492,6 +2502,17 @@ void present(int state, std::string const& message, GtkApplication* app,
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
 
+// Cycle a local, temporary corner to get out of the user's way.
+// Do not update persisted settings or the Racket reminder ledger.
+void move_aside() {
+  if (!g_state.mubi_x11) return;
+  if (g_state.mubi_dock == "bottom-right") g_state.mubi_dock = "bottom-left";
+  else if (g_state.mubi_dock == "bottom-left") g_state.mubi_dock = "top-left";
+  else if (g_state.mubi_dock == "top-left") g_state.mubi_dock = "top-right";
+  else g_state.mubi_dock = "bottom-right";
+  show_idle();
+}
+
 void show_ack() {
   if (!g_state.mubi_quiet) present(4, "", nullptr);
 }
@@ -2669,6 +2690,10 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
     }));
   }
   items.push_back(TrayMenuItem(TrayMenuItem::Type::separator));
+  if (g_state.mubi_x11) {
+    items.push_back(menu_item(l10n::t("tray.moveAside"),
+                              [] { mubi::move_aside(); }));
+  }
   items.push_back(menu_item(l10n::t(g_state.model.is_paused() ? "tray.resume"
                                                               : "tray.pause"),
                             [] { on_pause_clicked(nullptr, nullptr); }));
@@ -3584,6 +3609,7 @@ int on_backend_finished(gpointer user_data) {
              (session && std::string(session) == "wayland");
     }();
     g_state.mubi_x11 = !on_wayland;
+    refresh_header_buttons();
     (void)g_state.api->set_host_capability_async(!on_wayland, false,
                                                  [](rivet_app::Result<void>) {});
   }
@@ -3683,6 +3709,12 @@ void on_activate(GtkApplication* app, gpointer) {
     g_signal_connect(focus, "clicked", G_CALLBACK(on_focus_clicked), nullptr);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), focus);
     g_state.focus_button = GTK_BUTTON(focus);
+    // On desktops without an SNI watcher, quick actions live here instead.
+    auto* move = gtk_button_new_with_label(l10n::t("tray.moveAside").c_str());
+    gtk_widget_set_sensitive(move, FALSE); // enabled on X11 capability report
+    g_signal_connect(move, "clicked", G_CALLBACK(on_move_clicked), nullptr);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), move);
+    g_state.move_button = GTK_BUTTON(move);
     auto* quit = gtk_button_new_with_label(l10n::t("tray.exit").c_str());
     g_signal_connect(quit, "clicked", G_CALLBACK(on_quit_clicked), nullptr);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), quit);
