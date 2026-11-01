@@ -97,6 +97,23 @@
                  'advanced-work-insights device-bound test-store))
    (check-false (permit-feature-available/from-file?
                  'advanced-work-insights version-bound test-store))
+   ;; Correct product context authorizes a valid bound entitlement. A
+   ;; different device or an older version cannot substitute.
+   (check-true (permit-feature-available/from-file?
+                'advanced-work-insights device-bound test-store
+                #:installation-id "different-installation"))
+   (check-false (permit-feature-available/from-file?
+                 'advanced-work-insights device-bound test-store
+                 #:installation-id "wrong-installation"))
+   (check-true (permit-feature-available/from-file?
+                'advanced-work-insights version-bound test-store
+                #:version "1.1.0"))
+   (check-false (permit-feature-available/from-file?
+                 'advanced-work-insights version-bound test-store
+                 #:version "0.0.3"))
+   (check-false (permit-feature-available/from-file?
+                 'advanced-work-insights version-bound test-store
+                 #:version "invalid-version"))
    (check-false (permit-feature-available/from-file?
                  'advanced-work-insights (build-path dir "missing.json")
                  test-store))
