@@ -106,12 +106,12 @@ inline double read_number(char const*& it, char const* end) {
 inline Gdiplus::PointF read_point(char const*& it, char const* end) {
   double const x = read_number(it, end);
   double const y = read_number(it, end);
-  return Gdiplus::PointF(static_cast<REAL>(x), static_cast<REAL>(y));
+  return Gdiplus::PointF(static_cast<float>(x), static_cast<float>(y));
 }
 
 // Builds a closed/ open GDI+ path from a canonical M path string.
-inline Gdiplus::GraphicsPath parse_path(char const* d, bool closed) {
-  Gdiplus::GraphicsPath path;
+inline void parse_path(char const* d, bool closed,
+                       Gdiplus::GraphicsPath& path) {
   Gdiplus::PointF current(0, 0);
   char const* it = d;
   char const* end = d + std::strlen(d);
@@ -138,7 +138,6 @@ inline Gdiplus::GraphicsPath parse_path(char const* d, bool closed) {
     }
   }
   if (closed) path.CloseFigure();
-  return path;
 }
 
 inline Gdiplus::Color argb(BYTE a, char const* hex) {
@@ -341,17 +340,17 @@ struct MubiCompanion {
       // Design grid 120x140 centered in the surface, scaled.
       double const grid_w = 120.0 * s * dp;
       double const grid_h = 140.0 * s * dp;
-      REAL const ox = static_cast<REAL>((size.cx - grid_w) / 2.0);
-      REAL const oy = static_cast<REAL>((size.cy - grid_h) / 2.0);
+      float const ox = static_cast<float>((size.cx - grid_w) / 2.0);
+      float const oy = static_cast<float>((size.cy - grid_h) / 2.0);
       graphics.TranslateTransform(ox, oy);
-      graphics.ScaleTransform(static_cast<REAL>(s * dp),
-                              static_cast<REAL>(s * dp));
+      graphics.ScaleTransform(static_cast<float>(s * dp),
+                              static_cast<float>(s * dp));
       // Everything below paints in the 120x140 canonical grid.
 
       // Stand stretches the body upward from the docked bottom edge.
       if (state == MubiState::Stand) {
         graphics.TranslateTransform(0, 124);
-        graphics.ScaleTransform(1.0f, static_cast<REAL>(1.0 + 0.06 *
+        graphics.ScaleTransform(1.0f, static_cast<float>(1.0 + 0.06 *
                                                           anim_progress));
         graphics.TranslateTransform(0, -124);
       }
@@ -374,27 +373,32 @@ struct MubiCompanion {
 
       // Fins.
       {
-        Gdiplus::GraphicsPath fin = parse_path(
+        Gdiplus::GraphicsPath fin;
+        parse_path(
             "M 52 24 C 47 13, 40 7, 32 6 C 30 14, 36 23, 45 27 "
-            "C 48 28.2, 51 26.5, 52 24 Z", true);
+            "C 48 28.2, 51 26.5, 52 24 Z", true, fin);
         Gdiplus::SolidBrush brush(argb(255, fin_hex));
         graphics.FillPath(&brush, &fin);
-        Gdiplus::GraphicsPath fin2 = parse_path(
+        Gdiplus::GraphicsPath fin2;
+        parse_path(
             "M 74 23 C 71 14, 66.5 8, 60.5 6 C 58.5 13, 62.5 21.5, 70 25 "
-            "C 72.3 25.9, 73.8 25, 74 23 Z", true);
+            "C 72.3 25.9, 73.8 25, 74 23 Z", true, fin2);
         graphics.FillPath(&brush, &fin2);
-        Gdiplus::GraphicsPath shade = parse_path(
+        Gdiplus::GraphicsPath shade;
+        parse_path(
             "M 48 22 C 44.5 15.5, 39.5 10.5, 34.5 8.5 "
-            "C 33.5 13.5, 38 20.5, 45 24.5 Z", true);
+            "C 33.5 13.5, 38 20.5, 45 24.5 Z", true, shade);
         Gdiplus::SolidBrush shade_brush(argb(90, "#D8C8B5"));
         graphics.FillPath(&shade_brush, &shade);
       }
 
       // Body with the volume gradient (tokens: body.light -> body -> deep).
       {
-        Gdiplus::GraphicsPath body = parse_path(
+        Gdiplus::GraphicsPath body;
+        parse_path(
             "M 58 16 C 82 18, 106 46, 109 82 C 111 104, 92 124, 60 124 "
-            "C 33 124, 12.5 106, 11 84 C 9.5 52, 34 14, 58 16 Z", true);
+            "C 33 124, 12.5 106, 11 84 C 9.5 52, 34 14, 58 16 Z", true,
+            body);
         Gdiplus::LinearGradientBrush brush(
             Gdiplus::PointF(20, 14), Gdiplus::PointF(95, 124),
             argb(255, body_light), argb(255, body_deep));
@@ -407,9 +411,11 @@ struct MubiCompanion {
 
       // Lower form shade.
       {
-        Gdiplus::GraphicsPath lower = parse_path(
+        Gdiplus::GraphicsPath lower;
+        parse_path(
             "M 16 96 C 24 118, 42 126, 60 126 C 80 126, 98 116, 105 94 "
-            "C 100 116, 84 128, 60 128 C 38 128, 20 114, 16 96 Z", true);
+            "C 100 116, 84 128, 60 128 C 38 128, 20 114, 16 96 Z", true,
+            lower);
         Gdiplus::LinearGradientBrush brush(
             Gdiplus::PointF(0, 94), Gdiplus::PointF(0, 128),
             argb(0, shadow_hex), argb(140, shadow_hex));
@@ -419,11 +425,12 @@ struct MubiCompanion {
       // Face at the frozen placement; state decides open/closed/props.
       auto eye = [&](double cx, double cy) {
         graphics.FillEllipse(&Gdiplus::SolidBrush(argb(255, ink_hex)),
-                             static_cast<REAL>(cx - 3), static_cast<REAL>(cy - 3.6),
+                             static_cast<float>(cx - 3), static_cast<float>(cy - 3.6),
                              6.0f, 7.2f);
       };
       auto closed_arc = [&](char const* d) {
-        Gdiplus::GraphicsPath arc = parse_path(d, false);
+        Gdiplus::GraphicsPath arc;
+        parse_path(d, false, arc);
         Gdiplus::Pen pen(argb(255, ink_hex), 2.2f);
         pen.SetStartCap(Gdiplus::LineCapRound);
         pen.SetEndCap(Gdiplus::LineCapRound);
@@ -442,16 +449,18 @@ struct MubiCompanion {
 
       // Per-state props (one expressive gesture per cue, #56 §4).
       if (state == MubiState::Water) {
-        graphics.TranslateTransform(97, static_cast<REAL>(51 -
+        graphics.TranslateTransform(97, static_cast<float>(51 -
                                                          12 * anim_progress));
         graphics.RotateTransform(-10);
         graphics.ScaleTransform(0.9f, 0.9f);
-        Gdiplus::GraphicsPath cup = parse_path(
+        Gdiplus::GraphicsPath cup;
+        parse_path(
             "M -7 -9 L 7 -9 L 5.4 9 C 5.2 10.6, 4 11.5, 2.4 11.5 "
-            "L -2.4 11.5 C -4 11.5, -5.2 10.6, -5.4 9 Z", true);
+            "L -2.4 11.5 C -4 11.5, -5.2 10.6, -5.4 9 Z", true, cup);
         graphics.FillPath(&Gdiplus::SolidBrush(argb(255, "#62B6FF")), &cup);
-        Gdiplus::GraphicsPath water = parse_path(
-            "M -4.6 -6.5 L 4.4 -6.5 L 3.6 1.5 L -4 1.5 Z", true);
+        Gdiplus::GraphicsPath water;
+        parse_path(
+            "M -4.6 -6.5 L 4.4 -6.5 L 3.6 1.5 L -4 1.5 Z", true, water);
         graphics.FillPath(&Gdiplus::SolidBrush(argb(217, "#8FCBFF")),
                           &water);
       } else if (state == MubiState::Stand) {
@@ -459,27 +468,28 @@ struct MubiCompanion {
         Gdiplus::Pen pen(argb(a, "#FF8C6B"), 3.0f);
         pen.SetStartCap(Gdiplus::LineCapRound);
         pen.SetEndCap(Gdiplus::LineCapRound);
-        Gdiplus::GraphicsPath left = parse_path(
-            "M 42 11 C 47 4, 53 2, 58 4", false);
+        Gdiplus::GraphicsPath left;
+        parse_path("M 42 11 C 47 4, 53 2, 58 4", false, left);
         graphics.DrawPath(&pen, &left);
         Gdiplus::Pen pen2(argb(static_cast<BYTE>(a * 0.65), "#FF8C6B"),
                           3.0f);
         pen2.SetStartCap(Gdiplus::LineCapRound);
         pen2.SetEndCap(Gdiplus::LineCapRound);
-        Gdiplus::GraphicsPath right = parse_path(
-            "M 78 11 C 73 4, 67 2, 62 4", false);
+        Gdiplus::GraphicsPath right;
+        parse_path("M 78 11 C 73 4, 67 2, 62 4", false, right);
         graphics.DrawPath(&pen2, &right);
       } else if (state == MubiState::Eyes) {
         Gdiplus::Pen pen(argb(255, "#65C8B8"), 3.0f);
         pen.SetStartCap(Gdiplus::LineCapRound);
         pen.SetEndCap(Gdiplus::LineCapRound);
-        Gdiplus::GraphicsPath arc = parse_path(
-            "M 92 38 C 96.5 40.5, 99 45, 98 50", false);
+        Gdiplus::GraphicsPath arc;
+        parse_path("M 92 38 C 96.5 40.5, 99 45, 98 50", false, arc);
         graphics.DrawPath(&pen, &arc);
       } else if (state == MubiState::Ack) {
-        Gdiplus::GraphicsPath glint = parse_path(
+        Gdiplus::GraphicsPath glint;
+        parse_path(
             "M 84 56 L 86 60.5 L 90.5 62 L 86 63.5 L 84 68 L 82 63.5 "
-            "L 77.5 62 L 82 60.5 Z", true);
+            "L 77.5 62 L 82 60.5 Z", true, glint);
         BYTE a = static_cast<BYTE>((0.4 + 0.6 * anim_progress) * 255);
         graphics.FillPath(&Gdiplus::SolidBrush(argb(a, "#F2C96B")),
                           &glint);
@@ -496,17 +506,17 @@ struct MubiCompanion {
       bool const show_label = labels_always || !message.empty();
       if (show_label) {
         std::wstring const text = message.empty() ? L"MoveBit" : message;
-        REAL const pill_w = 120.0f * s * dp;
-        REAL const pill_h = 30.0f * dp;
-        REAL const px = (static_cast<REAL>(size.cx) - pill_w) / 2.0f;
-        REAL const py = static_cast<REAL>(size.cy) - pill_h - 4.0f * dp;
+        float const pill_w = 120.0f * s * dp;
+        float const pill_h = 30.0f * dp;
+        float const px = (static_cast<float>(size.cx) - pill_w) / 2.0f;
+        float const py = static_cast<float>(size.cy) - pill_h - 4.0f * dp;
         Gdiplus::SolidBrush pill(dark ? argb(230, "#33302B")
                                       : argb(235, "#FFFDFB"));
         graphics.FillRoundedRectangle(
             &pill, px, py, pill_w, pill_h, 10.0f * dp);
         Gdiplus::FontFamily family(IsCjkText(text) ? L"Microsoft YaHei UI"
                                                    : L"Segoe UI");
-        Gdiplus::Font font(&family, static_cast<REAL>(12 * dp),
+        Gdiplus::Font font(&family, static_cast<float>(12 * dp),
                            Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
         Gdiplus::SolidBrush text_brush(dark ? argb(255, "#F1EEE7")
                                             : argb(255, "#2D2A28"));
