@@ -133,5 +133,5 @@
     (putenv "APPIMAGE" (or old-appimage ""))
     (kill-thread server)
     (tcp-close listener)
-    (delete-directory/files scratch))))))
+    (delete-directory/files scratch)))))))
 (unless (zero? failures) (exit 1))
