@@ -314,7 +314,7 @@ struct MubiCompanion {
     double const s = body_height / 108.0;
     UINT dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
-    SIZE const size = pixel_size();
+    SIZE size = pixel_size();
 
     HDC screen = ::GetDC(nullptr);
     BITMAPINFO bi{};
