@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <cmath>
 #include <string>
 #include <utility>
 #include <vector>
@@ -176,6 +177,14 @@ struct MubiCompanion {
   HWND hwnd = nullptr;
   Microsoft::UI::Dispatching::DispatcherQueueTimer anim_timer{nullptr};
   Microsoft::UI::Dispatching::DispatcherQueueTimer label_timer{nullptr};
+  Microsoft::UI::Dispatching::DispatcherQueueTimer visit_timer{nullptr};
+  // One finite health reminder visit; no background screen roaming.
+  enum class VisitPhase { None, Approaching, Holding, Returning };
+  VisitPhase visit_phase = VisitPhase::None;
+  POINT visit_home{};
+  POINT visit_target{};
+  POINT visit_position{};
+  int visit_step = 0;
   double anim_progress = 0.0;
   std::int64_t anim_total_ticks = 0;
   MubiState anim_state = MubiState::Idle;
@@ -188,6 +197,7 @@ struct MubiCompanion {
 
   void ApplyConfig(std::string const& size, std::string const& m,
                    std::string const& d, std::string const& labels) {
+    StopVisit();
     body_height = body_height_for(size);
     motion = m;
     dock = d;
@@ -207,6 +217,7 @@ struct MubiCompanion {
     if (acceptance_mode()) return;
     mubi_trace("show:enter");
     try {
+      StopVisit();
       EnsureWindow();
       mubi_trace("show:ensure-ok");
       anim_state = state;
@@ -214,7 +225,8 @@ struct MubiCompanion {
       Render(state, message);
       mubi_trace("show:render-ok");
       StartGesture(state);
-      StartLabelTimer(message);
+      StartVisit(state);
+      StartLabelTimer(message, state);
       mubi_trace("show:timers-ok");
     } catch (...) {
       mubi_trace("show:caught");
@@ -237,6 +249,7 @@ struct MubiCompanion {
 
   void Dismiss() {
     mubi_trace("dismiss:enter");
+    StopVisit();
     if (hwnd != nullptr) {
       ::DestroyWindow(hwnd);
       hwnd = nullptr;
@@ -248,14 +261,22 @@ struct MubiCompanion {
  private:
   std::wstring current_message;
 
+  // Only genuine health cues get the wider readable card.
+  bool IsReadableHealthCue() const {
+    return !current_message.empty() &&
+           (anim_state == MubiState::Water || anim_state == MubiState::Stand ||
+            anim_state == MubiState::Eyes);
+  }
+
   // 120x140 design grid + capsule row; scaled by the Mubi size and DPI.
   SIZE pixel_size() const {
     UINT dpi = 96;
     if (hwnd != nullptr) dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
     double const s = body_height / 108.0;
-    int const w = static_cast<int>((120.0 * s + 8.0) * dp);
-    int const h = static_cast<int>((140.0 * s + 8.0) * dp);
+    bool const due = IsReadableHealthCue();
+    int const w = static_cast<int>(((due ? 252.0 : 120.0 * s) + 8.0) * dp);
+    int const h = static_cast<int>((140.0 * s + 8.0 + (due ? 44.0 : 0.0)) * dp);
     return SIZE{w, h};
   }
 
@@ -347,7 +368,8 @@ struct MubiCompanion {
       double const grid_w = 120.0 * s * dp;
       double const grid_h = 140.0 * s * dp;
       float const ox = static_cast<float>((size.cx - grid_w) / 2.0);
-      float const oy = static_cast<float>((size.cy - grid_h) / 2.0);
+      float const oy = static_cast<float>((size.cy - grid_h) / 2.0 -
+                                           (IsReadableHealthCue() ? 22.0 * dp : 0));
       graphics.TranslateTransform(ox, oy);
       graphics.ScaleTransform(static_cast<float>(s * dp),
                               static_cast<float>(s * dp));
@@ -515,8 +537,10 @@ struct MubiCompanion {
       bool const show_label = labels_always || !message.empty();
       if (show_label) {
         std::wstring const text = message.empty() ? L"MoveBit" : message;
-        float const pill_w = 120.0f * s * dp;
-        float const pill_h = 30.0f * dp;
+        float const pill_w = (IsReadableHealthCue() ? 244.0f : 120.0f * s)
+                             * static_cast<float>(dp);
+        float const pill_h = (IsReadableHealthCue() ? 54.0f : 30.0f)
+                             * static_cast<float>(dp);
         float const px = (static_cast<float>(size.cx) - pill_w) / 2.0f;
         float const py = static_cast<float>(size.cy) - pill_h - 4.0f * dp;
         Gdiplus::SolidBrush pill(dark ? argb(230, "#33302B")
@@ -532,7 +556,8 @@ struct MubiCompanion {
         graphics.FillPath(&pill, &pill_path);
         Gdiplus::FontFamily family(IsCjkText(text) ? L"Microsoft YaHei UI"
                                                    : L"Segoe UI");
-        Gdiplus::Font font(&family, static_cast<float>(12 * dp),
+        Gdiplus::Font font(&family,
+                           static_cast<float>((IsReadableHealthCue() ? 14 : 12) * dp),
                            Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
         Gdiplus::SolidBrush text_brush(dark ? argb(255, "#F1EEE7")
                                             : argb(255, "#2D2A28"));
@@ -548,7 +573,8 @@ struct MubiCompanion {
     mubi_detail::premultiply(static_cast<BYTE*>(bits), size.cx * size.cy);
 
     // Content + dock positioning in one atomic UpdateLayeredWindow.
-    POINT dst = dock_position(size);
+    POINT dst = visit_phase == VisitPhase::None
+                    ? dock_position(size) : visit_position;
     POINT src{0, 0};
     BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
     if (!::UpdateLayeredWindow(hwnd, screen, &dst, &size, mem, &src, 0,
@@ -588,6 +614,77 @@ struct MubiCompanion {
     return false;
   }
 
+  static bool IsDueState(MubiState state) {
+    return state == MubiState::Water || state == MubiState::Stand ||
+           state == MubiState::Eyes;
+  }
+
+  void StopVisit() {
+    if (visit_timer) visit_timer.Stop();
+    visit_phase = VisitPhase::None;
+    visit_step = 0;
+  }
+
+  void StartVisit(MubiState state) {
+    // Focus, Still and short "Later" replies do not travel.
+    if (!IsDueState(state) || motion == "still" || quiet) return;
+    SIZE const size = pixel_size();
+    visit_home = dock_position(size);
+    HMONITOR const monitor = ::MonitorFromPoint(visit_home, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{sizeof(MONITORINFO)};
+    if (!::GetMonitorInfoW(monitor, &info)) return;
+    RECT const wa = info.rcWork;
+    int const margin = 16;
+    int const max_x = std::max(wa.left + margin, wa.right - size.cx - margin);
+    int const max_y = std::max(wa.top + margin, wa.bottom - size.cy - margin);
+    visit_target.x = std::clamp(wa.left + (wa.right - wa.left - size.cx) / 2,
+                                wa.left + margin, max_x);
+    visit_target.y = std::clamp(wa.top + (wa.bottom - wa.top - size.cy) / 2,
+                                wa.top + margin, max_y);
+    visit_position = visit_home;
+    visit_step = 0;
+    visit_phase = VisitPhase::Approaching;
+    if (!visit_timer) {
+      visit_timer = make_timer(std::chrono::milliseconds(40), true, [this] {
+        if (hwnd == nullptr || quiet) { StopVisit(); return; }
+        if (visit_phase != VisitPhase::Approaching &&
+            visit_phase != VisitPhase::Returning) {
+          if (visit_timer) visit_timer.Stop();
+          return;
+        }
+        bool const returning = visit_phase == VisitPhase::Returning;
+        int const steps = returning ? 12 : 18;
+        double const t = std::min(1.0,
+                                  static_cast<double>(++visit_step) / steps);
+        double const eased = t * t * (3.0 - 2.0 * t);
+        POINT const from = returning ? visit_target : visit_home;
+        POINT const to = returning ? visit_home : visit_target;
+        visit_position = POINT{
+            static_cast<LONG>(std::lround(from.x + (to.x - from.x) * eased)),
+            static_cast<LONG>(std::lround(from.y + (to.y - from.y) * eased))};
+        Render(anim_state, current_message);
+        if (t >= 1.0) {
+          visit_timer.Stop();
+          if (returning) {
+            visit_phase = VisitPhase::None;
+            ShowIdle();
+          } else {
+            visit_phase = VisitPhase::Holding;
+          }
+        }
+      });
+    }
+    visit_timer.Start();
+  }
+
+  void BeginReturn() {
+    if (visit_phase == VisitPhase::None) { ShowIdle(); return; }
+    if (visit_phase == VisitPhase::Returning) return;
+    visit_phase = VisitPhase::Returning;
+    visit_step = 0;
+    if (visit_timer) visit_timer.Start();
+  }
+
   // One expressive gesture per due moment (#56 §4); "still" stays static.
   void StartGesture(MubiState state) {
     if (anim_timer) anim_timer.Stop();
@@ -614,16 +711,22 @@ struct MubiCompanion {
     anim_timer.Start();
   }
 
-  // The label reads ~5 s, then the card returns to its calm pose (#56 §4).
-  void StartLabelTimer(std::wstring const& message) {
+  // Due cues remain legible ~9s; timeout/return never ack the cue ledger.
+  // A mere Later reply uses 5s and cannot launch a second center visit.
+  void StartLabelTimer(std::wstring const& message, MubiState state) {
     if (label_timer) label_timer.Stop();
     if (message.empty() && !labels_always) return;
     if (!label_timer) {
       label_timer = make_timer(std::chrono::milliseconds(5000), false,
                                [this] {
-                                 ShowIdle();
+                                 if (visit_phase != VisitPhase::None)
+                                   BeginReturn();
+                                 else
+                                   ShowIdle();
                                });
     }
+    label_timer.Interval(std::chrono::milliseconds(
+        IsDueState(state) ? 9000 : 5000));
     label_timer.Start();
   }
 };
