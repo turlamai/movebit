@@ -500,9 +500,12 @@ final class CompanionController: NSObject {
         guard !quiet else { return }
         present(state, message: message)
         let current = generation
+        // "Later" also uses show(state: .idle, message: ...); it must NOT
+        // trigger a second attention-grabbing center-screen visit.
+        let dueInvitation = state == .water || state == .stand || state == .eyes
         visitTask = Task { [weak self] in
             guard let self else { return }
-            await self.runVisit(generation: current)
+            await self.runVisit(generation: current, dueInvitation: dueInvitation)
         }
     }
 
@@ -544,11 +547,12 @@ final class CompanionController: NSObject {
     /// Frame-bounded animation instead of a persistent 30/60 FPS timer.
     /// The panel remains fully pointer-through and non-activating throughout.
     /// Window movement is a health-cue-only behavior, not autonomous roaming.
-    private func runVisit(generation current: Int) async {
+    private func runVisit(generation current: Int,
+                          dueInvitation: Bool) async {
         guard let panel else { return }
         let home = panel.frame.origin
         let size = panel.frame.size
-        let canTravel = motion != "still"
+        let canTravel = dueInvitation && motion != "still"
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
         // Respect the current monitor's usable area (Dock/menu bar included).
@@ -569,8 +573,10 @@ final class CompanionController: NSObject {
 
         // Visible for a bounded interval, regardless of animation setting.
         // The Racket cue ledger survives this visual timer untouched.
-        do { try await Task.sleep(nanoseconds: 9_000_000_000) }
-        catch { return }
+        do {
+            try await Task.sleep(nanoseconds: dueInvitation
+                                 ? 9_000_000_000 : 4_000_000_000)
+        } catch { return }
         guard !Task.isCancelled, generation == current, !quiet else { return }
 
         if canTravel {
