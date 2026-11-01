@@ -188,10 +188,6 @@ struct AppState {
   GtkWindow* mubi_window{nullptr};
   GtkDrawingArea* mubi_canvas{nullptr};
   GtkLabel* mubi_capsule{nullptr};
-  GtkBox* mubi_actions{nullptr};
-  GtkButton* mubi_done{nullptr};
-  GtkButton* mubi_later{nullptr};
-  GtkButton* mubi_hide{nullptr};
   std::int64_t mubi_cue_id{0};
   guint mubi_expire_id{0};
   int mubi_state = 0;  // 0 idle, 1 water, 2 stand, 3 eyes, 4 ack, 5 focus
@@ -1931,7 +1927,7 @@ void apply_global_css() {
     .sit-bar progress { background: #C25E3E; border-radius: 4px; }
     .sit-bar trough { background: #EAE6DC; border-radius: 4px; }
     .toast-bg { background: #FFFDFB; border-radius: 14px; border: 1px solid #E2DCCC; }
-    .mubi-bg { background: #FFFDFB; border-radius: 20px; border: 1px solid #E2DCCC; }
+    .mubi-bg { background: transparent; }
     .mubi-capsule { background: #FFFDFB; border-radius: 12px; }
     .mubi-capsule-text { font-size: 12px; font-weight: 600; color: #2D2A28; }
     .toast-title { font-size: 17px; font-weight: 600; color: #26241F; }
@@ -2336,11 +2332,6 @@ void present(int state, std::string const& message, GtkApplication* app,
   if (s.mubi_canvas != nullptr) {
     gtk_widget_queue_draw(GTK_WIDGET(s.mubi_canvas));
   }
-  // The action row is only clickable while a cue is on screen; idle/focus
-  // poses collapse it back to a fully pass-through card.
-  if (s.mubi_actions != nullptr) {
-    gtk_widget_set_visible(GTK_WIDGET(s.mubi_actions), cue_id != 0);
-  }
 
   if (s.mubi_expire_id != 0) {
     g_source_remove(s.mubi_expire_id);
@@ -2357,10 +2348,11 @@ void present(int state, std::string const& message, GtkApplication* app,
     gtk_window_set_title(GTK_WINDOW(window), "Mubi");
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
     s.mubi_window = GTK_WINDOW(window);
-    // Precise hit region (#54): the window itself stays pointer-through;
-    // GTK4 pick() tests can_target per widget, so the Done/Later/Hide
-    // buttons below opt back in and only accept clicks while a cue is on
-    // screen. The character and label never do.
+    // Mac-parity presence: the character floats free on the desktop — no
+    // card behind it (the opaque surface must not paint, and the
+    // compositor has to know nothing is opaque for the ARGB alpha to show
+    // through). The whole window stays pointer-through like the macOS
+    // panel; cue actions live in the tray menu on every host now.
     gtk_widget_set_can_target(window, FALSE);
 #ifdef GDK_WINDOWING_X11
     // Dock placement requires bypassing the window manager: ICCCM managed
@@ -2379,6 +2371,12 @@ void present(int state, std::string const& message, GtkApplication* app,
         surface = gtk_native_get_surface(GTK_NATIVE(window));
       }
       auto* display = gtk_widget_get_display(GTK_WIDGET(window));
+      if (surface != nullptr) {
+        // Nothing in this window is opaque — clear the opaque region so
+        // the compositor composes the character's alpha against the
+        // desktop instead of a solid surface.
+        gdk_surface_set_opaque_region(surface, nullptr);
+      }
       if (surface != nullptr && GDK_IS_X11_SURFACE(surface) &&
           GDK_IS_X11_DISPLAY(display)) {
         Display* xdisplay =
@@ -2392,11 +2390,11 @@ void present(int state, std::string const& message, GtkApplication* app,
 #pragma GCC diagnostic pop
 #endif
 
-    auto* body_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_widget_set_margin_top(body_box, 12);
-    gtk_widget_set_margin_bottom(body_box, 12);
-    gtk_widget_set_margin_start(body_box, 12);
-    gtk_widget_set_margin_end(body_box, 12);
+    auto* body_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_top(body_box, 4);
+    gtk_widget_set_margin_bottom(body_box, 4);
+    gtk_widget_set_margin_start(body_box, 4);
+    gtk_widget_set_margin_end(body_box, 4);
 
     auto* canvas = GTK_DRAWING_AREA(gtk_drawing_area_new());
     // gtk_drawing_area_set_content_size is 4.12+; a size request is the
@@ -2417,35 +2415,6 @@ void present(int state, std::string const& message, GtkApplication* app,
     box_append(GTK_BOX(body_box), capsule);
     s.mubi_capsule = GTK_LABEL(capsule);
 
-    // Cue actions (#54): completion and deferral controls are mandatory
-    // on every host, so the card carries its own row while a cue shows.
-    auto* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_halign(actions, GTK_ALIGN_CENTER);
-    auto* hide = gtk_button_new_with_label(l10n::t("notif.hide").c_str());
-    gtk_widget_add_css_class(hide, "toast-btn-muted");
-    gtk_widget_set_can_target(hide, TRUE);
-    g_signal_connect(hide, "clicked", G_CALLBACK(on_mubi_hide), nullptr);
-    box_append(GTK_BOX(actions), hide);
-    s.mubi_hide = GTK_BUTTON(hide);
-    auto* later = gtk_button_new_with_label(
-        l10n::t("notif.snooze",
-                {l10n::A(g_state.model.config.snooze_minutes)})
-            .c_str());
-    gtk_widget_add_css_class(later, "toast-btn-muted");
-    gtk_widget_set_can_target(later, TRUE);
-    g_signal_connect(later, "clicked", G_CALLBACK(on_mubi_later), nullptr);
-    box_append(GTK_BOX(actions), later);
-    s.mubi_later = GTK_BUTTON(later);
-    auto* done = gtk_button_new_with_label(l10n::t("notif.done").c_str());
-    gtk_widget_add_css_class(done, "toast-btn");
-    gtk_widget_set_can_target(done, TRUE);
-    g_signal_connect(done, "clicked", G_CALLBACK(on_mubi_done), nullptr);
-    box_append(GTK_BOX(actions), done);
-    s.mubi_done = GTK_BUTTON(done);
-    box_append(GTK_BOX(body_box), actions);
-    s.mubi_actions = GTK_BOX(actions);
-    gtk_widget_set_visible(actions, FALSE);
-
     gtk_window_set_child(GTK_WINDOW(window), body_box);
   } else {
     gtk_widget_set_size_request(GTK_WIDGET(s.mubi_canvas),
@@ -2454,14 +2423,11 @@ void present(int state, std::string const& message, GtkApplication* app,
   }
 
   refresh_label();
-  // Explicit size: the card knows its own layout (canvas + capsule area).
+  // Explicit size: the window hugs the character (canvas + capsule area
+  // while a label shows). Cue actions live in the tray menu, not here.
   bool const label_visible = s.mubi_labels_always || !s.mubi_message.empty();
-  bool const actions_visible = cue_id != 0;
   int const win_w = canvas_w;
-  // The action row is part of the card while a cue shows; budgeting for it
-  // keeps the bottom-docked card fully on screen after the resize.
-  int const win_h = canvas_h + (label_visible ? 44 : 0) +
-                    (actions_visible ? 44 : 0);
+  int const win_h = canvas_h + (label_visible ? 44 : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
   gtk_window_present(s.mubi_window);
 
