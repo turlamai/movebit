@@ -40,6 +40,20 @@
   (check-equal? (hash-ref on-disk 'SchemaVersion) config-schema-version)
   (delete-directory/files dir))
 
+;; Dock_top_left_roundtrips_through_the_existing_schema_v2
+;; The 4th corner is additive: old profiles and the file version are unchanged.
+(let* ([dir (make-temp-dir "dock-top-left")]
+       [fresh (default-config)]
+       [as-json (hash-set (config->jsexpr fresh) 'CompanionDock "top-left")])
+  (define parsed (jsexpr->config as-json))
+  (check-equal? (reminder-config-companion-dock parsed) "top-left")
+  (check-true (save-config dir parsed))
+  (check-equal? (reminder-config-companion-dock (load-config dir)) "top-left")
+  (check-equal? (hash-ref (call-with-input-file (config-path dir) read-json)
+                          'SchemaVersion)
+                config-schema-version)
+  (delete-directory/files dir))
+
 ;; TrySave_returns_false_when_config_directory_is_a_file
 (let* ([dir (make-temp-dir "cfgblk")]
        [blocked-path (build-path dir "not-a-directory")])
