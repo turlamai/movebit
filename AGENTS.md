@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## Product experience direction (owner request 2026-10-31; proposal until reviewed)
+
+The owner requests a product-led experience and commercial viability reboot: [master #86](https://github.com/turlamai/movebit/issues/86), [bilingual detailed design](docs/PRODUCT-EXPERIENCE-2026.md) / [中文版](docs/PRODUCT-EXPERIENCE-2026.zh-CN.md). Delivery issues: #87 reminder UX, #88 truthful metrics, #89 expressive Mubi, #90 onboarding/UI, #94 opt-in guided microbreaks, #91 paid value, #92 real product acceptance. Existing #51/#54/#56 remain authoritative for safety, original art and the no-interruption rule, **but earlier prohibitions on all voluntary pet interactions or subtle ambient personality are proposed to be relaxed** within the strict limits in #89. This does NOT authorize feeding, punishment, attention loops, full-screen blocking, spying or unverified claims. Do not claim design hypotheses are completed implementation.
+
+**Critical commercial decision conflict:** main's historical "free-only / no Permit" language is superseded as a planned product direction by owner decision tracked in #81 and open PR #82. #82 owns PRICING.md and PRICING.zh-CN.md; avoid overlapping edits until it is reviewed/merged. Free + Pro is a plan, **not permission to enable payment gates, collect money, demand accounts or claim paid features ship**. Permit-in-core/Commerce-server work remains gated by #81's engineering and release evidence, and existing MIT source rights stay intact.
+
+When implementing a bounded slice, check the current main/PR heads first; coordinate with active agents, avoid reverting their changes, use the shared Racket scheduler and three native hosts, record real packaged acceptance and upgrade/migration of already released 0.0.1 user data.
+
 ## Highest-priority product direction — MoveBit v1 reboot (owner approval 2026-10-26)
 
 **This repository's v0.x releases were experiments with no real users.** The owner has explicitly authorized a breaking clean-slate **first real v1**. Source of truth: [#55](https://github.com/turlamai/movebit/issues/55) (execution/old-feature retirement), [#51](https://github.com/turlamai/movebit/issues/51) (product charter), [#54](https://github.com/turlamai/movebit/issues/54) (focus and input safety). Earlier lines in old releases, docs, tests and agent notes that require preserving experimental full-screen/strict-mode UX, backward-compatible config/history, v0.x migration, or side-by-side legacy reminder paths **are superseded**. Do not rebuild legacy compatibility without a newly discovered concrete user need.

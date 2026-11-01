@@ -32,14 +32,20 @@ jobs:
       # key, and the aggregate job signs the merged feed with it. A missing
       # secret must stop the pipeline here with a readable reason, not as a
       # garbled DER failure three jobs later.
-      - name: Preflight — the update signing secret must be present
+      - name: Preflight — signing key must match the shipped updater
         env:
           KEY_B64: ${{ secrets.UPDATE_ED25519_PRIVATE_KEY_B64 }}
         run: |
+          set -euo pipefail
           if [ -z "${KEY_B64}" ]; then
-            echo "::error::UPDATE_ED25519_PRIVATE_KEY_B64 is not set — the update feed could not be signed; refusing to publish an unupdatable release"
+            echo "::error::UPDATE_ED25519_PRIVATE_KEY_B64 is missing; refusing an unsigned update feed"
             exit 1
           fi
+          umask 077
+          key_dir="$(mktemp -d)"
+          trap 'rm -rf "$key_dir"' EXIT
+          printf '%s' "$KEY_B64" | base64 -d > "$key_dir/private.der"
+          python3 scripts/check-release-update-key.py "$key_dir/private.der"
 
   macos:
     name: macOS package (${{ matrix.arch }})
@@ -335,6 +341,7 @@ jobs:
         run: |
           KEY_DER="$(mktemp -d)/update-ed25519-private.der"
           printf '%s' "$UPDATE_ED25519_PRIVATE_KEY_B64" | base64 -d > "$KEY_DER"
+          python3 scripts/check-release-update-key.py "$KEY_DER"
           bash scripts/make-update-manifest.sh "${{ github.ref_name }}" dist "$KEY_DER"
           rm -f "$KEY_DER"
       - name: Verify signed AppImage feed matches x64/arm64 bytes

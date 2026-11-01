@@ -41,6 +41,14 @@ jobs:
       - name: Run signed update and attacker-negative tests natively
         run: raco test racket/tests/update-test.rkt
 
+  release-signing-contract:
+    name: Offline Ed25519 release trust-root contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require release signing key validation and negative tests
+        run: python3 scripts/check-release-update-key.py --self-test
+
   racket-tests:
     strategy:
       fail-fast: false

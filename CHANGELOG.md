@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.0.5 (2026-11-01)
+
+The desktop-fusion slice: Mubi melts into the desktop on Windows and
+Linux exactly like the macOS panel — no card, per-pixel alpha — plus a
+round of reliability hardening found while auditing the update path.
+
+### Added
+
+- **Flatpak sandbox execution is verified in CI** (both architectures):
+  the smoke leg installs the bundle from a local file and runs it under
+  Xvfb, asserting the process is alive, the window maps, and the
+  embedded backend boots. A real-session variant was verified on the
+  GNOME 50 test machine (Onboarding, docked companion, the tray-less
+  fallback inside the sandbox).
+
+### Changed
+
+- **The companion floats free on Windows**: the WinUI card is gone —
+  the character renders through a GDI+ layered window straight from the
+  canonical path data and presents with per-pixel alpha
+  (UpdateLayeredWindow), so alpha-0 pixels are click-through and Mubi
+  sits directly on the desktop like the macOS panel.
+- **The companion floats free on Linux** too: the card was a port
+  artifact — the window now paints no background and clears its opaque
+  region, and the cue-action row left the card (the tray has carried
+  Done/Later/Hide everywhere since 0.0.4).
+- **The Linux header bar stays bare when the tray exists** (title-bar
+  parity): the Pause/Focus/Quit buttons were the no-tray fallback and
+  remain only where no StatusNotifierWatcher is present.
+
+### Fixed
+
+- **History shard writes no longer race between instances**: a second
+  launch of the same data dir shares the device id, and both writers
+  used one temp path — a concurrent rename killed the other's flush.
+  Each write now uses a unique temp; `flush-now` is best-effort end to
+  end so neither the tick loop nor shutdown can be broken by a write
+  failure. Pinned by a two-writer concurrency test.
+- **The Linux host builds warning-free again**: the deprecated
+  GtkDialog/gtk_show_uri calls migrated (GtkAlertDialog, plain modal
+  windows, GtkUriLauncher), and the GDK X11 accessors with no
+  replacement are acknowledged and locally silenced.
+
 ## 0.0.4 (2026-10-31)
 
 The presence-polish slice: the application icon becomes Mubi on every
