@@ -238,6 +238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                  handler: { [weak self] in self?.model?.dismissCue(cue.id) }))
         }
         items.append(contentsOf: [
+            .action(label: L10n.t("tray.moveAside"), identifier: "tray-mubi-move-aside",
+                    handler: { [weak self] in self?.companion?.moveAside() }),
             .action(label: model.paused.paused ? L10n.t("tray.resume") : L10n.t("tray.pause"),
                     identifier: "tray-pause",
                     handler: { [weak self] in self?.model?.togglePause() }),
