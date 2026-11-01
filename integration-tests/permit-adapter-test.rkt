@@ -5,6 +5,7 @@
 
 (require rackunit
          racket/file
+         racket/path
          json
          (prefix-in issuer: permit/issuer)
          permit
@@ -94,7 +95,7 @@
    (define envelope (call-with-input-file pro read-json))
    (call-with-output-file tampered #:exists 'truncate
      (lambda (out)
-       (write-json (hash-set envelope 'signature (make-string 88 #\\A)) out)))
+       (write-json (hash-set envelope 'signature (make-string 88 (integer->char 65))) out)))
    (check-false (permit-feature-available/from-file?
                  'advanced-work-insights tampered test-store))
 
