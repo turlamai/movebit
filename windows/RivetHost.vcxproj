@@ -76,7 +76,7 @@
       <RuntimeLibrary>$(RivetRuntimeLibrary)</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(RIVET_RACKET_INCLUDE);$(RIVET_ROOT)\runtime\include;$(RIVET_ROOT)\platform\windows\runtime;$(RIVET_ROOT)\platform\windows\system;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
-    <Link><AdditionalDependencies>$(RIVET_RACKET_IMPORT_LIB);gdiplus.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><AdditionalDependencies>$(RIVET_RACKET_IMPORT_LIB);gdiplus.lib;gdi32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
