@@ -10,7 +10,7 @@ A desktop health reminder app: water, stand-up and eye-rest cues delivered by **
 
 ## Start here
 
-Free community application under MIT; no commercial activation or subscription. Desktop previews for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time. On Linux, Mubi's companion card docks on X11 sessions — Wayland compositors don't let an app place a click-through card, so cues deliver as in-app reminder cards there.
+Current preview is free and licensed under MIT. A Free + Pro commercial edition is planned, but no paid activation, checkout or subscription is shipped or enabled yet; see [pricing policy](PRICING.md). Desktop previews for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time. On Linux, Mubi's companion card docks on X11 sessions — Wayland compositors don't let an app place a click-through card, so cues deliver as in-app reminder cards there.
 
 [Installation, first use, privacy, backup and recovery](docs/USER-GUIDE.md) · [简体中文](docs/USER-GUIDE.zh-CN.md)
 
