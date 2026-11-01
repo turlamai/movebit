@@ -8,11 +8,11 @@
 (dynamic-wind
  void
  (lambda ()
+   (define invalid (build-path root "not-a-license.json"))
    (check-equal? (local-license-status #f #:local-dir root)
                  (hasheq 'tier "free" 'status "missing"))
    (check-equal? (license-file-path #:local-dir root)
                  (build-path root "license.permit.json"))
-   (define invalid (build-path root "not-a-license.json"))
    (call-with-output-file invalid
      (lambda (out) (display "{\"paid\":true}" out)))
    (check-false (import-signed-license! invalid #f #:local-dir root))
