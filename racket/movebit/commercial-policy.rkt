@@ -11,6 +11,7 @@
 (provide movebit-product-id
          free-feature?
          pro-feature?
+         pro-feature-ids
          feature-available?
          known-feature?)
 
@@ -28,6 +29,8 @@
 
 (define (free-feature? feature)
   (and (symbol? feature) (memq feature free-features) #t))
+
+(define (pro-feature-ids) pro-features)
 
 (define (pro-feature? feature)
   (and (symbol? feature) (memq feature pro-features) #t))
