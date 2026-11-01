@@ -6,7 +6,7 @@ on:
       - '.github/workflows/appimage-release-smoke.yml'
       - '.github/workflows/release.yml'
       - 'scripts/acceptance/check-appimage-package.sh'
-      - 'racket/tests/appimage-release-acceptance.rkt'
+      - 'scripts/acceptance/appimage-live-update.rkt'
       - 'scripts/make-update-manifest.sh'
       - 'scripts/check-signed-appimage-feed.py'
       - 'racket/movebit/update.rkt'
@@ -64,4 +64,4 @@ jobs:
           shopt -s nullglob
           images=(dist/movebit-*-linux-*.AppImage)
           test "${#images[@]}" -eq 1
-          racket racket/tests/appimage-release-acceptance.rkt "${images[0]}"
+          racket scripts/acceptance/appimage-live-update.rkt "${images[0]}"
