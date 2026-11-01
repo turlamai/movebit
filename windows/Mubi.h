@@ -640,9 +640,13 @@ struct MubiCompanion {
     MONITORINFO info{sizeof(MONITORINFO)};
     if (!::GetMonitorInfoW(monitor, &info)) return;
     RECT const wa = info.rcWork;
-    int const margin = 16;
-    int const max_x = std::max(wa.left + margin, wa.right - size.cx - margin);
-    int const max_y = std::max(wa.top + margin, wa.bottom - size.cy - margin);
+    // RECT and SIZE use LONG; keep std::clamp operands the same type on
+    // MSVC (mixing LONG with int fails template argument deduction).
+    LONG const margin = 16;
+    LONG const max_x = std::max(wa.left + margin,
+                                wa.right - size.cx - margin);
+    LONG const max_y = std::max(wa.top + margin,
+                                wa.bottom - size.cy - margin);
     visit_target.x = std::clamp(wa.left + (wa.right - wa.left - size.cx) / 2,
                                 wa.left + margin, max_x);
     visit_target.y = std::clamp(wa.top + (wa.bottom - wa.top - size.cy) / 2,
