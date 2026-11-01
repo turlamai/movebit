@@ -2367,6 +2367,8 @@ void present(int state, std::string const& message, GtkApplication* app,
     // through). The whole window stays pointer-through like the macOS
     // panel; cue actions live in the tray menu on every host now.
     gtk_widget_set_can_target(window, FALSE);
+    gtk_widget_set_can_focus(window, FALSE);
+    gtk_widget_set_focusable(window, FALSE);
 #ifdef GDK_WINDOWING_X11
     // Dock placement requires bypassing the window manager: ICCCM managed
     // windows ignore client XMoveWindow under mutter, so the companion
@@ -2389,6 +2391,11 @@ void present(int state, std::string const& message, GtkApplication* app,
         // the compositor composes the character's alpha against the
         // desktop instead of a solid surface.
         gdk_surface_set_opaque_region(surface, nullptr);
+        // GTK can-target is not native X11 click-through. Use an empty
+        // input shape so clicks and selections reach background applications.
+        cairo_region_t* empty_input = cairo_region_create();
+        gdk_surface_set_input_region(surface, empty_input);
+        cairo_region_destroy(empty_input);
       }
       if (surface != nullptr && GDK_IS_X11_SURFACE(surface) &&
           GDK_IS_X11_DISPLAY(display)) {
@@ -2442,7 +2449,8 @@ void present(int state, std::string const& message, GtkApplication* app,
   int const win_w = canvas_w;
   int const win_h = canvas_h + (label_visible ? 44 : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
-  gtk_window_present(s.mubi_window);
+  // Do not request window-manager keyboard focus for a floating pet.
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
 
   // Dock inside the monitor work area. GTK4 has no gtk_window_move; on
   // X11 position through Xlib against the monitor's work area. Same story
@@ -3608,9 +3616,11 @@ int on_backend_finished(gpointer user_data) {
       return (wayland && *wayland) ||
              (session && std::string(session) == "wayland");
     }();
-    g_state.mubi_x11 = !on_wayland;
+    auto* display = gdk_display_get_default();
+    g_state.mubi_x11 = !on_wayland && display != nullptr &&
+                       gdk_display_supports_input_shapes(display);
     refresh_header_buttons();
-    (void)g_state.api->set_host_capability_async(!on_wayland, false,
+    (void)g_state.api->set_host_capability_async(g_state.mubi_x11, false,
                                                  [](rivet_app::Result<void>) {});
   }
   (void)g_state.api->initialize_async(chain);
