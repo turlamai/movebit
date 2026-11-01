@@ -543,7 +543,7 @@ struct MubiCompanion {
 
     // Content + dock positioning in one atomic UpdateLayeredWindow.
     POINT dst = dock_position(size);
-    POINT const src{0, 0};
+    POINT src{0, 0};
     BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
     if (!::UpdateLayeredWindow(hwnd, screen, &dst, &size, mem, &src, 0,
                                &blend, ULW_ALPHA)) {
