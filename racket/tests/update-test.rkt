@@ -284,10 +284,11 @@
                      "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
                      (list artifact)))
   (define wrapped (open-output-bytes))
-  (write-signed-manifest manifest priv "movebit-test" wrapped)
   (define verified
-    (verify-signed-manifest (open-input-bytes (get-output-bytes wrapped))
-                            pub #:key-id "movebit-test"))
+    (begin
+      (write-signed-manifest manifest priv "movebit-test" wrapped)
+      (verify-signed-manifest (open-input-bytes (get-output-bytes wrapped))
+                              pub #:key-id "movebit-test")))
   (define (config platform version)
     (apply updater-config "site.jrtx.movebit" version 'stable
            platform (upd:architecture-symbol) pub "movebit-test" 0
@@ -323,8 +324,6 @@
     (define image-dir (make-temporary-file "movebit-appimage-~a" 'directory))
     (define image-path (build-path image-dir "movebit.AppImage"))
     (define original (make-bytes 16 3))
-    (call-with-output-file image-path #:exists 'truncate
-      (lambda (out) (write-bytes original out)))
     (define old-appimage (getenv "APPIMAGE"))
     (define (candidate suffix sha size)
       (define artifact
@@ -336,6 +335,8 @@
                         "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
                         (list artifact))
        artifact))
+    (call-with-output-file image-path #:exists 'truncate
+      (lambda (out) (write-bytes original out)))
     (putenv "APPIMAGE" (path->string image-path))
     (dynamic-wind
       void
