@@ -197,6 +197,18 @@ struct MubiCompanion {
     }
   }
 
+  // The user can move the floating pet away with one tray action, even
+  // though the transparent surface itself must remain mouse-through.
+  // This changes only the local visual dock, not the Racket user settings
+  // or any still-pending reminder's completion state.
+  void MoveAside() {
+    if (dock == "bottom-right") dock = "bottom-left";
+    else if (dock == "bottom-left") dock = "top-left";
+    else if (dock == "top-left") dock = "top-right";
+    else dock = "bottom-right";
+    ShowIdle();
+  }
+
   void SetQuiet(bool enabled) {
     quiet = enabled;
     if (acceptance_mode()) return;
