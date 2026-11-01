@@ -231,30 +231,61 @@
   (check-equal? (length (oh-cues oh)) 1)
   (check-equal? (cue-record-kinds (oh-last-cue oh)) '(sit water micro)))
 
-;; Stale queued cues (expired during a long Focus window) are not summarized:
-;; their meaning already returned to the normal cycle. Water 20 keeps the
-;; cycle from re-firing inside the Focus window.
+;; Long meetings do NOT expire a reminder that was never shown. The core
+;; preserves its meaning for one merged invite after Focus ends, even when the
+;; original due event is older than the ordinary ten-minute visual timeout.
 (let ([oh (make-oh #:sit 300 #:water 20)])
   (orchestrator-set-quiet! (orch-harness-o oh) #t)
   (oh-step-minutes! oh 20 5)
   (check-equal? (length (oh-open oh)) 1)
-  ;; 15 minutes of Focus: the queued cue times out like any other
   (oh-step-minutes! oh 15 3)
-  (check-equal? (length (oh-open oh)) 0)
+  (check-equal? (length (oh-open oh)) 1) ; still deferred, not silently lost
   (orchestrator-set-quiet! (orch-harness-o oh) #f)
-  (check-equal? (oh-cues oh) '()))
+  (check-equal? (length (oh-cues oh)) 1)
+  (check-equal? (cue-record-kinds (oh-last-cue oh)) '(water))
+  (check-equal? (length (oh-open oh)) 1))
 
-;; A cue the host already SHOWED (reported displayed) is never re-emitted by
-;; leaving quiet — the user saw it; a summary would be a second interruption.
+;; Entering Focus while an already-displayed cue is visible removes it from
+;; presentation, rather than "taking it as seen". A late native delivered
+;; callback must not consume it while Focus is on. One new invitation on exit.
 (let ([oh (make-oh #:sit 300 #:water 10)])
   (oh-step-minutes! oh 10)
-  (check-equal? (length (oh-cues oh)) 1)
-  (orchestrator-cue-displayed!
-   (orch-harness-o oh) (cue-record-id (oh-last-cue oh)))
+  (define first (oh-last-cue oh))
+  (define id (cue-record-id first))
+  (orchestrator-cue-displayed! (orch-harness-o oh) id)
+  (check-equal? (cue-record-status
+                 (orchestrator-find-cue (orch-harness-o oh) id))
+                'displayed)
   (orchestrator-set-quiet! (orch-harness-o oh) #t)
-  (check-equal? (length (oh-open oh)) 1)
+  (check-equal? (cue-record-status
+                 (orchestrator-find-cue (orch-harness-o oh) id))
+                'pending)
+  (orchestrator-cue-displayed! (orch-harness-o oh) id) ; late host callback
+  (check-equal? (cue-record-status
+                 (orchestrator-find-cue (orch-harness-o oh) id))
+                'pending)
   (orchestrator-set-quiet! (orch-harness-o oh) #f)
-  (check-equal? (length (oh-cues oh)) 1))
+  (check-equal? (length (oh-cues oh)) 2)
+  (define summary (oh-last-cue oh))
+  (check-equal? (cue-record-kinds summary) '(water))
+  (check-equal? (cue-record-status
+                 (orchestrator-find-cue (orch-harness-o oh) id))
+                'expired)
+  (check-equal? (length (oh-open oh)) 1)
+  ;; Repeated Focus-off command does not re-emit or fabricate a new cue.
+  (orchestrator-set-quiet! (orch-harness-o oh) #f)
+  (check-equal? (length (oh-cues oh)) 2))
+
+;; Already-acknowledged reminders are settled and must NOT be replayed by
+;; Focus/resume. Hiding a cue also never implies completion.
+(let ([oh (make-oh #:sit 300 #:water 10)])
+  (oh-step-minutes! oh 10)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (orchestrator-acknowledge-cue! (orch-harness-o oh) id)
+  (orchestrator-set-quiet! (orch-harness-o oh) #t)
+  (orchestrator-set-quiet! (orch-harness-o oh) #f)
+  (check-equal? (length (oh-cues oh)) 1)
+  (check-equal? (length (oh-open oh)) 0))
 
 ;; --- host capability inputs -------------------------------------------------
 
