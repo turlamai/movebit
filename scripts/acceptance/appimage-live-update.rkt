@@ -8,6 +8,7 @@
 (require crypto
          crypto/all
          rackunit
+         rackunit/text-ui
          rivet/distribution
          racket/file
          racket/path
@@ -88,7 +89,14 @@
   (check-true (update-candidate? selected))
   selected)
 
-(dynamic-wind
+;; run-tests reports a nonzero failure count; a raw top-level rackunit
+;; check can print FAILURE but leave the process exit code at zero.
+(define failures
+  (run-tests
+   (test-suite
+    "native AppImage release upgrade"
+    (test-case "signed real-byte in-place update and rollback backup"
+     (dynamic-wind
   (lambda () (putenv "APPIMAGE" (path->string installed)))
   (lambda ()
     (define original-digest (sha256-file/hex installed))
@@ -125,4 +133,5 @@
     (putenv "APPIMAGE" (or old-appimage ""))
     (kill-thread server)
     (tcp-close listener)
-    (delete-directory/files scratch)))
+    (delete-directory/files scratch))))))
+(unless (zero? failures) (exit 1))
