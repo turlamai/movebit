@@ -206,7 +206,9 @@ struct MubiCompanion {
     else if (dock == "bottom-left") dock = "top-left";
     else if (dock == "top-left") dock = "top-right";
     else dock = "bottom-right";
-    ShowIdle();
+    // Keep the current cue/pose and its existing timeout. Relocation is not
+    // a Hide, Later or Done action and must not silently erase the notice.
+    if (hwnd != nullptr) Render(anim_state, current_message);
   }
 
   void SetQuiet(bool enabled) {
