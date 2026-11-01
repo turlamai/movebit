@@ -78,6 +78,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - name: Verify native Mubi input pass-through before expensive builds
+        run: python3 scripts/check-mubi-input-safety.py --self-test
       - name: Set up embeddable Racket CS
         uses: turlamai/rivet/.github/actions/setup-embed-racket@4383203ef30c5d1374cd26f4c3a927b46bf73484
       - name: Install GTK4 and a virtual display
