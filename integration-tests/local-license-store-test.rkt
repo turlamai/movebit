@@ -32,6 +32,8 @@
                             #:edition [edition "pro"]
                             #:revision [revision 0]
                             #:credential-id [credential-id "ci-original"]
+                            #:subject-type [subject-type "person"]
+                            #:subject-id [subject-id "ci-only"]
                             #:expires [expires 'null]
                             #:version-min [version-min 'null])
   (define payload
@@ -40,7 +42,7 @@
      #:credential-id credential-id
      #:entitlement-id "ci-lineage"
      #:revision revision
-     #:subject (issuer:subject #:type "person" #:id "ci-only")
+     #:subject (issuer:subject #:type subject-type #:id subject-id)
      #:grants (list (issuer:grant
                      #:products (list product)
                      #:edition edition))
@@ -58,6 +60,9 @@
    (define v0 (build-path root "v0.json"))
    (define v1 (build-path root "v1.json"))
    (define withdrawn (build-path root "withdrawn.json"))
+   (define other-person (build-path root "other-person.json"))
+   (define other-subject-type (build-path root "other-subject-type.json"))
+   (define other-person-withdrawn (build-path root "other-person-withdrawn.json"))
    (define oversized (build-path root "oversized.json"))
    (define wrong-product (build-path root "other.json"))
    (define expired (build-path root "expired.json"))
@@ -66,6 +71,16 @@
    (define invalid (build-path root "invalid.json"))
    (issue-test-license v0)
    (issue-test-license v1 #:revision 1 #:credential-id "ci-updated")
+   (issue-test-license other-person #:revision 2
+                       #:credential-id "ci-other-person"
+                       #:subject-id "other-person")
+   (issue-test-license other-subject-type #:revision 2
+                       #:credential-id "ci-other-subject-type"
+                       #:subject-type "organization")
+   (issue-test-license other-person-withdrawn #:revision 3
+                       #:credential-id "ci-other-person-withdrawn"
+                       #:subject-id "other-person"
+                       #:expires "2026-02-01T00:00:00Z")
    ;; Newer verified successor removes Pro entitlement (mock refund).
    (issue-test-license withdrawn #:revision 2
                        #:credential-id "ci-withdrawn"
@@ -103,6 +118,17 @@
                  (file->bytes v0))
 
    (check-true (import-signed-license! v1 trust #:local-dir machine-dir))
+   (check-equal? (file->bytes (license-file-path #:local-dir machine-dir))
+                 (file->bytes v1))
+   ;; A signature-valid higher revision is not sufficient if it belongs
+   ;; to a different subject. Neither new Pro rights nor a refund for a
+   ;; different customer may overwrite the user's existing entitlement.
+   (check-false (import-signed-license! other-person trust
+                                        #:local-dir machine-dir))
+   (check-false (import-signed-license! other-subject-type trust
+                                        #:local-dir machine-dir))
+   (check-false (import-signed-license! other-person-withdrawn trust
+                                        #:local-dir machine-dir))
    (check-equal? (file->bytes (license-file-path #:local-dir machine-dir))
                  (file->bytes v1))
    ;; Once a newer signed lineage revision has been observed locally, no
