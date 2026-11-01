@@ -1047,6 +1047,7 @@ void MainWindow::ApplyTexts() {
   TodaySitCaption().Text(winrt::to_hstring(l10n::t("today.sit")));
   TodayWaterCaption().Text(winrt::to_hstring(l10n::t("today.water")));
   TodayMicroCaption().Text(winrt::to_hstring(l10n::t("today.micro")));
+  TodayCountsNote().Text(winrt::to_hstring(l10n::t("today.countsNote")));
   InsightTitleLabel().Text(winrt::to_hstring(l10n::t("insight.title")));
   InsightCurrentTitle().Text(winrt::to_hstring(l10n::t("insight.current")));
   InsightTodayLongestTitle().Text(
