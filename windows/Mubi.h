@@ -203,7 +203,8 @@ struct MubiCompanion {
     dock = d;
     labels_always = labels == "always";
     if (hwnd != nullptr) {
-      Render(quiet ? MubiState::Focus : MubiState::Idle, L"");
+      // Reset a stale due state and its label width before redocking.
+      Show(quiet ? MubiState::Focus : MubiState::Idle, L"");
     }
   }
 
@@ -628,6 +629,11 @@ struct MubiCompanion {
   void StartVisit(MubiState state) {
     // Focus, Still and short "Later" replies do not travel.
     if (!IsDueState(state) || motion == "still" || quiet) return;
+    // Respect the native Windows accessibility preference for less animation.
+    BOOL client_animation_enabled = TRUE;
+    if (::SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0,
+                                &client_animation_enabled, 0) &&
+        !client_animation_enabled) return;
     SIZE const size = pixel_size();
     visit_home = dock_position(size);
     HMONITOR const monitor = ::MonitorFromPoint(visit_home, MONITOR_DEFAULTTONEAREST);
