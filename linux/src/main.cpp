@@ -2518,7 +2518,10 @@ void move_aside() {
   else if (g_state.mubi_dock == "bottom-left") g_state.mubi_dock = "top-left";
   else if (g_state.mubi_dock == "top-left") g_state.mubi_dock = "top-right";
   else g_state.mubi_dock = "bottom-right";
-  show_idle();
+  // Keep the same due cue and readable text when parking Mubi elsewhere.
+  // Re-presenting is visual only: no backend acknowledge/snooze/dismiss.
+  present(g_state.mubi_state, g_state.mubi_message, nullptr,
+          g_state.mubi_cue_id);
 }
 
 void show_ack() {
