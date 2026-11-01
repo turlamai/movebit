@@ -71,8 +71,8 @@
            (hasheq 'tier "pro" 'status "active")
            (hasheq 'tier "free" 'status "not-entitled")))]))
 
-;; Import only a verified, CURRENTLY usable MoveBit Pro entitlement. A failed
-;; attempt never replaces a previously valid credential. A verified revision
+;; Import a currently usable Pro right OR a newer verified withdrawal for an
+;; existing entitlement lineage. A failed attempt never replaces a credential. A verified revision
 ;; for an existing entitlement lineage must not roll back: otherwise a user
 ;; could re-import an older locally cached right after an updated withdrawal.
 ;; This only constrains what THIS installation has already observed; a device
@@ -84,33 +84,41 @@
   (with-handlers ([exn:fail? (lambda (_) #f)])
     (let* ([raw (read-credential-bytes source)]
            [candidate (verified-from-bytes raw trusted-store)]
-           [target (license-file-path #:local-dir dir)])
-      (unless (pro-allowed? candidate
-                            #:version version
-                            #:installation-id installation-id)
-        (error 'import-signed-license! "not entitled to MoveBit Pro"))
-      (when (file-exists? target)
-        ;; Recovery from a damaged stored credential is allowed. Only the
-        ;; old parse/verify step may fail open; revision mismatches MUST abort.
-        (let ([prior
-               (with-handlers ([exn:fail? (lambda (_) #f)])
-                 (let ([prior-bytes (read-credential-bytes target)])
-                   (cons prior-bytes
-                         (verified-from-bytes prior-bytes trusted-store))))])
-          (when prior
-            (let* ([old-bytes (car prior)]
-                   [old (cdr prior)]
-                   [issuer (dynamic-require 'permit 'verified-credential-issuer)]
-                   [entitlement-id
-                    (dynamic-require 'permit 'verified-credential-entitlement-id)]
-                   [revision (dynamic-require 'permit 'verified-credential-revision)])
-              (when (and (equal? (issuer old) (issuer candidate))
-                         (equal? (entitlement-id old)
-                                 (entitlement-id candidate)))
-                (when (or (< (revision candidate) (revision old))
-                          (and (= (revision candidate) (revision old))
-                               (not (bytes=? raw old-bytes))))
-                  (error 'import-signed-license! "stale or conflicting revision")))))))
+           [target (license-file-path #:local-dir dir)]
+           ;; An invalid old file may be replaced by a newly verified Pro
+           ;; credential, but a valid newer lineage must not be rolled back.
+           [prior
+            (and (file-exists? target)
+                 (with-handlers ([exn:fail? (lambda (_) #f)])
+                   (let ([old-bytes (read-credential-bytes target)])
+                     (cons old-bytes
+                           (verified-from-bytes old-bytes trusted-store)))))]
+           [issuer (dynamic-require 'permit 'verified-credential-issuer)]
+           [entitlement-id
+            (dynamic-require 'permit 'verified-credential-entitlement-id)]
+           [revision (dynamic-require 'permit 'verified-credential-revision)]
+           [same-lineage?
+            (and prior
+                 (equal? (issuer (cdr prior)) (issuer candidate))
+                 (equal? (entitlement-id (cdr prior))
+                         (entitlement-id candidate)))]
+           [newer?
+            (and same-lineage?
+                 (> (revision candidate) (revision (cdr prior))))])
+      (when same-lineage?
+        (when (or (< (revision candidate) (revision (cdr prior)))
+                  (and (= (revision candidate) (revision (cdr prior)))
+                       (not (bytes=? raw (car prior)))))
+          (error 'import-signed-license! "stale or conflicting revision")))
+      ;; A verified signed withdrawal with a NEWER revision must be accepted
+      ;; for the existing lineage even if Pro is now expired/not entitled.
+      ;; Refusing it would leave a still-usable older local credential behind.
+      (unless (or (pro-allowed? candidate
+                               #:version version
+                               #:installation-id installation-id)
+                  newer?)
+        (error 'import-signed-license!
+               "not an active MoveBit right or a newer signed withdrawal"))
       (make-directory* dir)
       (let ([temporary (make-temporary-file "movebit-license-~a" #f dir)])
         (dynamic-wind
