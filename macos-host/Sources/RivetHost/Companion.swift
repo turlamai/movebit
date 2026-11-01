@@ -166,9 +166,13 @@ struct MubiView: View {
     @State private var cupRaise = false
     @State private var nod = false
     @State private var blinking = false
+    @State private var idleGazeOffset: CGFloat = 0
 
     private var dark: Bool { scheme == .dark }
     private var motionAllowed: Bool { motion != "still" && !systemReduceMotion }
+    private var idleMotionActive: Bool { state == .idle && motionAllowed }
+    // Restart the animation task on motion level or Reduce Motion changes.
+    private var idleAnimationToken: String { idleMotionActive ? motion : "off" }
     private var scale: CGFloat { bodySize / MubiArt.bodyHeight }
     private var artSize: CGSize {
         CGSize(width: MubiArt.canvas.width * scale,
@@ -182,24 +186,49 @@ struct MubiView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(message.isEmpty ? "MoveBit" : message)
-        .onAppear {
-            cueAnimation()
-            startIdleBlink()
-        }
+        .onAppear { cueAnimation() }
         .onChange(of: state) { _ in cueAnimation() }
+        // SwiftUI cancels this task when the view disappears or the token
+        // changes; no perpetual timer or renderer wakeups while hidden/focused.
+        .task(id: idleAnimationToken) { await runIdleAnimation() }
     }
 
-    /// Rare natural blink while idle (#56 §4: 120-180 ms, mostly still).
-    /// Skipped entirely for the "still" motion level and Reduce Motion.
-    private func startIdleBlink() {
-        guard state == .idle, motionAllowed else { return }
-        Task {
-            try? await Task.sleep(nanoseconds: UInt64.random(in: 3_500_000_000...6_500_000_000))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.07)) { blinking = true }
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            withAnimation(.easeInOut(duration: 0.07)) { blinking = false }
+    /// Rare, bounded idle gestures rather than one blink on initial appear.
+    /// Sleeps between gestures (no display-link or continuous rendering), and
+    /// cancellation follows focus/quiet, Still, system Reduce Motion and
+    /// NSHostingView removal. Never schedule a health cue from decoration.
+    @MainActor
+    private func runIdleAnimation() async {
+        guard idleMotionActive else {
+            blinking = false
+            idleGazeOffset = 0
+            return
         }
+        while !Task.isCancelled {
+            let delay: ClosedRange<UInt64> = motion == "lively"
+                ? 7_000_000_000...12_000_000_000
+                : 12_000_000_000...21_000_000_000
+            do { try await Task.sleep(nanoseconds: UInt64.random(in: delay)) }
+            catch { break }
+            guard !Task.isCancelled, idleMotionActive else { break }
+
+            if Bool.random() {
+                // Short 150ms blink; don't flash or bounce in idle.
+                withAnimation(.easeInOut(duration: 0.07)) { blinking = true }
+                do { try await Task.sleep(nanoseconds: 150_000_000) }
+                catch { break }
+                withAnimation(.easeInOut(duration: 0.07)) { blinking = false }
+            } else {
+                // A single tiny sideways glance, then return to neutral.
+                let glance: CGFloat = (Bool.random() ? 1.6 : -1.6) * scale
+                withAnimation(.easeInOut(duration: 0.2)) { idleGazeOffset = glance }
+                do { try await Task.sleep(nanoseconds: 850_000_000) }
+                catch { break }
+                withAnimation(.easeInOut(duration: 0.2)) { idleGazeOffset = 0 }
+            }
+        }
+        blinking = false
+        idleGazeOffset = 0
     }
 
     private func cueAnimation() {
@@ -295,20 +324,20 @@ struct MubiView: View {
         default:
             Ellipse().fill(MubiArt.ink)
                 .frame(width: 6 * scale, height: 7.2 * scale)
-                .offset(x: (MubiArt.eyeLeft.x - 60) * scale,
+                .offset(x: (MubiArt.eyeLeft.x - 60) * scale + idleGazeOffset,
                         y: (MubiArt.eyeLeft.y - 70) * scale)
             Ellipse().fill(MubiArt.ink)
                 .frame(width: 6 * scale, height: 7.2 * scale)
-                .offset(x: (MubiArt.eyeRight.x - 60) * scale,
+                .offset(x: (MubiArt.eyeRight.x - 60) * scale + idleGazeOffset,
                         y: (MubiArt.eyeRight.y - 70) * scale)
             // Glints (upward glance in the water state).
             let gy = state == .water ? -6.8 : -6.2
             Circle().fill(Color.white.opacity(0.85))
                 .frame(width: 2 * scale, height: 2 * scale)
-                .offset(x: (MubiArt.eyeLeft.x - 60 + 1.1) * scale, y: gy * scale)
+                .offset(x: (MubiArt.eyeLeft.x - 60 + 1.1) * scale + idleGazeOffset, y: gy * scale)
             Circle().fill(Color.white.opacity(0.85))
                 .frame(width: 2 * scale, height: 2 * scale)
-                .offset(x: (MubiArt.eyeRight.x - 60 + 1.1) * scale, y: gy * scale)
+                .offset(x: (MubiArt.eyeRight.x - 60 + 1.1) * scale + idleGazeOffset, y: gy * scale)
             if state == .ack {
                 MubiShape(d: MubiArt.mouthAck)
                     .stroke(MubiArt.ink, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
