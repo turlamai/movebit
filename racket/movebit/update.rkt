@@ -408,16 +408,14 @@
 
 ;; ---------- AppImage flavor (Linux installs run from an AppImage) ----------
 ;;
-;; The feed's linux entry is the tar.gz; AppImage installs update through the
-;; sibling .AppImage release asset: same asset base with .tar.gz → .AppImage
-;; (movebit publishes AppImages under the release-contract arch spelling,
-;; x64|arm64 — identical to the feed entry, so the derivation is only the
-;; extension swap), checksummed against the published .AppImage.sha256
-;; sidecar. The Ed25519 manifest still authenticates the tar.gz entry that
-;; carried the version; the sidecar is a plain checksum over the same HTTPS
-;; origin. The download lands NEXT TO the running image (same filesystem →
-;; atomic rename) and replaces it after the sidecar verifies; the host
-;; re-execs the replaced image on user consent.
+;; The signed release feed contains a first-class per-architecture AppImage
+;; artifact with the exact byte count and SHA-256 digest. Rivet verifies both
+;; under the embedded Ed25519 public key before any replacement; mutable
+;; .AppImage.sha256 sidecars are never consulted. The verified image downloads
+;; beside the running executable (same filesystem for atomic rename), saves
+;; the previous version as .previous, and replaces it only after verification.
+;; The host may re-exec the new image on user consent; the backup remains
+;; available for recovery if the new version fails to launch.
 
 ;; $APPIMAGE (set by the AppImage runtime) is inherited by the embedded
 ;; backend — its presence IS the install shape; no config plumbing needed.
