@@ -6,8 +6,9 @@
 ;; same way the live checker does — then the REAL download paths against a
 ;; local TCP server: the manifest-verified chain into the swap chain
 ;; (chmod -> rename -> staged apply helper via prepare-install!), the
-;; AppImage sibling-asset flow with its sidecar checksum, the persistent
-;; 4-hour silent-check throttle stamp, and the failed-check contract
+;; first-class signed AppImage verification and rejection of a malicious
+;; checksum sidecar, the persistent 4-hour silent-check throttle stamp,
+;; and the failed-check contract
 ;; against an unreachable feed.
 ;;
 ;; (fetch-update-manifest itself only accepts HTTPS, so the live-feed
