@@ -551,6 +551,9 @@ final class CompanionController: NSObject {
         case "top-right":
             x = safe.maxX - size.width - clearance
             y = safe.maxY - size.height - clearance
+        case "top-left":
+            x = safe.minX + clearance
+            y = safe.maxY - size.height - clearance
         default: // bottom-right
             x = safe.maxX - size.width - clearance
             y = safe.minY + clearance
