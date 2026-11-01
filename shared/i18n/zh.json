@@ -167,6 +167,7 @@
   "tray.exit": "退出 MoveBit",
   "tray.focusOff": "关闭专注",
   "tray.focusOn": "开启专注",
+  "tray.moveAside": "挪开沐比",
   "tray.open": "设置与统计",
   "tray.pause": "暂停提醒 1 小时",
   "tray.paused": "MoveBit · {0}已暂停至 {1:HH:mm}",
