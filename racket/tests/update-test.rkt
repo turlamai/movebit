@@ -274,7 +274,7 @@
 ;; ---- AppImage: signed manifest identity, exact payload and atomic swap ----
 
 (test-case "signed AppImage entry is selected only for matching platform and version"
-  (define digest (make-string 64 #\\a))
+  (define digest (make-string 64 #\a))
   (define artifact
     (apply update-artifact 'linux (upd:architecture-symbol)
            "https://downloads.example/movebit-9.9.9-linux.AppImage"
@@ -317,7 +317,7 @@
       (serve-files!
        (list (cons (string-append "/" asset ".sha256")
                    (string->bytes/utf-8
-                    (format "~a  ~a\\n" (bytes->hex-string (sha256-bytes tampered)) asset)))
+                    (format "~a  ~a\n" (bytes->hex-string (sha256-bytes tampered)) asset)))
              (cons (string-append "/valid/" asset) payload)
              (cons (string-append "/tampered/" asset) tampered))))
     (define image-dir (make-temporary-file "movebit-appimage-~a" 'directory))
@@ -326,7 +326,6 @@
     (call-with-output-file image-path #:exists 'truncate
       (lambda (out) (write-bytes original out)))
     (define old-appimage (getenv "APPIMAGE"))
-    (putenv "APPIMAGE" (path->string image-path))
     (define (candidate suffix sha size)
       (define artifact
         (apply update-artifact 'linux (upd:architecture-symbol)
@@ -337,6 +336,7 @@
                         "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
                         (list artifact))
        artifact))
+    (putenv "APPIMAGE" (path->string image-path))
     (dynamic-wind
       void
       (lambda ()
@@ -352,10 +352,10 @@
         (check-equal? (file->bytes image-path) original)
         ;; The sidecar deliberately advertises the tampered hash. A valid
         ;; signed digest still accepts only the exact AppImage bytes.
-        (define swapped
-          (upd:download-appimage-with-progress!
-           (candidate "valid" digest (bytes-length payload))))
-        (check-equal? swapped (path->string image-path))
+        (let ([swapped
+               (upd:download-appimage-with-progress!
+                (candidate "valid" digest (bytes-length payload)))])
+          (check-equal? swapped (path->string image-path)))
         (check-equal? (sha256-file/hex image-path) digest)
         (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
         (check-equal? (length (directory-list image-dir)) 1)
