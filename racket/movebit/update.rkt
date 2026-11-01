@@ -88,7 +88,7 @@
 (define update-key-id "movebit-2026-10")
 
 (define default-update-base-url
-  "https://github.com/turinglambdaai/movebit/releases/latest/download")
+  "https://github.com/turlamai/movebit/releases/latest/download")
 
 (define maximum-download-bytes (* 512 1024 1024))
 
