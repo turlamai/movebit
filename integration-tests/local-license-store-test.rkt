@@ -57,6 +57,8 @@
  (lambda ()
    (define v0 (build-path root "v0.json"))
    (define v1 (build-path root "v1.json"))
+   (define withdrawn (build-path root "withdrawn.json"))
+   (define oversized (build-path root "oversized.json"))
    (define wrong-product (build-path root "other.json"))
    (define expired (build-path root "expired.json"))
    (define wrong-version (build-path root "version.json"))
@@ -64,6 +66,12 @@
    (define invalid (build-path root "invalid.json"))
    (issue-test-license v0)
    (issue-test-license v1 #:revision 1 #:credential-id "ci-updated")
+   ;; Newer verified successor removes Pro entitlement (mock refund).
+   (issue-test-license withdrawn #:revision 2
+                       #:credential-id "ci-withdrawn"
+                       #:expires "2026-02-01T00:00:00Z")
+   (call-with-output-file oversized
+     (lambda (out) (write-bytes (make-bytes 131073 65) out)))
    (issue-test-license wrong-product #:product "not-movebit")
    (issue-test-license expired #:expires "2026-02-01T00:00:00Z")
    (issue-test-license wrong-version #:version-min "99.0.0")
@@ -74,6 +82,7 @@
    (check-equal? (local-license-status trust #:local-dir machine-dir)
                  (hasheq 'tier "free" 'status "missing"))
    (check-false (import-signed-license! invalid trust #:local-dir machine-dir))
+   (check-false (import-signed-license! oversized trust #:local-dir machine-dir))
    (check-false (import-signed-license! wrong-product trust #:local-dir machine-dir))
    (check-false (import-signed-license! expired trust #:local-dir machine-dir))
    (check-false (import-signed-license! wrong-version trust #:local-dir machine-dir
@@ -103,6 +112,16 @@
                  (file->bytes v1))
    (check-equal? (local-license-status trust #:local-dir machine-dir)
                  (hasheq 'tier "pro" 'status "active"))
+
+   ;; A verified newer withdrawal MUST be importable even though it does
+   ;; not authorize Pro; otherwise a refunded offline right stays active.
+   (check-true (import-signed-license! withdrawn trust
+                                      #:local-dir machine-dir))
+   (check-equal? (local-license-status trust #:local-dir machine-dir)
+                 (hasheq 'tier "free" 'status "not-entitled"))
+   (check-false (import-signed-license! v1 trust #:local-dir machine-dir))
+   (check-equal? (file->bytes (license-file-path #:local-dir machine-dir))
+                 (file->bytes withdrawn))
 
    ;; A user-controlled invalid trust root cannot turn signed rights on.
    (check-equal? (local-license-status #f #:local-dir machine-dir)
