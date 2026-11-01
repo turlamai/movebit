@@ -385,6 +385,7 @@
                                     <ComboBoxItem Content="Bottom right" />
                                     <ComboBoxItem Content="Bottom left" />
                                     <ComboBoxItem Content="Top right" />
+                                    <ComboBoxItem Content="Top left" />
                                 </ComboBox>
                             </Grid>
                             <Grid ColumnSpacing="8">
