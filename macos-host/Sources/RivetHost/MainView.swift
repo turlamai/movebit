@@ -633,7 +633,8 @@ private struct SettingsCard: View {
                       selection: model.config.companion_dock,
                       options: [("bottom-right", L10n.t("mubi.dockBottomRight")),
                                 ("bottom-left", L10n.t("mubi.dockBottomLeft")),
-                                ("top-right", L10n.t("mubi.dockTopRight"))]) {
+                                ("top-right", L10n.t("mubi.dockTopRight")),
+                                ("top-left", L10n.t("mubi.dockTopLeft"))]) {
                 save(model.config.with(companion_dock: $0))
             }
             pickerRow(label: L10n.t("set.mubiLabels"),

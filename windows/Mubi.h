@@ -301,6 +301,9 @@ struct MubiCompanion {
     } else if (dock == "top-right") {
       x = wa.right - size.cx - clearance;
       y = wa.top + clearance;
+    } else if (dock == "top-left") {
+      x = wa.left + clearance;
+      y = wa.top + clearance;
     } else {  // bottom-right
       x = wa.right - size.cx - clearance;
       y = wa.bottom - size.cy - clearance;

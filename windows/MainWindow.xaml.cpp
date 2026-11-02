@@ -1322,7 +1322,8 @@ void MainWindow::RefreshSettingsWidgets() {
       : c.companion_motion == "lively" ? 2 : 1);
   MubiDockCombo().SelectedIndex(
       c.companion_dock == "bottom-left" ? 1
-      : c.companion_dock == "top-right" ? 2 : 0);
+      : c.companion_dock == "top-right" ? 2
+      : c.companion_dock == "top-left" ? 3 : 0);
   MubiLabelsCombo().SelectedIndex(c.companion_labels == "always" ? 1 : 0);
   MicroSwitch().IsOn(c.micro_break_enabled);
   SoundSwitch().IsOn(c.sound_enabled);
@@ -1629,9 +1630,10 @@ void MainWindow::MubiDock_SelectionChanged(
     winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&) {
   if (updating_settings_) return;
-  static char const* values[] = {"bottom-right", "bottom-left", "top-right"};
+  static char const* values[] = {"bottom-right", "bottom-left",
+                                 "top-right", "top-left"};
   auto const index = MubiDockCombo().SelectedIndex();
-  if (index < 0 || index > 2) return;
+  if (index < 0 || index > 3) return;
   MutateConfig([&](rivet_app::ReminderConfig& d) {
     d.companion_dock = values[index];
   });

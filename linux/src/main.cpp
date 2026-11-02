@@ -589,7 +589,7 @@ int on_motion_set(GtkSwitch*, gboolean state, gpointer) {
 static char const* const kMubiSizes[] = {"S", "M", "L"};
 static char const* const kMubiMotions[] = {"still", "subtle", "lively"};
 static char const* const kMubiDocks[] = {"bottom-right", "bottom-left",
-                                         "top-right"};
+                                         "top-right", "top-left"};
 static char const* const kMubiLabels[] = {"cue", "always"};
 static char const* const kLanguages[] = {"auto", "zh", "en"};
 
@@ -616,7 +616,7 @@ void on_mubi_motion_changed(GtkDropDown* drop, gpointer) {
 void on_mubi_dock_changed(GtkDropDown* drop, gpointer) {
   if (g_state.updating_settings) return;
   unsigned index = 0;
-  if (!dropdown_index_valid<3>(drop, index)) return;
+  if (!dropdown_index_valid<4>(drop, index)) return;
   mutate_config([&](auto& d) { d.companion_dock = kMubiDocks[index]; });
 }
 
@@ -963,7 +963,8 @@ void refresh_settings_widgets() {
                                : c.companion_motion == "lively" ? 2 : 1);
     gtk_drop_down_set_selected(mw.mubi_dock_drop,
                                c.companion_dock == "bottom-left" ? 1
-                               : c.companion_dock == "top-right" ? 2 : 0);
+                               : c.companion_dock == "top-right" ? 2
+                               : c.companion_dock == "top-left" ? 3 : 0);
     gtk_drop_down_set_selected(mw.mubi_labels_drop,
                                c.companion_labels == "always" ? 1 : 0);
     gtk_switch_set_active(mw.micro_switch, c.micro_break_enabled);
@@ -1779,12 +1780,14 @@ void build_main_content() {
     std::string const dock_br = l10n::t("mubi.dockBottomRight");
     std::string const dock_bl = l10n::t("mubi.dockBottomLeft");
     std::string const dock_tr = l10n::t("mubi.dockTopRight");
+    std::string const dock_tl = l10n::t("mubi.dockTopLeft");
     char const* dock_items[] = {dock_br.c_str(), dock_bl.c_str(),
-                                dock_tr.c_str(), nullptr};
+                                dock_tr.c_str(), dock_tl.c_str(), nullptr};
     auto* dock_drop = gtk_drop_down_new_from_strings(dock_items);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(dock_drop),
                                c.companion_dock == "bottom-left" ? 1
-                               : c.companion_dock == "top-right" ? 2 : 0);
+                               : c.companion_dock == "top-right" ? 2
+                               : c.companion_dock == "top-left" ? 3 : 0);
     g_signal_connect(dock_drop, "notify::selected",
                      G_CALLBACK(on_mubi_dock_changed), nullptr);
     box_append(GTK_BOX(mubi_dock_row), dock_drop);
@@ -2358,6 +2361,8 @@ void present(int state, std::string const& message, GtkApplication* app,
     // through). The whole window stays pointer-through like the macOS
     // panel; cue actions live in the tray menu on every host now.
     gtk_widget_set_can_target(window, FALSE);
+    gtk_widget_set_can_focus(window, FALSE);
+    gtk_widget_set_focusable(window, FALSE);
 #ifdef GDK_WINDOWING_X11
     // Dock placement requires bypassing the window manager: ICCCM managed
     // windows ignore client XMoveWindow under mutter, so the companion
@@ -2380,6 +2385,13 @@ void present(int state, std::string const& message, GtkApplication* app,
         // the compositor composes the character's alpha against the
         // desktop instead of a solid surface.
         gdk_surface_set_opaque_region(surface, nullptr);
+        // GTK can_target=FALSE only controls GTK dispatch: it does not
+        // make the X11 top-level click-through. Empty *native input region*
+        // ensures cursor clicks/selection reach the app underneath, even
+        // when a large health note visits the center of the work area.
+        cairo_region_t* empty_input = cairo_region_create();
+        gdk_surface_set_input_region(surface, empty_input);
+        cairo_region_destroy(empty_input);
       }
       if (surface != nullptr && GDK_IS_X11_SURFACE(surface) &&
           GDK_IS_X11_DISPLAY(display)) {
@@ -2433,7 +2445,9 @@ void present(int state, std::string const& message, GtkApplication* app,
   int const win_w = canvas_w;
   int const win_h = canvas_h + (label_visible ? 44 : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
-  gtk_window_present(s.mubi_window);
+  // Unlike gtk_window_present(), mapping an already-created nonfocusable
+  // X11 overlay does not request the user's keyboard focus on each cue.
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
 
   // Dock inside the monitor work area. GTK4 has no gtk_window_move; on
   // X11 position through Xlib against the monitor's work area. Same story
@@ -2466,9 +2480,10 @@ void present(int state, std::string const& message, GtkApplication* app,
               static_cast<int>(work.width * xs) - px_w - px_clear;
       int y = static_cast<int>(work.y * xs) +
               static_cast<int>(work.height * xs) - px_h - px_clear;
-      if (s.mubi_dock == "bottom-left") {
+      if (s.mubi_dock == "bottom-left" || s.mubi_dock == "top-left") {
         x = static_cast<int>(work.x * xs) + px_clear;
-      } else if (s.mubi_dock == "top-right") {
+      }
+      if (s.mubi_dock == "top-right" || s.mubi_dock == "top-left") {
         y = static_cast<int>(work.y * xs) + px_clear;
       }
       XMoveWindow(xdisplay, xid, x, y);
@@ -2480,14 +2495,20 @@ void present(int state, std::string const& message, GtkApplication* app,
 
   // The label reads ~5 s, then the card returns to its calm pose. The cue
   // itself stays open in the backend ledger (#56: label fade is not Done).
-  s.mubi_expire_id = g_timeout_add(
-      5000,
+  // An idle/focus character with no transient message needs NO timer.
+  // Previously this callback rescheduled itself every five seconds forever.
+  // Keep a short, self-ending 1.6s acknowledgment flourish; real due cues
+  // continue to use their own bounded timeout and never imply "Done".
+  if (!message.empty() || state == 4) {
+    s.mubi_expire_id = g_timeout_add(
+      (state == 4 ? 1600 : 5000),
       +[](gpointer) -> int {
         g_state.mubi_expire_id = 0;
         present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
         return G_SOURCE_REMOVE;
       },
       nullptr);
+  }
 }
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
@@ -3603,8 +3624,13 @@ int on_backend_finished(gpointer user_data) {
       return (wayland && *wayland) ||
              (session && std::string(session) == "wayland");
     }();
-    g_state.mubi_x11 = !on_wayland;
-    (void)g_state.api->set_host_capability_async(!on_wayland, false,
+    // If this X11 display cannot make an empty native input shape, do NOT
+    // put a transparent-but-click-blocking character on top of editors.
+    // Fall back to the existing nonblocking notification presentation.
+    auto* display = gdk_display_get_default();
+    g_state.mubi_x11 = !on_wayland && display != nullptr &&
+                       gdk_display_supports_input_shapes(display);
+    (void)g_state.api->set_host_capability_async(g_state.mubi_x11, false,
                                                  [](rivet_app::Result<void>) {});
   }
   (void)g_state.api->initialize_async(chain);
