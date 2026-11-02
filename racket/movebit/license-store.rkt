@@ -96,6 +96,10 @@
            [issuer (dynamic-require 'permit 'verified-credential-issuer)]
            [entitlement-id
             (dynamic-require 'permit 'verified-credential-entitlement-id)]
+           [subject-type
+            (dynamic-require 'permit 'verified-credential-subject-type)]
+           [subject-id
+            (dynamic-require 'permit 'verified-credential-subject-id)]
            [revision (dynamic-require 'permit 'verified-credential-revision)]
            [same-lineage?
             (and prior
@@ -106,6 +110,15 @@
             (and same-lineage?
                  (> (revision candidate) (revision (cdr prior))))])
       (when same-lineage?
+        ;; Even a signature-valid credential cannot silently transfer a
+        ;; previously observed entitlement lineage to another subject. This
+        ;; also constrains a newer withdrawal: otherwise another customer's
+        ;; revocation could overwrite the local holder's still-valid right.
+        (unless (and (equal? (subject-type (cdr prior))
+                             (subject-type candidate))
+                     (equal? (subject-id (cdr prior))
+                             (subject-id candidate)))
+          (error 'import-signed-license! "entitlement subject changed"))
         (when (or (< (revision candidate) (revision (cdr prior)))
                   (and (= (revision candidate) (revision (cdr prior)))
                        (not (bytes=? raw (car prior)))))
