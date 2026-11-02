@@ -411,20 +411,23 @@ struct MubiView: View {
 
     @ViewBuilder private var capsule: some View {
         if labelsAlways || !message.isEmpty {
-            HStack(spacing: 5) {
+            HStack(spacing: 7) {
                 if !capsuleIcon.isEmpty {
                     Image(systemName: capsuleIcon)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(dark ? MubiArt.labelTextDark : MubiArt.labelTextLight)
                 }
                 Text(message.isEmpty ? "MoveBit" : message)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(2)
+                    .font(.system(size: message.isEmpty ? 12 : 14, weight: .semibold))
+                    .lineLimit(message.isEmpty ? 1 : 3)
                     .multilineTextAlignment(.leading)
+                    .frame(maxWidth: 240, alignment: .leading)
                     .foregroundColor(dark ? MubiArt.labelTextDark : MubiArt.labelTextLight)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, message.isEmpty ? 12 : 16)
+            .padding(.vertical, message.isEmpty ? 6 : 10)
+            .frame(minWidth: message.isEmpty ? nil : 200,
+                   maxWidth: message.isEmpty ? nil : 280)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(dark ? MubiArt.labelSurfaceDark
@@ -445,7 +448,10 @@ final class CompanionController: NSObject {
     private var panel: NSPanel?
     private var generation = 0
     private var idleTask: Task<Void, Never>?
-    private var labelTask: Task<Void, Never>?
+    // One short approach per real due cue. Never a continuous roaming timer.
+    // Cancelling this task on Focus/Hide/Done/Snooze must stop every pending
+    // movement step and return the character to its original dock.
+    private var visitTask: Task<Void, Never>?
 
     // Presentation inputs from the v1 config; applied on bootstrap/change.
     private var bodySize: CGFloat = 78
@@ -467,6 +473,7 @@ final class CompanionController: NSObject {
     }
 
     func applyConfig(size: String, motion: String, dock: String, labels: String) {
+        cancelVisit()
         bodySize = Self.bodyHeight(for: size)
         self.motion = motion
         self.dock = dock
@@ -484,32 +491,33 @@ final class CompanionController: NSObject {
         }
     }
 
-    /// Show a due cue: state + actionable text. The bubble reads ~5 s, then
-    /// the label fades (the CUE itself stays open in the backend ledger
-    /// until a tray action or the expiry policy closes it — #56 §4).
+    /// A genuine due cue makes one friendly, non-activating visit toward the
+    /// visible work area's center. The label is readable for ~9 seconds once
+    /// there; it never silently records completion. Focus/Hide/ack/snooze
+    /// cancel the visit synchronously and return Mubi to its home dock.
     func show(state: MubiState, message: String) {
-        idleTask?.cancel()
-        labelTask?.cancel()
+        cancelVisit()
+        guard !quiet else { return }
         present(state, message: message)
         let current = generation
-        labelTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard let self, self.generation == current else { return }
-            self.present(self.quiet ? .focus : .idle, message: "")
+        // "Later" also uses show(state: .idle, message: ...); it must NOT
+        // trigger a second attention-grabbing center-screen visit.
+        let dueInvitation = state == .water || state == .stand || state == .eyes
+        visitTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runVisit(generation: current, dueInvitation: dueInvitation)
         }
     }
 
     func showIdle() {
-        idleTask?.cancel()
-        labelTask?.cancel()
+        cancelVisit()
         present(quiet ? .focus : .idle, message: "")
     }
 
     /// Brief acknowledgment flourish after a tray Done (self-reported).
     func showAck() {
         guard !quiet else { return }
-        idleTask?.cancel()
-        labelTask?.cancel()
+        cancelVisit()
         present(.ack, message: "")
         let current = generation
         Task { [weak self] in
@@ -520,15 +528,82 @@ final class CompanionController: NSObject {
     }
 
     func setQuiet(_ enabled: Bool) {
+        cancelVisit()
         quiet = enabled
         present(quiet ? .focus : .idle, message: "")
     }
 
     func hide() {
-        idleTask?.cancel()
-        labelTask?.cancel()
+        cancelVisit()
         generation += 1
         panel?.orderOut(nil)
+    }
+
+    private func cancelVisit() {
+        visitTask?.cancel()
+        visitTask = nil
+    }
+
+    /// Frame-bounded animation instead of a persistent 30/60 FPS timer.
+    /// The panel remains fully pointer-through and non-activating throughout.
+    /// Window movement is a health-cue-only behavior, not autonomous roaming.
+    private func runVisit(generation current: Int,
+                          dueInvitation: Bool) async {
+        guard let panel else { return }
+        let home = panel.frame.origin
+        let size = panel.frame.size
+        let canTravel = dueInvitation && motion != "still"
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
+        // Respect the current monitor's usable area (Dock/menu bar included).
+        // Fallback: show a static readable cue at the original dock.
+        if canTravel, let screen {
+            let safe = screen.visibleFrame
+            let clearance: CGFloat = 16
+            let maxX = max(safe.minX + clearance,
+                           safe.maxX - size.width - clearance)
+            let maxY = max(safe.minY + clearance,
+                           safe.maxY - size.height - clearance)
+            let target = NSPoint(
+                x: min(max(safe.midX - size.width / 2, safe.minX + clearance), maxX),
+                y: min(max(safe.midY - size.height / 2, safe.minY + clearance), maxY))
+            guard await travel(panel: panel, from: home, to: target,
+                               steps: 18, current: current) else { return }
+        }
+
+        // Visible for a bounded interval, regardless of animation setting.
+        // The Racket cue ledger survives this visual timer untouched.
+        do {
+            try await Task.sleep(nanoseconds: dueInvitation
+                                 ? 9_000_000_000 : 4_000_000_000)
+        } catch { return }
+        guard !Task.isCancelled, generation == current, !quiet else { return }
+
+        if canTravel {
+            guard await travel(panel: panel, from: panel.frame.origin,
+                               to: home, steps: 12, current: current) else { return }
+        }
+        guard !Task.isCancelled, generation == current, !quiet else { return }
+        present(.idle, message: "")
+    }
+
+    /// ~720ms approach and ~480ms return. Cancellation is checked for each
+    /// frame and every sleep; Focus/Hide never waits for a long animation.
+    private func travel(panel: NSPanel, from: NSPoint, to: NSPoint,
+                        steps: Int, current: Int) async -> Bool {
+        for step in 1...steps {
+            guard !Task.isCancelled, generation == current, !quiet else {
+                return false
+            }
+            let t = CGFloat(step) / CGFloat(steps)
+            let eased = t * t * (3 - 2 * t)
+            panel.setFrameOrigin(NSPoint(
+                x: from.x + (to.x - from.x) * eased,
+                y: from.y + (to.y - from.y) * eased))
+            do { try await Task.sleep(nanoseconds: 40_000_000) }
+            catch { return false }
+        }
+        return !Task.isCancelled && generation == current && !quiet
     }
 
     private func present(_ state: MubiState, message: String) {
@@ -592,6 +667,9 @@ final class CompanionController: NSObject {
 
     @objc private func screenParametersChanged(_ note: Notification) {
         guard let panel, panel.isVisible else { return }
-        relayout()
+        // A hotplug/work-area change invalidates the visit's old coordinates.
+        // Re-dock immediately; the next due cue recalculates the new bounds.
+        cancelVisit()
+        present(quiet ? .focus : .idle, message: "")
     }
 }
