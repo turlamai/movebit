@@ -131,7 +131,12 @@
               (upd:architecture-symbol))))
   (lambda ()
     (putenv "APPIMAGE" (or old-appimage ""))
-    (kill-thread server)
-    (tcp-close listener)
-    (delete-directory/files scratch)))))))
+    (void)))))))
+;; rackunit runs test cases under a dedicated custodian. The server thread was
+;; created by the outer custodian, so killing it from inside the test raises
+;; "the current custodian does not solely manage the specified thread".
+;; Clean up from the owning outer custodian after run-tests has returned.
+(kill-thread server)
+(tcp-close listener)
+(delete-directory/files scratch)
 (unless (zero? failures) (exit 1))
