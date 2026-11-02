@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Windows portable updates restore and relaunch the old installation when the OS rejects the new executable, instead of deleting the backup after an unchecked `start` command. Copy failures retain their original exit code, and failed restore operations retain the old directory for recovery. Native Windows helper fixtures exercise successful launch, copy failure and rejected executable recovery with disposable data; full GUI health and released-version upgrade qualification remain separate gates.
+
 ## 0.0.5 (2026-11-01)
 
 The desktop-fusion slice: Mubi melts into the desktop on Windows and

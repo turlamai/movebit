@@ -653,7 +653,9 @@
   (define old (string-append install ".old"))
   (string-append
    "@echo off\r\n"
+   "setlocal DisableDelayedExpansion\r\n"
    "set TRACE=%~dp0apply-update-trace.txt\r\n"
+   "set \"MOVEBIT_UPDATE_EXE=" install "\\RivetHost.exe\"\r\n"
    "cd /d \"%~dp0\"\r\n"
    "echo [%date% %time%] helper started, waiting for PID "
    (number->string pid) " > \"%TRACE%\"\r\n"
@@ -668,28 +670,47 @@
    "ren \"" install "\" \"" (install-base-name install) ".old\"\r\n"
    "if errorlevel 1 goto :renamefail\r\n"
    "echo [%time%] swapping payload >> \"%TRACE%\"\r\n"
-   "robocopy \"" staged "\" \"" install "\" /E /NFL /NDL /NJH /NJS >> \"%TRACE%\" 2>&1\r\n"
-   "echo [%time%] robocopy exit %errorlevel% >> \"%TRACE%\"\r\n"
-   "if errorlevel 8 goto :rollback\r\n"
-   "start \"\" \"" install "\\RivetHost.exe\"\r\n"
-   "echo [%time%] relaunched, retiring backup >> \"%TRACE%\"\r\n"
+   "robocopy \"" staged "\" \"" install "\" /E /R:2 /W:1 /NFL /NDL /NJH /NJS >> \"%TRACE%\" 2>&1\r\n"
+   "set \"MOVEBIT_COPY_EXIT=%errorlevel%\"\r\n"
+   "echo [%time%] robocopy exit %MOVEBIT_COPY_EXIT% >> \"%TRACE%\"\r\n"
+   "if %MOVEBIT_COPY_EXIT% GEQ 8 goto :copyfail\r\n"
+   ;; START does not reliably report CreateProcess/ShellExecute failures.
+   ;; Require an observable OS launch result before retiring the old install.
+   ;; This is not a full application/backend health acknowledgement.
+   "call :launch\r\n"
+   "if errorlevel 1 goto :launchfail\r\n"
+   "echo [%time%] OS accepted launch, retiring backup >> \"%TRACE%\"\r\n"
    ;; A lingering .old (a file briefly held by antivirus) must not fail the
    ;; update that already succeeded — best effort only.
    "rmdir /s /q \"" old "\" >nul 2>&1\r\n"
-   "del \"%~f0\"\r\n"
-   "exit /b 0\r\n"
+   ;; Parse exit before self-deletion; a following batch-file line may no
+   ;; longer be readable after DEL and would report failure after success.
+   "del \"%~f0\" & exit /b 0\r\n"
+   ":copyfail\r\n"
+   "set \"MOVEBIT_UPDATE_FAILURE=robocopy failed (%MOVEBIT_COPY_EXIT%)\"\r\n"
+   "goto :rollback\r\n"
+   ":launchfail\r\n"
+   "set \"MOVEBIT_UPDATE_FAILURE=updated executable launch failed\"\r\n"
+   "goto :rollback\r\n"
    ":rollback\r\n"
-   "echo [%time%] FAILED swap, restoring the old install >> \"%TRACE%\"\r\n"
+   "echo [%time%] %MOVEBIT_UPDATE_FAILURE%, restoring the old install >> \"%TRACE%\"\r\n"
    "rmdir /s /q \"" install "\" >nul 2>&1\r\n"
    "ren \"" old "\" \"" (install-base-name install) "\"\r\n"
-   "> \"%~dp0update-failed.txt\" echo robocopy failed (%errorlevel%)\r\n"
-   "start \"\" \"" install "\\RivetHost.exe\"\r\n"
+   "if errorlevel 1 goto :restorefail\r\n"
+   "> \"%~dp0update-failed.txt\" echo %MOVEBIT_UPDATE_FAILURE%\r\n"
+   "call :launch\r\n"
+   "exit /b 1\r\n"
+   ":restorefail\r\n"
+   "> \"%~dp0update-failed.txt\" echo restore failed; old install retained beside current install\r\n"
    "exit /b 1\r\n"
    ":renamefail\r\n"
    "echo [%time%] FAILED backup rename >> \"%TRACE%\"\r\n"
    "> \"%~dp0update-failed.txt\" echo backup rename failed\r\n"
    "start \"\" \"" install "\\RivetHost.exe\"\r\n"
-   "exit /b 1\r\n"))
+   "exit /b 1\r\n"
+   ":launch\r\n"
+   "powershell.exe -NoProfile -NonInteractive -Command \"try { Start-Process -FilePath $env:MOVEBIT_UPDATE_EXE -WorkingDirectory (Split-Path -LiteralPath $env:MOVEBIT_UPDATE_EXE) -ErrorAction Stop | Out-Null; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }\" >> \"%TRACE%\" 2>&1\r\n"
+   "exit /b %errorlevel%\r\n"))
 
 (define (write-apply-helper! data-dir pid)
   (define staged (staged-dir data-dir))

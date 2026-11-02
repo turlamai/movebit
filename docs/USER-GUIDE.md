@@ -45,6 +45,8 @@ Reminder and accounting work is local. Update checks and release downloads conta
 
 The in-app **Check for updates** reads the Ed25519-signed `update-manifest.json`, verifies size and SHA-256 after download, and swaps the payload only through **Update & restart**. A failed check aborts without touching the current install. Removing the program does not erase the separate data directory; verify your backup before deleting personal data.
 
+For Windows portable ZIP updates, a failed copy or an executable that Windows cannot start restores the previous installation and attempts to relaunch it. The updater records the failure in `updates/update-failed.txt` under the application data directory. Acceptance of a launch by Windows is not a full application-health check: a later crash, complete GUI restart and real-version rollback remain separate qualification gates. MSI updates use the Windows Installer handoff instead of this portable swap.
+
 ## Get help
 
 Report problems in [GitHub Issues](https://github.com/turlamai/movebit/issues), in English or Chinese. Include the version, OS/architecture, installation channel, steps, expected and actual results. Do not attach keys, credentials, databases or complete logs. Public support has no guaranteed response time.

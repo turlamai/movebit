@@ -94,6 +94,9 @@ jobs:
 
       - name: Domain core tests
         run: raco test racket/
+      - name: Execute portable update launch and rollback fixtures on Windows
+        if: runner.os == 'Windows'
+        run: racket scripts/acceptance/windows-portable-update.rkt
       # Permit is optional: ordinary Free/core and host builds have no
       # commercial dependency. Only this Linux contract step installs it.
       - name: Real signed Permit integration contract (Linux)

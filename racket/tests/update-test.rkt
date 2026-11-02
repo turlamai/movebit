@@ -486,7 +486,10 @@
   ;; a failed rename also relaunches the untouched old install
   (check-true (string-contains? script ":renamefail"))
   ;; both failure paths leave the marker the next launch surfaces once
-  (check-equal? (length (regexp-match* #rx"update-failed\\.txt" script)) 2))
+  (check-equal? (length (regexp-match* #rx"update-failed\\.txt" script)) 3)
+  (check-true (string-contains? script "if errorlevel 1 goto :launchfail"))
+  (check-true (string-contains? script "-ErrorAction Stop"))
+  (check-true (string-contains? script "if errorlevel 1 goto :restorefail")))
 
 (test-case "the msi handoff script runs one passive msiexec upgrade"
   (define script
