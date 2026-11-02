@@ -23,7 +23,7 @@
        [yesterday (date-key+days today-key -1)]
        [store (make-history-store dir "aaaaaaaa")])
   (history-load! store)
-  (history-save-day! store yesterday (day-record 123 2 4 6 0))
+  (history-save-day! store yesterday (day-record 123 2 4 6 0 (hasheq)))
   (define reloaded (history-load! (make-history-store dir "aaaaaaaa")))
   (define entry (findf (lambda (e) (string=? (car e) yesterday))
                        (history-get-recent reloaded 3 today-key)))
@@ -38,7 +38,7 @@
 (let* ([dir (make-temp-dir "holes")]
        [store (make-history-store dir "aaaaaaaa")])
   (history-load! store)
-  (history-save-day! store today-key (day-record 90 1 2 3 0))
+  (history-save-day! store today-key (day-record 90 1 2 3 0 (hasheq)))
   (define week (history-get-recent store 7 today-key))
   (check-equal? (length week) 7)
   (check-equal? (car (car week)) (date-key+days today-key -6))
@@ -53,8 +53,8 @@
 (let* ([dir (make-temp-dir "over")]
        [store (make-history-store dir "aaaaaaaa")])
   (history-load! store)
-  (history-save-day! store today-key (day-record 10 0 0 0 0))
-  (history-save-day! store today-key (day-record 42 1 1 1 0))
+  (history-save-day! store today-key (day-record 10 0 0 0 0 (hasheq)))
+  (history-save-day! store today-key (day-record 42 1 1 1 0 (hasheq)))
   (define single (history-get-recent store 1 today-key))
   (check-equal? (length single) 1)
   (check-equal? (car (car single)) today-key)
@@ -67,8 +67,8 @@
        [laptop (make-history-store dir "bbbbbbbb")])
   (history-load! desktop)
   (history-load! laptop)
-  (history-save-day! desktop today-key (day-record 120 2 3 4 45))
-  (history-save-day! laptop today-key (day-record 60 1 1 2 70))
+  (history-save-day! desktop today-key (day-record 120 2 3 4 45 (hasheq)))
+  (history-save-day! laptop today-key (day-record 60 1 1 2 70 (hasheq)))
   ;; The second store picks the first one's shard up through the folder scan.
   (history-refresh! laptop)
   (define totals (history-get-recent laptop 1 today-key))
@@ -87,9 +87,9 @@
        [desktop (make-history-store dir "aaaaaaaa")]
        [laptop (make-history-store dir "bbbbbbbb")])
   (history-load! desktop)
-  (history-save-day! desktop today-key (day-record 120 2 3 4 45))
+  (history-save-day! desktop today-key (day-record 120 2 3 4 45 (hasheq)))
   (history-load! laptop)
-  (history-save-day! laptop today-key (day-record 60 1 1 2 70))
+  (history-save-day! laptop today-key (day-record 60 1 1 2 70 (hasheq)))
   (history-refresh! laptop)
   (check-equal? (day-record-active-minutes (history-device-record laptop today-key))
                 60)
@@ -125,7 +125,7 @@
        [legacy (build-path dir "history.json")]
        [store (make-history-store dir "aaaaaaaa")])
   (history-load! store)
-  (history-save-day! store today-key (day-record 5 0 0 0 0))
+  (history-save-day! store today-key (day-record 5 0 0 0 0 (hasheq)))
   (call-with-output-file legacy
     (lambda (out) (write-json (hasheq 'junk (hasheq 'ActiveMinutes 999)) out)))
   (define reloaded (make-history-store dir "aaaaaaaa"))
@@ -141,7 +141,7 @@
        [store (make-history-store dir "aaaaaaaa")]
        [day-dir (build-path dir "history" today-key)])
   (history-load! store)
-  (history-save-day! store today-key (day-record 42 1 1 1 0))
+  (history-save-day! store today-key (day-record 42 1 1 1 0 (hasheq)))
   ;; What Resilio/Syncthing leave behind on a true content conflict.
   (copy-file (build-path day-dir "aaaaaaaa.json")
              (build-path day-dir "bbbbbbbb.json.sync-conflict-20261012-123456.json"))
@@ -162,7 +162,7 @@
   (call-with-output-file (build-path day-dir "bbbbbbbb.json")
     (lambda (out)
       (write-json
-       (day-record->jsexpr (day-record 25 1 2 3 25))
+       (day-record->jsexpr (day-record 25 1 2 3 25 (hasheq)))
        out)))
   (history-refresh! store)
   (define r (cdr (car (history-get-recent store 1 today-key))))
@@ -170,15 +170,55 @@
   (check-equal? (history-device-ids store today-key) '("bbbbbbbb"))
   (delete-directory/files dir))
 
+;; CueOutcomes_roundtrip_through_disk (issue #88)
+(let* ([dir (make-temp-dir "outc")]
+       [store (make-history-store dir "aaaaaaaa")]
+       [outcomes (hash-set (hasheq 'water (hasheq 'presented 3 'self-reported-done 1))
+                           'sit (hasheq 'presented 2 'not-delivered 1))])
+  (history-load! store)
+  (history-save-day! store today-key (day-record 60 1 2 0 0 outcomes))
+  (define reloaded (history-load! (make-history-store dir "aaaaaaaa")))
+  (define r (cdr (car (history-get-recent reloaded 1 today-key))))
+  (check-equal? (day-record-cue-outcomes r) outcomes)
+  (check-equal? (cue-outcome-count (day-record-cue-outcomes r) 'water 'presented) 3)
+  (check-equal? (cue-outcome-count (day-record-cue-outcomes r) 'sit 'not-delivered) 1)
+  (check-equal? (cue-outcome-count (day-record-cue-outcomes r) 'micro 'presented) 0)
+  (delete-directory/files dir))
+
+;; CueOutcomes_legacy_shard_without_the_field_loads_as_empty
+(let* ([dir (make-temp-dir "legacy")]
+       [store (make-history-store dir "aaaaaaaa")])
+  (history-load! store)
+  (define day-dir (build-path dir "history" today-key))
+  (make-directory* day-dir)
+  (call-with-output-file (build-path day-dir "aaaaaaaa.json")
+    (lambda (out)
+      ;; Hand-written pre-#88 shard: no CueOutcomes key, garbage tolerated.
+      (write-json (hasheq 'ActiveMinutes 30 'SitBreaks 1) out)))
+  (history-refresh! store)
+  (define r (history-device-record store today-key))
+  (check-equal? (day-record-active-minutes r) 30)
+  (check-equal? (day-record-cue-outcomes r) (hasheq))
+  (delete-directory/files dir))
+
+;; CueOutcomes_aggregate_across_devices_by_summing_events
+(let ([a (day-record 0 0 0 0 0 (hasheq 'water (hasheq 'presented 2 'snoozed 1)))]
+      [b (day-record 0 0 0 0 0 (hasheq 'water (hasheq 'presented 3)
+                                       'sit (hasheq 'not-delivered 1)))])
+  (define agg (aggregate-day-records (list a b)))
+  (check-equal? (cue-outcome-count (day-record-cue-outcomes agg) 'water 'presented) 5)
+  (check-equal? (cue-outcome-count (day-record-cue-outcomes agg) 'water 'snoozed) 1)
+  (check-equal? (cue-outcome-count (day-record-cue-outcomes agg) 'sit 'not-delivered) 1))
+
 ;; SaveDay_prunes_day_directories_outside_retention_window
 (let* ([dir (make-temp-dir "prune")]
        [store (make-history-store dir "aaaaaaaa")]
        [expired (date-key+days today-key (- retention-days))]
        [oldest-kept (date-key+days today-key (- retention-days 1))])
   (history-load! store)
-  (history-save-day! store expired (day-record 10 1 1 1 0) today-key)
-  (history-save-day! store oldest-kept (day-record 20 2 2 2 0) today-key)
-  (history-save-day! store today-key (day-record 30 3 3 3 0) today-key)
+  (history-save-day! store expired (day-record 10 1 1 1 0 (hasheq)) today-key)
+  (history-save-day! store oldest-kept (day-record 20 2 2 2 0 (hasheq)) today-key)
+  (history-save-day! store today-key (day-record 30 3 3 3 0 (hasheq)) today-key)
   (check-false (directory-exists? (build-path dir "history" expired)))
   (check-true (directory-exists? (build-path dir "history" oldest-kept)))
   (check-true (directory-exists? (build-path dir "history" today-key)))
@@ -226,7 +266,7 @@
   (define (worker store start)
     (for ([i (in-range 50)])
       (with-handlers ([exn:fail? (lambda (e) (set! errors (cons e errors)))])
-        (history-save-day! store today-key (day-record (+ start i) 0 0 0 0)))))
+        (history-save-day! store today-key (day-record (+ start i) 0 0 0 0 (hasheq))))))
   (define ta (thread (lambda () (worker a 100))))
   (define tb (thread (lambda () (worker b 500))))
   (thread-wait ta)
