@@ -59,7 +59,10 @@ def self_test(source: str) -> None:
     assert not verify(source), "expected valid source"
     for parts in REQUIRED.values():
         for part in parts:
-            assert verify(source.replace(part, "", 1)), f"missed removal: {part}"
+            # A required pattern may legitimately repeat (e.g. the Wayland
+            # guard in move_aside); removing every occurrence must always
+            # trip the checker, not just removing the first hit.
+            assert verify(source.replace(part, "")), f"missed removal: {part}"
     for part in FORBIDDEN.values():
         assert verify(source + "\n" + part), f"missed regression: {part}"
 

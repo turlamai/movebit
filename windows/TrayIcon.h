@@ -39,6 +39,7 @@ struct TrayUi {
   std::function<void()> on_cue_later;
   std::function<void()> on_cue_hide;
   std::function<void()> on_focus_toggle;
+  std::function<void()> on_mubi_move_aside;
   bool cue_open = false;
   bool quiet = false;
 
@@ -86,7 +87,8 @@ struct TrayUi {
     kMenuCueDone = 5,
     kMenuCueLater = 6,
     kMenuCueHide = 7,
-    kMenuFocusToggle = 8
+    kMenuFocusToggle = 8,
+    kMenuMubiMoveAside = 9
   };
 
   bool paused_ = false;
@@ -128,6 +130,9 @@ struct TrayUi {
       items.push_back(TrayMenuItem(
           kMenuCueHide, tray_wide(l10n::t("tray.cueHide")), bind(on_cue_hide)));
     }
+    items.push_back(TrayMenuItem(
+        kMenuMubiMoveAside, tray_wide(l10n::t("tray.moveAside")),
+        bind(on_mubi_move_aside)));
     items.push_back(TrayMenuItem(
         kMenuPauseToggle,
         tray_wide(l10n::t(paused_ ? "tray.resume" : "tray.pause")),

@@ -1463,6 +1463,7 @@ void MainWindow::TogglePause() {
 void MainWindow::InitTray() {
   tray_.on_open = [this]() { BringToForeground(); };
   tray_.on_pause_toggle = [this]() { TogglePause(); };
+  tray_.on_mubi_move_aside = [this]() { companion_.MoveAside(); };
   tray_.on_check_updates = [this]() {
     ::ShellExecuteW(nullptr, L"open",
                     L"https://github.com/turinglambdaai/movebit/releases/latest",

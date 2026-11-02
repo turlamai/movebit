@@ -483,6 +483,18 @@ final class CompanionController: NSObject {
         }
     }
 
+    /// One click from the menu bar temporarily parks Mubi somewhere else.
+    /// This is an action, not another saved preference; it never edits cue
+    /// completion/snooze or asks for screen-wide mouse permissions.
+    func moveAside() {
+        let corners = ["bottom-right", "bottom-left", "top-left", "top-right"]
+        let index = corners.firstIndex(of: dock) ?? 0
+        dock = corners[(index + 1) % corners.count]
+        // Moving the pet must not dismiss a health invitation or turn
+        // it into an idle pose. Keep the active artwork and cue readable.
+        if panel?.isVisible == true { relayout() }
+    }
+
     static func bodyHeight(for size: String) -> CGFloat {
         switch size {
         case "S": return 60
