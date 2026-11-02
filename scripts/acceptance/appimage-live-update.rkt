@@ -16,7 +16,6 @@
          racket/path
          racket/string
          racket/system
-         racket/tcp
          (prefix-in upd: "../../racket/movebit/update.rkt"))
 
 (use-all-factories!)
@@ -138,7 +137,7 @@
     (check-equal? (sha256-file/hex installed) original-digest)
     (check-exn exn:fail?
                (lambda ()
-                 (upd:download-appimage-with-progress!
+                 (download-local!
                   (signed-candidate source-digest (sub1 source-size)))))
     (check-equal? (sha256-file/hex installed) original-digest)
     (check-false (file-exists? (string-append (path->string installed) ".previous")))
