@@ -275,6 +275,10 @@ private struct TodayCard: View {
                 counter(emoji: "💧", value: model.today.water_reminders, label: L10n.t("today.water"))
                 counter(emoji: "👀", value: model.today.micro_breaks, label: L10n.t("today.micro"))
             }
+            Text(L10n.t("today.countsNote"))
+                .font(.system(size: 11))
+                .foregroundColor(Palette.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .modifier(CardBackground())
     }

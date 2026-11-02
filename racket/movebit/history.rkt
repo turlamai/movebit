@@ -37,6 +37,9 @@
          day-record->jsexpr
          jsexpr->day-record
          aggregate-day-records
+         cue-outcome-bump
+         cue-outcomes-sum
+         cue-outcome-count
          (struct-out history-store)
          make-history-store
          history-load!
@@ -50,8 +53,22 @@
          retention-days
          history-path)
 
+;; Cue lifecycle outcomes per reminder kind (issue #88): what actually
+;; happened after a reminder fired, so history never conflates "we reminded
+;; you" with "you did it". The map is kind-symbol -> status-symbol -> count:
+;;   presented          the cue was really shown (once per kind per showing)
+;;   self-reported-done the user clicked Done — a claim, never proof
+;;   snoozed            the user clicked Later
+;;   dismissed          the user clicked Hide
+;;   expired            shown, then timed out unanswered
+;;   not-delivered      timed out while still pending — never made it on
+;;                      screen (Focus, shutdown, …)
+;; Counts are events, not unique cues: a cue re-presented after Focus counts
+;; its presentations, which is the truthful delivery record. Active minutes
+;; stay an ESTIMATE derived from idle sampling; nothing here claims verified
+;; breaks or health outcomes.
 (struct day-record
-  (active-minutes sit-breaks water-reminders micro-breaks longest-session-minutes)
+  (active-minutes sit-breaks water-reminders micro-breaks longest-session-minutes cue-outcomes)
   #:transparent)
 
 ;; days: mutable hash date-key -> (mutable hash device-id -> day-record)
@@ -59,7 +76,56 @@
   #:transparent)
 
 (define (default-day-record)
-  (day-record 0 0 0 0 0))
+  (day-record 0 0 0 0 0 (hasheq)))
+
+;; --- cue outcome map helpers -------------------------------------------------
+
+(define (cue-outcome-bump outcomes kind status)
+  ;; Pure: return `outcomes` with (kind status) counted once more.
+  (define per-kind (hash-ref outcomes kind (hasheq)))
+  (hash-set outcomes kind
+            (hash-update per-kind status add1 0)))
+
+(define (cue-outcomes-sum a b)
+  ;; Pure: union-sum two outcome maps (cross-device aggregation).
+  (for/fold ([acc a])
+            ([(kind per-kind) (in-hash b)])
+    (hash-set acc kind
+              (for/fold ([inner (hash-ref acc kind (hasheq))])
+                        ([(status n) (in-hash per-kind)])
+                (hash-update inner status (lambda (m) (+ m n)) 0)))))
+
+(define (cue-outcome-count outcomes kind status)
+  (hash-ref (hash-ref outcomes kind (hasheq)) status 0))
+
+;; JSON shape: {"water": {"presented": 3, "self-reported-done": 1}, …}.
+;; Racket's json module uses symbol keys in both directions, so kinds and
+;; statuses ride as symbols end to end; unknown kinds/statuses survive the
+;; round-trip (forward compatibility) with nonneg int values.
+(define (cue-outcomes->jsexpr outcomes)
+  (for/hasheq ([(kind per-kind) (in-hash outcomes)]
+               #:when (symbol? kind))
+    (values kind
+            (for/hasheq ([(status n) (in-hash per-kind)]
+                         #:when (and (symbol? status)
+                                     (exact-nonnegative-integer? n)))
+              (values status n)))))
+
+(define (jsexpr->cue-outcomes js)
+  (if (hash? js)
+      (for/hasheq ([(kind per-kind) (in-hash js)] #:when (hash? per-kind))
+        (values (as-symbol kind)
+                (for/hasheq ([(status n) (in-hash per-kind)]
+                             #:when (exact-nonnegative-integer? n))
+                  (values (as-symbol status) n))))
+      (hasheq)))
+
+;; JSON keys read back as symbols; accept strings too so a foreign writer
+;; (or hand-edit) cannot poison the shard.
+(define (as-symbol v)
+  (cond [(symbol? v) v]
+        [(string? v) (string->symbol v)]
+        [else 'invalid]))
 
 (define retention-days 370)
 
@@ -76,10 +142,12 @@
           'SitBreaks (day-record-sit-breaks r)
           'WaterReminders (day-record-water-reminders r)
           'MicroBreaks (day-record-micro-breaks r)
-          'LongestSessionMinutes (day-record-longest-session-minutes r)))
+          'LongestSessionMinutes (day-record-longest-session-minutes r)
+          'CueOutcomes (cue-outcomes->jsexpr (day-record-cue-outcomes r))))
 
 ;; Tolerant reader: every field defaults to zero when absent or ill-typed, so
-;; legacy records (and half-written ones) still load.
+;; legacy records (and half-written ones) still load. Cue outcomes default to
+;; an empty map — pre-#88 shards simply observed no lifecycle outcomes.
 (define (jsexpr->day-record js)
   (if (hash? js)
       (day-record
@@ -87,11 +155,14 @@
        (nonneg (hash-ref js 'SitBreaks 0))
        (nonneg (hash-ref js 'WaterReminders 0))
        (nonneg (hash-ref js 'MicroBreaks 0))
-       (nonneg (hash-ref js 'LongestSessionMinutes 0)))
+       (nonneg (hash-ref js 'LongestSessionMinutes 0))
+       (jsexpr->cue-outcomes (hash-ref js 'CueOutcomes (hasheq))))
       (default-day-record)))
 
-;; Apple Screen Time semantics: additive counters sum across devices; the
-;; longest continuous session is a per-device property, so it takes the max.
+;; Apple Screen Time semantics: additive counters sum across devices (cue
+;; outcome events included — each device counts what IT showed, so summing
+;; reconstructs the whole without double-counting); the longest continuous
+;; session is a per-device property, so it takes the max.
 (define (aggregate-day-records records)
   (for/fold ([acc (default-day-record)])
             ([r (in-list records)])
@@ -104,7 +175,9 @@
                 (+ (day-record-micro-breaks acc)
                    (day-record-micro-breaks r))
                 (max (day-record-longest-session-minutes acc)
-                     (day-record-longest-session-minutes r)))))
+                     (day-record-longest-session-minutes r))
+                (cue-outcomes-sum (day-record-cue-outcomes acc)
+                                  (day-record-cue-outcomes r)))))
 
 (define (make-history-store directory device-id)
   (history-store directory device-id (make-hash) (make-hash)))

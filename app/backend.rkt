@@ -153,6 +153,18 @@
    [micro-breaks : Int64]
    [longest-session-mins : Int64]))
 
+;; What actually happened to today's fired reminders, per kind (issue #88):
+;; delivery and self-reported responses are kept apart from fired counts, and
+;; nothing here claims a verified break. Fired counts stay in DayStats.
+(define-record CueOutcomeTotals
+  ([kind : ReminderKind]
+   [presented : Int64]
+   [self-reported-done : Int64]
+   [snoozed : Int64]
+   [dismissed : Int64]
+   [expired : Int64]
+   [not-delivered : Int64]))
+
 (define-record PauseState
   ([paused : Bool]
    [until-ms : (Optional Int64)]))
@@ -191,7 +203,8 @@
 
 ;; --- Runtime wiring -------------------------------------------------------
 
-(struct runtime (scheduler orchestrator history data-dir device-id idle-provider)
+(struct runtime (scheduler orchestrator history data-dir device-id idle-provider
+                           outcomes-today)
   #:transparent)
 
 ;; (box (or/c #f runtime?))
@@ -257,12 +270,34 @@
             (day-stats-micro-breaks stats)
             (ms->mins (day-stats-longest-session-ms stats))))
 
-(define (stats->record stats)
+(define (stats->record stats [outcomes (hasheq)])
   (day-record (ms->mins (day-stats-active-ms stats))
               (day-stats-sit-reminders stats)
               (day-stats-water-reminders stats)
               (day-stats-micro-breaks stats)
-              (ms->mins (day-stats-longest-session-ms stats))))
+              (ms->mins (day-stats-longest-session-ms stats))
+              outcomes))
+
+;; Immutable snapshot of the runtime outcome accumulator (it mutates per
+;; event; persistence and aggregation must see one stable value).
+(define (outcomes-snapshot rt)
+  (for/hasheq ([(kind per-kind) (in-hash (runtime-outcomes-today rt))])
+    (values kind per-kind)))
+
+(define (outcomes->dto outcomes)
+  ;; Kind-sorted so the published list is deterministic across ticks.
+  (for/list ([kind (in-list (sort (hash-keys outcomes) symbol<?))])
+    (define per-kind (hash-ref outcomes kind (hasheq)))
+    (CueOutcomeTotals (symbol->kind kind)
+                      (hash-ref per-kind 'presented 0)
+                      (hash-ref per-kind 'self-reported-done 0)
+                      (hash-ref per-kind 'snoozed 0)
+                      (hash-ref per-kind 'dismissed 0)
+                      (hash-ref per-kind 'expired 0)
+                      (hash-ref per-kind 'not-delivered 0))))
+
+(define (publish-outcomes! rt)
+  (state-set! cue-outcomes (outcomes->dto (outcomes-snapshot rt))))
 
 (define (record->dto date-key r)
   (DayStats date-key
@@ -302,6 +337,10 @@
 ;; The cues currently on screen (pending or displayed): the reconciliation
 ;; view hosts read on launch and after any action.
 (define-state pending-cues : (List HealthCue) '())
+;; Per-kind cue lifecycle outcomes for today (issue #88): the honest history
+;; counters behind the fired-reminder counts. Hosts may surface it; nothing
+;; here implies a verified break.
+(define-state cue-outcomes : (List CueOutcomeTotals) '())
 
 ;; --- Events ---------------------------------------------------------------
 
@@ -344,6 +383,7 @@
                            (aggregate-current! rt)))
   (state-set! today dto)
   (state-set! loops (loops->dto rt))
+  (publish-outcomes! rt)
   (tick-stats dto))
 
 ;; The cross-device "today": every other device's synced shard plus this
@@ -365,7 +405,7 @@
     (for/list ([(device r) (in-hash (or per-device (hasheq)))]
                #:unless (string=? device local-id))
       r))
-  (define local (stats->record stats))
+  (define local (stats->record stats (outcomes-snapshot rt)))
   (define base (aggregate-day-records others))
   (day-record (+ (day-record-active-minutes base)
                  (day-record-active-minutes local))
@@ -376,7 +416,9 @@
               (+ (day-record-micro-breaks base)
                  (day-record-micro-breaks local))
               (max (day-record-longest-session-minutes base)
-                   (day-record-longest-session-minutes local))))
+                   (day-record-longest-session-minutes local))
+              (cue-outcomes-sum (day-record-cue-outcomes base)
+                                (day-record-cue-outcomes local))))
 
 (define (publish-paused! rt)
   (define until (scheduler-paused-until-ms (runtime-scheduler rt)))
@@ -402,7 +444,7 @@
     (define stats (scheduler-stats scheduler))
     (history-save-day! (runtime-history rt)
                        (day-stats-date-key stats)
-                       (stats->record stats)
+                       (stats->record stats (outcomes-snapshot rt))
                        (day-stats-date-key stats))))
 
 ;; --- Init -----------------------------------------------------------------
@@ -422,11 +464,16 @@
                        #:on-day-completed
                        (lambda (closing)
                          ;; Archive the closing day BEFORE the reset, then
-                         ;; publish the cross-device aggregate for it.
+                         ;; publish the cross-device aggregate for it. The
+                         ;; outcome accumulator rides the same lifecycle:
+                         ;; the closing day keeps its events, the new day
+                         ;; starts empty.
                          (history-save-day! history
                                             (day-stats-date-key closing)
-                                            (stats->record closing)
+                                            (stats->record closing (outcomes-snapshot rt))
                                             (day-stats-date-key closing))
+                         (hash-clear! (runtime-outcomes-today rt))
+                         (publish-outcomes! rt)
                          (day-completed
                           (record->dto
                            (day-stats-date-key closing)
@@ -439,17 +486,35 @@
                            (health-cue (cue->dto record))
                            (publish-pending-cues! rt))
                          #:on-flush
-                         (lambda () (flush-today! rt))))
-    (define rt (runtime scheduler o history data-dir device-id idle))
+                         (lambda () (flush-today! rt))
+                         #:on-outcome
+                         (lambda (kind status)
+                           ;; The honest delivery/response ledger (issue #88):
+                           ;; every transition lands here exactly once, so
+                           ;; replay or restart cannot double-count — the
+                           ;; accumulator only ever advances through these
+                           ;; events, and the day shard is overwritten, not
+                           ;; incremented, on flush.
+                           (define h (runtime-outcomes-today rt))
+                           (hash-set! h kind
+                                      (hash-update (hash-ref h kind (hasheq))
+                                                   status add1 0))
+                           (publish-outcomes! rt))))
+    (define rt (runtime scheduler o history data-dir device-id idle (make-hash)))
     (set-box! runtime-box rt)
     ;; A mid-day restart keeps the morning's activity: seed the persisted
     ;; same-day record into the fresh session before any flush can clobber
     ;; it. Deliberately THIS device's shard, never the cross-device aggregate
     ;; — synced minutes from other machines must not enter the local
     ;; accumulator, or the next flush would write them into this device's
-    ;; shard and double-count everywhere.
+    ;; shard and double-count everywhere. The cue-outcome map seeds the same
+    ;; way: this morning's presented/answered counts survive the restart.
     (define today-key (day-stats-date-key (scheduler-stats scheduler)))
-    (orchestrator-restore-today! o (history-device-record history today-key))
+    (define restored (history-device-record history today-key))
+    (orchestrator-restore-today! o restored)
+    (for ([(kind per-kind) (in-hash (day-record-cue-outcomes restored))])
+      (hash-set! (runtime-outcomes-today rt) kind per-kind))
+    (publish-outcomes! rt)
     ;; Publish initial state and start the lazy tick thread (inherits the
     ;; event emitter + injection parameters from this request thread).
     (state-set! active-config (config->dto loaded-config))

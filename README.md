@@ -1,6 +1,6 @@
 # MoveBit
 
-> **v0.0.1 — the fresh start (2026-10-27).** The rebooted MoveBit ships as version 0.0.1 by owner decision: a deliberate restart of the version line for the first real product. The old experimental v0.5.0 line (with its fullscreen forced breaks) is retired history — v0.0.1 contains no fullscreen break anywhere and no migration path from v0.5.
+> **v0.0.1 — the fresh start (2026-10-27).** The rebooted MoveBit first shipped as v0.0.1 by owner decision: a historical restart of the version line, not a statement of the current release. For the latest published build, check Releases. The old experimental v0.5.0 line (with its fullscreen forced breaks) is retired history — v0.0.1 contains no fullscreen break anywhere and no migration path from v0.5.
 
 A desktop health reminder app: water, stand-up and eye-rest cues delivered by **Mubi（沐比）**, a small original character docked at the edge of your screen — never a fullscreen cover, never stolen focus, never intercepted input. One Racket domain core (the canonical reminder state machine) drives first-party native hosts on Windows, macOS, and Linux over [Rivet](https://github.com/turlamai/rivet)'s typed RPC.
 
@@ -10,7 +10,7 @@ A desktop health reminder app: water, stand-up and eye-rest cues delivered by **
 
 ## Start here
 
-Free community application under MIT; no commercial activation or subscription. Desktop previews for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time. On Linux, Mubi's companion card docks on X11 sessions — Wayland compositors don't let an app place a click-through card, so cues deliver as in-app reminder cards there.
+Current preview is free and licensed under MIT. A Free + Pro commercial edition is planned, but no paid activation, checkout or subscription is shipped or enabled yet; see [pricing policy](PRICING.md). Desktop previews for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time. On Linux, Mubi's companion card docks on X11 sessions — Wayland compositors don't let an app place a click-through card, so cues deliver as in-app reminder cards there.
 
 [Installation, first use, privacy, backup and recovery](docs/USER-GUIDE.md) · [简体中文](docs/USER-GUIDE.zh-CN.md)
 

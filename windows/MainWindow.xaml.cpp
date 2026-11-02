@@ -409,14 +409,36 @@ void MainWindow::HandleHealthCue(rivet_app::HealthCue const& cue) {
       default: state = State::Idle; break;
     }
     std::wstring message;
-    switch (cue.action) {
-      case rivet_app::CueAction::drink_water:
-        message = wide(movebit::pick_water()); break;
-      case rivet_app::CueAction::rest_eyes:
-        message = wide(l10n::t("micro.hint")); break;
-      case rivet_app::CueAction::stand_and_stretch:
-        message = wide(l10n::t("notif.sitTitle")); break;
-      default: break;
+    if (cue.kinds.size() > 1) {
+      // Racket merges simultaneous due events (also Focus resume) into
+      // ONE cue. The gesture shows its first kind; the text must name all.
+      std::vector<std::string> parts;
+      auto has = [&cue](rivet_app::ReminderKind kind) {
+        return std::find(cue.kinds.begin(), cue.kinds.end(), kind) !=
+               cue.kinds.end();
+      };
+      if (has(rivet_app::ReminderKind::sit))
+        parts.push_back(l10n::t("notif.sitTitle"));
+      if (has(rivet_app::ReminderKind::water))
+        parts.push_back(l10n::t("notif.waterTitle"));
+      if (has(rivet_app::ReminderKind::micro))
+        parts.push_back(l10n::t("micro.defaultTitle"));
+      std::string joined;
+      for (auto const& part : parts) {
+        if (!joined.empty()) joined += " / ";
+        joined += part;
+      }
+      message = wide(joined);
+    } else {
+      switch (cue.action) {
+        case rivet_app::CueAction::drink_water:
+          message = wide(movebit::pick_water()); break;
+        case rivet_app::CueAction::rest_eyes:
+          message = wide(l10n::t("micro.defaultTitle")); break;
+        case rivet_app::CueAction::stand_and_stretch:
+          message = wide(l10n::t("notif.sitTitle")); break;
+        default: break;
+      }
     }
     companion_.Show(state, message);
     CueDisplayed(cue.id);
@@ -1047,6 +1069,7 @@ void MainWindow::ApplyTexts() {
   TodaySitCaption().Text(winrt::to_hstring(l10n::t("today.sit")));
   TodayWaterCaption().Text(winrt::to_hstring(l10n::t("today.water")));
   TodayMicroCaption().Text(winrt::to_hstring(l10n::t("today.micro")));
+  TodayCountsNote().Text(winrt::to_hstring(l10n::t("today.countsNote")));
   InsightTitleLabel().Text(winrt::to_hstring(l10n::t("insight.title")));
   InsightCurrentTitle().Text(winrt::to_hstring(l10n::t("insight.current")));
   InsightTodayLongestTitle().Text(

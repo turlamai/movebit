@@ -136,7 +136,7 @@
 
 ;; RestoreToday_seeds_persisted_morning_activity_into_a_fresh_session
 (let ([h (make-harness)])
-  (scheduler-restore-today! (h-scheduler h) (day-record 120 2 3 4 55))
+  (scheduler-restore-today! (h-scheduler h) (day-record 120 2 3 4 55 (hasheq)))
   (check-equal? (h-active-ms h) (* 120 minute-ms))
   (check-equal? (h-longest-ms h) (* 55 minute-ms))
   (check-equal? (day-stats-sit-reminders (h-stats h)) 2)
@@ -148,7 +148,7 @@
 
 ;; RestoreToday_is_idempotent_per_day
 (let ([h (make-harness)])
-  (scheduler-restore-today! (h-scheduler h) (day-record 120 2 3 4 55))
-  (scheduler-restore-today! (h-scheduler h) (day-record 120 2 3 4 55))
+  (scheduler-restore-today! (h-scheduler h) (day-record 120 2 3 4 55 (hasheq)))
+  (scheduler-restore-today! (h-scheduler h) (day-record 120 2 3 4 55 (hasheq)))
   (check-equal? (h-active-ms h) (* 120 minute-ms))
   (check-equal? (day-stats-sit-reminders (h-stats h)) 2))

@@ -22,11 +22,11 @@ MoveBit is neither a bare timer nor a pet game. It makes drinking water, moving 
 
 ## Four critical moments
 
-**First run (target under 60 seconds):** Mubi appears in its original vector appearance, breathing softly. Explain the three behaviors. Pick a Gentle/Balanced/Active routine and preview the actual reminder bubble and motion; choose dock and sound (proposed default off); finish without account, paywall or unnecessary permissions. Skip remains a full-value path. Say clearly that activity time is estimated, not typed content recorded.
+**First run (target under 30 seconds):** Meet the original Mubi, hear one sentence about water / movement / eye rest, and press **Start**. No mandatory dock choice, notification strength, noise setup, account, paywall, permission dialog or multi-page tutorial. An optional trial cue may be offered after entry.
 
-**At work:** Mubi docks away from the working area. It blinks and shifts its gaze occasionally, not in a permanent attention loop. The user can find the next cue and instantly Pause, Focus or Hide. A deliberate click on the *shape*, where precise non-activating hit regions are proven, may give a tiny wave/nod; otherwise leave the character fully pointer-through and provide tray/keyboard equivalents. Never force a fake transparent click rectangle. On Wayland honor compositor limitations and use an honest fallback.
+**At work:** Mubi stays at the user's chosen home position with sparse, delightful idle gestures. Users should be able to move it directly using a proven safe character-only drag target; when precise hit-testing is not safe, a temporary tray **Move Mubi** action and immediate **Move aside / Hide** are sufficient. Position is an action, not a maze of dock settings. Avoid continuous roaming and pointer theft. Wayland uses a frank native fallback.
 
-**A cue is due:** One backend merged cue produces one small readable notice and one expressive gesture; preserve every due kind and offer Done / Later / Hide. A disappearing bubble never means that hydration, movement or eye rest happened. Reduce Motion produces accessible static advice. Quiet/presentation periods cannot generate a backlog of nags. Only the Racket core decides when a health cue exists.
+**A cue is due:** Mubi may make one short, charming **approach toward the usable central-third** and invite water, standing/moving or eye rest with distinct original motion and one readable compact non-blocking card. This should be a compelling default rather than several user-facing attention modes. A merged backend cue names all its kinds; Done (self-report), Later and Hide remain accessible through safe hit regions or tray. After response or fade Mubi returns to its saved home position. A disappearing cue is never completion. System Reduce Motion provides a legible static notice. Focus covers meetings: interrupt/cancel the approach immediately, defer due kinds, then offer one merged cue after Focus ends.
 
 **End of work:** Mubi settles and rests quietly, without guilt animation or punitive “pet hunger”. An optional daily summary can say: “X estimated minutes active; Y reminders shown; Z actions you marked done.” These are distinct data classes. Weekly reflections observe patterns, not health diagnoses.
 
@@ -65,7 +65,7 @@ Explicitly test pause/focus, quiet periods crossing midnight, lock/sleep/wake, c
 
 **Insights:** 7/30-day estimated activity, longest continuous work, *reminders vs user-confirmed actions* separately, modest context-aware observations. No synthetic cups consumed, posture detection, unverified “success rate” or health score. Missing historical event data = unknown, not zero.
 
-**Settings:** Basic: routine preset, each kind on/off, size/animation/dock, quiet/sound/focus. Advanced: interval details, away thresholds, language, export/restore, updates. Choices apply and preview consistently; show persistence or failure clearly; keyboard, screen-reader and scaling support throughout.
+**Settings (less is more):** Expose at most **one reminder-rhythm control** (only if testing proves necessary) and **sound on/off** as everyday preferences. Focus, Pause, Hide, Move Mubi and responding to a cue are direct actions, **not persistent settings or separate modes**. Do not surface all individual timers, display coordinates, pet motions and quiet modes in a long default form. Rare expert controls can be disclosed on demand while existing saved config remains backward-compatible. Native keyboard/screen-reader and scaling support still matter.
 
 ## Canonical event data and privacy
 
@@ -79,7 +79,7 @@ Separate `triggered`, `presented`, `acknowledged`, `snoozed`, `dismissed`, `expi
 2. **1–2-minute movement mini-session:** Mubi demonstrates two or three very gentle optional movements. Users can follow at their own pace, skip each or stop; no risky medical coaching or camera/body inference.
 3. **Hydration acknowledgment:** An optional tiny cup “cheers” response after the user deliberately marks drinking. Any later water-volume log must use explicit voluntary entry, never guess.
 
-Personality comes from more carefully crafted poses and responses, not around-the-clock movement or increasing the number of nags. None of these experiences auto-start, steal focus or lock the desktop. Focus/away/Reduce Motion and immediate cancellation take precedence; first evaluate whether real users enjoy and use them before growing the behavior library.
+Personality comes from purposeful pet-like approaches at real break moments, not constant wandering or more nags. The invitation may appear on schedule, but optional guided exercise or pet games do not auto-start. One existing Focus action immediately cancels movement and sound during meetings and defers due kinds, with a single merged re-invitation afterward. Never steal focus, input or lock the desktop. Honor Hide, Reduce Motion and home position; test charm and annoyance together. See #90, #102 and #104.
 
 ## Sustainable revenue without weakening Free
 
