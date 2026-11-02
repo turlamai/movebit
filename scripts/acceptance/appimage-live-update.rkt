@@ -1,7 +1,7 @@
 #lang racket/base
 ;; Native x64/arm64 release acceptance: exercise the real Rivet-created
 ;; AppImage bytes through a throwaway Ed25519-authenticated update candidate,
-;; local HTTP transport, bounded hash/size verification, atomic replacement,
+;; verified loopback HTTPS transport, bounded hash/size verification, atomic replacement,
 ;; recoverable .previous image, and a post-update runtime launch.
 ;;
 ;; No production signing key, published release or external network required.
