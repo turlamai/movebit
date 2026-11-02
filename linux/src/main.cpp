@@ -24,7 +24,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -151,6 +150,7 @@ struct AppState {
   GtkButton* pause_button{nullptr};
   GtkButton* quit_button{nullptr};
   GtkButton* focus_button{nullptr};
+  GtkButton* move_button{nullptr};  // tray-less desktop fallback
   GtkBox* content_root{nullptr};  // cleared + rebuilt on language change
 
   std::unique_ptr<rivet::linux_runtime::Backend> backend;
@@ -191,12 +191,6 @@ struct AppState {
   GtkLabel* mubi_capsule{nullptr};
   std::int64_t mubi_cue_id{0};
   guint mubi_expire_id{0};
-  // Bounded X11 reminder visit, independent of decorative idle animation.
-  guint mubi_visit_tick_id{0};
-  int mubi_visit_phase{0}; // 0 idle, 1 approaching, 2 holding, 3 returning
-  int mubi_visit_step{0};
-  int mubi_home_x{0}, mubi_home_y{0};
-  int mubi_target_x{0}, mubi_target_y{0};
   int mubi_state = 0;  // 0 idle, 1 water, 2 stand, 3 eyes, 4 ack, 5 focus
   std::string mubi_message;
   // Gesture animation (#56 §4): one expressive motion per cue, 33 ms ticks
@@ -846,6 +840,10 @@ void refresh_focus_button() {
 void refresh_header_buttons() {
   refresh_pause_button();
   refresh_focus_button();
+  if (g_state.move_button != nullptr) {
+    gtk_button_set_label(g_state.move_button, l10n::t("tray.moveAside").c_str());
+    gtk_widget_set_sensitive(GTK_WIDGET(g_state.move_button), g_state.mubi_x11);
+  }
   refresh_quit_button();
 }
 
@@ -1018,6 +1016,7 @@ void reload_history();
 // run before the companion window exists (the pose call no-ops there).
 namespace mubi {
 void set_quiet(bool enabled);
+void move_aside();
 }
 
 void on_pause_clicked(GtkButton*, gpointer) {
@@ -1042,6 +1041,10 @@ void on_quit_clicked(GtkButton*, gpointer) {
 // Focus (presentation silence): the backend queues cues and returns one
 // bounded summary; the character settles into its quiet pose. The pose
 // update is local so the toggle works even while the backend is down (#54).
+void on_move_clicked(GtkButton*, gpointer) {
+  if (g_state.mubi_x11) mubi::move_aside();
+}
+
 void on_focus_clicked(GtkButton*, gpointer) {
   auto const next = !g_state.model.quiet;
   g_state.model.quiet = next;
@@ -2257,89 +2260,7 @@ double scale_for(std::string const& size) {
   return 78.0 / 108.0;
 }
 
-// Native repositioning is only attempted under X11. Wayland deliberately
-// uses the existing compositor-managed notification fallback.
-void stop_visit() {
-  if (g_state.mubi_visit_tick_id != 0) {
-    g_source_remove(g_state.mubi_visit_tick_id);
-    g_state.mubi_visit_tick_id = 0;
-  }
-  g_state.mubi_visit_phase = 0;
-  g_state.mubi_visit_step = 0;
-}
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-void move_visit_window(int x, int y) {
-#ifdef GDK_WINDOWING_X11
-  if (g_state.mubi_window == nullptr) return;
-  auto* surface = gtk_native_get_surface(GTK_NATIVE(g_state.mubi_window));
-  if (surface == nullptr || !GDK_IS_X11_SURFACE(surface)) return;
-  auto* display = gdk_display_get_default();
-  if (!GDK_IS_X11_DISPLAY(display)) return;
-  Display* xdisplay = gdk_x11_display_get_xdisplay(GDK_X11_DISPLAY(display));
-  Window xid = gdk_x11_surface_get_xid(GDK_X11_SURFACE(surface));
-  XMoveWindow(xdisplay, xid, x, y);
-  XFlush(xdisplay);
-#else
-  (void)x;
-  (void)y;
-#endif
-}
-#pragma GCC diagnostic pop
-
-// The definition below owns the cue lifecycle; movement never issues Done.
-void present(int state, std::string const& message, GtkApplication* app,
-             std::int64_t cue_id);
-
-gboolean on_visit_tick(gpointer) {
-  auto& s = g_state;
-  bool const returning = s.mubi_visit_phase == 3;
-  if (!s.mubi_x11 || s.mubi_quiet || s.mubi_window == nullptr ||
-      (s.mubi_visit_phase != 1 && !returning)) {
-    s.mubi_visit_tick_id = 0;
-    s.mubi_visit_phase = 0;
-    return G_SOURCE_REMOVE;
-  }
-  int const steps = returning ? 12 : 18;
-  double const t = std::min(1.0,
-                            static_cast<double>(++s.mubi_visit_step) / steps);
-  double const eased = t * t * (3.0 - 2.0 * t);
-  int const x0 = returning ? s.mubi_target_x : s.mubi_home_x;
-  int const y0 = returning ? s.mubi_target_y : s.mubi_home_y;
-  int const x1 = returning ? s.mubi_home_x : s.mubi_target_x;
-  int const y1 = returning ? s.mubi_home_y : s.mubi_target_y;
-  move_visit_window(static_cast<int>(std::lround(x0 + (x1 - x0) * eased)),
-                    static_cast<int>(std::lround(y0 + (y1 - y0) * eased)));
-  if (t < 1.0) return G_SOURCE_CONTINUE;
-  s.mubi_visit_tick_id = 0;
-  if (returning) {
-    s.mubi_visit_phase = 0;
-    present(s.mubi_quiet ? 5 : 0, "", nullptr, 0);
-  } else {
-    s.mubi_visit_phase = 2; // hold until visual timeout
-  }
-  return G_SOURCE_REMOVE;
-}
-
-void begin_visit_return() {
-  auto& s = g_state;
-  if (s.mubi_visit_phase == 0) {
-    present(s.mubi_quiet ? 5 : 0, "", nullptr, 0);
-    return;
-  }
-  if (s.mubi_visit_phase == 3) return;
-  if (s.mubi_visit_tick_id != 0) {
-    g_source_remove(s.mubi_visit_tick_id);
-    s.mubi_visit_tick_id = 0;
-  }
-  s.mubi_visit_phase = 3;
-  s.mubi_visit_step = 0;
-  s.mubi_visit_tick_id = g_timeout_add(40, on_visit_tick, nullptr);
-}
-
 void close_window() {
-  stop_visit();
   if (g_state.mubi_expire_id != 0) {
     g_source_remove(g_state.mubi_expire_id);
     g_state.mubi_expire_id = 0;
@@ -2419,7 +2340,6 @@ void present(int state, std::string const& message, GtkApplication* app,
   if (app == nullptr) app = g_state.app;
   if (app == nullptr) return;
   auto& s = g_state;
-  stop_visit(); // new cue / Focus / Hide cancels all previous movement
   s.mubi_state = state;
   s.mubi_message = message;
   s.mubi_cue_id = cue_id;
@@ -2475,8 +2395,8 @@ void present(int state, std::string const& message, GtkApplication* app,
         // the compositor composes the character's alpha against the
         // desktop instead of a solid surface.
         gdk_surface_set_opaque_region(surface, nullptr);
-        // GTK's can-target flag does not set an X11 input shape. An empty
-        // native region gives the editor underneath real mouse pass-through.
+        // GTK can-target is not native X11 click-through. Use an empty
+        // input shape so clicks and selections reach background applications.
         cairo_region_t* empty_input = cairo_region_create();
         gdk_surface_set_input_region(surface, empty_input);
         cairo_region_destroy(empty_input);
@@ -2506,7 +2426,6 @@ void present(int state, std::string const& message, GtkApplication* app,
     gtk_widget_set_size_request(GTK_WIDGET(canvas),
                                 static_cast<int>(120 * scale),
                                 static_cast<int>(140 * scale));
-    gtk_widget_set_halign(GTK_WIDGET(canvas), GTK_ALIGN_CENTER);
     gtk_drawing_area_set_draw_func(canvas, draw, nullptr, nullptr);
     box_append(GTK_BOX(body_box), GTK_WIDGET(canvas));
     s.mubi_canvas = canvas;
@@ -2531,11 +2450,10 @@ void present(int state, std::string const& message, GtkApplication* app,
   // Explicit size: the window hugs the character (canvas + capsule area
   // while a label shows). Cue actions live in the tray menu, not here.
   bool const label_visible = s.mubi_labels_always || !s.mubi_message.empty();
-  bool const due = cue_id != 0 && state >= 1 && state <= 3;
-  int const win_w = due ? std::max(canvas_w, 270) : canvas_w;
-  int const win_h = canvas_h + (label_visible ? (due ? 64 : 44) : 0);
+  int const win_w = canvas_w;
+  int const win_h = canvas_h + (label_visible ? 44 : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
-  // Avoid requesting input focus from the working application for cues.
+  // Do not request window-manager keyboard focus for a floating pet.
   gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
 
   // Dock inside the monitor work area. GTK4 has no gtk_window_move; on
@@ -2577,51 +2495,23 @@ void present(int state, std::string const& message, GtkApplication* app,
       }
       XMoveWindow(xdisplay, xid, x, y);
       XFlush(xdisplay);
-      // A real health cue gets a brief central visit; a quiet/Still or
-      // GTK Reduce Motion preference receives readable static advice instead.
-      gboolean gtk_animations = TRUE;
-      if (auto* settings = gtk_settings_get_default()) {
-        g_object_get(G_OBJECT(settings), "gtk-enable-animations",
-                     &gtk_animations, nullptr);
-      }
-      if (due && s.mubi_motion != "still" && !s.mubi_quiet && gtk_animations) {
-        s.mubi_home_x = x;
-        s.mubi_home_y = y;
-        int const work_x = static_cast<int>(work.x * xs);
-        int const work_y = static_cast<int>(work.y * xs);
-        int const work_w = static_cast<int>(work.width * xs);
-        int const work_h = static_cast<int>(work.height * xs);
-        s.mubi_target_x = std::clamp(
-            work_x + (work_w - px_w) / 2, work_x + px_clear,
-            std::max(work_x + px_clear, work_x + work_w - px_w - px_clear));
-        s.mubi_target_y = std::clamp(
-            work_y + (work_h - px_h) / 2, work_y + px_clear,
-            std::max(work_y + px_clear, work_y + work_h - px_h - px_clear));
-        s.mubi_visit_phase = 1;
-        s.mubi_visit_step = 0;
-        s.mubi_visit_tick_id = g_timeout_add(40, on_visit_tick, nullptr);
-      }
     }
   }
 #pragma GCC diagnostic pop
 #endif
 
-  // Visual timeout and return do not acknowledge the backend cue. Due health
-  // notices read for ~9s, then gently re-dock; casual messages last only 5s.
+  // The label reads ~5 s, then the card returns to its calm pose. The cue
+  // itself stays open in the backend ledger (#56: label fade is not Done).
   // An idle/focus character with no transient message needs NO timer.
   // Previously this callback rescheduled itself every five seconds forever.
   // Keep a short, self-ending 1.6s acknowledgment flourish; real due cues
   // continue to use their own bounded timeout and never imply "Done".
   if (!message.empty() || state == 4) {
     s.mubi_expire_id = g_timeout_add(
-      (state == 4 ? 1600 : due ? 9000 : 5000),
+      (state == 4 ? 1600 : 5000),
       +[](gpointer) -> int {
         g_state.mubi_expire_id = 0;
-        if (g_state.mubi_visit_phase != 0) {
-          begin_visit_return();
-        } else {
-          present(g_state.mubi_quiet ? 5 : 0, "", nullptr, 0);
-        }
+        present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
         return G_SOURCE_REMOVE;
       },
       nullptr);
@@ -2629,6 +2519,20 @@ void present(int state, std::string const& message, GtkApplication* app,
 }
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
+
+// Cycle a local, temporary corner to get out of the user's way.
+// Do not update persisted settings or the Racket reminder ledger.
+void move_aside() {
+  if (!g_state.mubi_x11) return;
+  if (g_state.mubi_dock == "bottom-right") g_state.mubi_dock = "bottom-left";
+  else if (g_state.mubi_dock == "bottom-left") g_state.mubi_dock = "top-left";
+  else if (g_state.mubi_dock == "top-left") g_state.mubi_dock = "top-right";
+  else g_state.mubi_dock = "bottom-right";
+  // Keep the same due cue and readable text when parking Mubi elsewhere.
+  // Re-presenting is visual only: no backend acknowledge/snooze/dismiss.
+  present(g_state.mubi_state, g_state.mubi_message, nullptr,
+          g_state.mubi_cue_id);
+}
 
 void show_ack() {
   if (!g_state.mubi_quiet) present(4, "", nullptr);
@@ -2807,6 +2711,10 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
     }));
   }
   items.push_back(TrayMenuItem(TrayMenuItem::Type::separator));
+  if (g_state.mubi_x11) {
+    items.push_back(menu_item(l10n::t("tray.moveAside"),
+                              [] { mubi::move_aside(); }));
+  }
   items.push_back(menu_item(l10n::t(g_state.model.is_paused() ? "tray.resume"
                                                               : "tray.pause"),
                             [] { on_pause_clicked(nullptr, nullptr); }));
@@ -3744,6 +3652,7 @@ int on_backend_finished(gpointer user_data) {
     auto* display = gdk_display_get_default();
     g_state.mubi_x11 = !on_wayland && display != nullptr &&
                        gdk_display_supports_input_shapes(display);
+    refresh_header_buttons();
     (void)g_state.api->set_host_capability_async(g_state.mubi_x11, false,
                                                  [](rivet_app::Result<void>) {});
   }
@@ -3843,6 +3752,12 @@ void on_activate(GtkApplication* app, gpointer) {
     g_signal_connect(focus, "clicked", G_CALLBACK(on_focus_clicked), nullptr);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), focus);
     g_state.focus_button = GTK_BUTTON(focus);
+    // On desktops without an SNI watcher, quick actions live here instead.
+    auto* move = gtk_button_new_with_label(l10n::t("tray.moveAside").c_str());
+    gtk_widget_set_sensitive(move, FALSE); // enabled on X11 capability report
+    g_signal_connect(move, "clicked", G_CALLBACK(on_move_clicked), nullptr);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), move);
+    g_state.move_button = GTK_BUTTON(move);
     auto* quit = gtk_button_new_with_label(l10n::t("tray.exit").c_str());
     g_signal_connect(quit, "clicked", G_CALLBACK(on_quit_clicked), nullptr);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), quit);
