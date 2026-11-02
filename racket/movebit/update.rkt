@@ -683,9 +683,10 @@
    ;; A lingering .old (a file briefly held by antivirus) must not fail the
    ;; update that already succeeded — best effort only.
    "rmdir /s /q \"" old "\" >nul 2>&1\r\n"
-   ;; Parse exit before self-deletion; a following batch-file line may no
-   ;; longer be readable after DEL and would report failure after success.
-   "del \"%~f0\" & exit /b 0\r\n"
+   ;; Keep the helper with its trace. CMD may need the file to unwind CALL
+   ;; frames; deleting it here can turn a successful update into exit 1.
+   ;; write-apply-helper! replaces it on the next explicit update attempt.
+   "exit /b 0\r\n"
    ":copyfail\r\n"
    "set \"MOVEBIT_UPDATE_FAILURE=robocopy failed (%MOVEBIT_COPY_EXIT%)\"\r\n"
    "goto :rollback\r\n"
