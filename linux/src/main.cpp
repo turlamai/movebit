@@ -1617,6 +1617,10 @@ void build_main_content() {
     box_append(GTK_BOX(cycle), counter_tile("💧", l10n::t("today.water").c_str(), &mw.today_water));
     box_append(GTK_BOX(cycle), counter_tile("👀", l10n::t("today.micro").c_str(), &mw.today_micro));
     box_append(GTK_BOX(card), cycle);
+    auto* counts_note = label_with(l10n::t("today.countsNote").c_str(), "caption");
+    gtk_label_set_wrap(GTK_LABEL(counts_note), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(counts_note), 0.0f);
+    box_append(GTK_BOX(card), counts_note);
     box_append(left, card);
   }
 
@@ -2357,6 +2361,8 @@ void present(int state, std::string const& message, GtkApplication* app,
     // through). The whole window stays pointer-through like the macOS
     // panel; cue actions live in the tray menu on every host now.
     gtk_widget_set_can_target(window, FALSE);
+    gtk_widget_set_can_focus(window, FALSE);
+    gtk_widget_set_focusable(window, FALSE);
 #ifdef GDK_WINDOWING_X11
     // Dock placement requires bypassing the window manager: ICCCM managed
     // windows ignore client XMoveWindow under mutter, so the companion
@@ -2379,6 +2385,13 @@ void present(int state, std::string const& message, GtkApplication* app,
         // the compositor composes the character's alpha against the
         // desktop instead of a solid surface.
         gdk_surface_set_opaque_region(surface, nullptr);
+        // GTK can_target=FALSE only controls GTK dispatch: it does not
+        // make the X11 top-level click-through. Empty *native input region*
+        // ensures cursor clicks/selection reach the app underneath, even
+        // when a large health note visits the center of the work area.
+        cairo_region_t* empty_input = cairo_region_create();
+        gdk_surface_set_input_region(surface, empty_input);
+        cairo_region_destroy(empty_input);
       }
       if (surface != nullptr && GDK_IS_X11_SURFACE(surface) &&
           GDK_IS_X11_DISPLAY(display)) {
@@ -2432,7 +2445,9 @@ void present(int state, std::string const& message, GtkApplication* app,
   int const win_w = canvas_w;
   int const win_h = canvas_h + (label_visible ? 44 : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
-  gtk_window_present(s.mubi_window);
+  // Unlike gtk_window_present(), mapping an already-created nonfocusable
+  // X11 overlay does not request the user's keyboard focus on each cue.
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
 
   // Dock inside the monitor work area. GTK4 has no gtk_window_move; on
   // X11 position through Xlib against the monitor's work area. Same story
@@ -2480,14 +2495,20 @@ void present(int state, std::string const& message, GtkApplication* app,
 
   // The label reads ~5 s, then the card returns to its calm pose. The cue
   // itself stays open in the backend ledger (#56: label fade is not Done).
-  s.mubi_expire_id = g_timeout_add(
-      5000,
+  // An idle/focus character with no transient message needs NO timer.
+  // Previously this callback rescheduled itself every five seconds forever.
+  // Keep a short, self-ending 1.6s acknowledgment flourish; real due cues
+  // continue to use their own bounded timeout and never imply "Done".
+  if (!message.empty() || state == 4) {
+    s.mubi_expire_id = g_timeout_add(
+      (state == 4 ? 1600 : 5000),
       +[](gpointer) -> int {
         g_state.mubi_expire_id = 0;
         present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
         return G_SOURCE_REMOVE;
       },
       nullptr);
+  }
 }
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
@@ -2950,12 +2971,32 @@ void handle_health_cue(rivet_app::HealthCue const& cue, GtkApplication* app) {
       default: state = State::Idle; break;
     }
     std::string message;
-    switch (cue.action) {
-      case rivet_app::CueAction::drink_water: message = pick_water(); break;
-      case rivet_app::CueAction::rest_eyes: message = l10n::t("micro.hint"); break;
-      case rivet_app::CueAction::stand_and_stretch:
-        message = l10n::t("notif.sitTitle"); break;
-      default: break;
+    if (kinds.size() > 1) {
+      // One reminder event may contain three independently due health kinds.
+      // Preserve every meaning in the same small, readable character card.
+      auto has = [&kinds](rivet_app::ReminderKind kind) {
+        return std::find(kinds.begin(), kinds.end(), kind) != kinds.end();
+      };
+      std::vector<std::string> parts;
+      if (has(rivet_app::ReminderKind::sit))
+        parts.push_back(l10n::t("notif.sitTitle"));
+      if (has(rivet_app::ReminderKind::water))
+        parts.push_back(l10n::t("notif.waterTitle"));
+      if (has(rivet_app::ReminderKind::micro))
+        parts.push_back(l10n::t("micro.defaultTitle"));
+      for (auto const& part : parts) {
+        if (!message.empty()) message += " / ";
+        message += part;
+      }
+    } else {
+      switch (cue.action) {
+        case rivet_app::CueAction::drink_water: message = pick_water(); break;
+        case rivet_app::CueAction::rest_eyes:
+          message = l10n::t("micro.defaultTitle"); break;
+        case rivet_app::CueAction::stand_and_stretch:
+          message = l10n::t("notif.sitTitle"); break;
+        default: break;
+      }
     }
     mubi::present(static_cast<int>(state), message, app, cue.id);
     cue_displayed(cue.id);
@@ -3583,8 +3624,13 @@ int on_backend_finished(gpointer user_data) {
       return (wayland && *wayland) ||
              (session && std::string(session) == "wayland");
     }();
-    g_state.mubi_x11 = !on_wayland;
-    (void)g_state.api->set_host_capability_async(!on_wayland, false,
+    // If this X11 display cannot make an empty native input shape, do NOT
+    // put a transparent-but-click-blocking character on top of editors.
+    // Fall back to the existing nonblocking notification presentation.
+    auto* display = gdk_display_get_default();
+    g_state.mubi_x11 = !on_wayland && display != nullptr &&
+                       gdk_display_supports_input_shapes(display);
+    (void)g_state.api->set_host_capability_async(g_state.mubi_x11, false,
                                                  [](rivet_app::Result<void>) {});
   }
   (void)g_state.api->initialize_async(chain);

@@ -3,7 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Stacked update candidates need their own native acceptance before
+    # integration into another feature branch, as main-bound PRs do.
 permissions:
   contents: read
 env:

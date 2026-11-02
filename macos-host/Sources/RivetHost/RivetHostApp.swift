@@ -403,6 +403,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model else { return }
 
         if cue.delivery == .character {
+            // Sound was only played on the notification fallback path.
+            // Character cues (water, move, eye rest, including merged kinds)
+            // must honor the same user-selected one-shot sound setting.
+            // Quiet/focus cues are normally withheld by the backend.
+            if model.config.sound_enabled && !model.quiet {
+                NSSound(named: "Ping")?.play()
+            }
             companion?.show(state: cue.action.mubiState,
                             message: cueMessage(cue))
             model.cueDisplayed(cue.id)
@@ -444,14 +451,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.cueDisplayed(cue.id)
     }
 
-    /// The actionable health advice in the character's speech bubble — plain
-    /// text, independent of the gesture animation.
+    /// One small, genuinely actionable invitation. When the Racket backend
+    /// merges several due kinds (including after Focus), the bubble must name
+    /// EVERY kind — the character pose alone communicates only the priority.
     private func cueMessage(_ cue: HealthCue) -> String {
+        if cue.kinds.count > 1 {
+            var parts: [String] = []
+            if cue.kinds.contains(.sit) { parts.append(L10n.t("notif.sitTitle")) }
+            if cue.kinds.contains(.water) { parts.append(L10n.t("notif.waterTitle")) }
+            if cue.kinds.contains(.micro) { parts.append(L10n.t("micro.defaultTitle")) }
+            return parts.joined(separator: " · ")
+        }
         switch cue.action {
         case .drink_water: return CopyPool.pickWater()
-        case .rest_eyes: return L10n.t("micro.hint")
-        default:
-            return L10n.t("notif.sitTitle")
+        // Unlike micro.hint, this doesn't incorrectly promise clicking the
+        // entirely pointer-through character to dismiss the notification.
+        case .rest_eyes: return L10n.t("micro.defaultTitle")
+        default: return L10n.t("notif.sitTitle")
         }
     }
 
