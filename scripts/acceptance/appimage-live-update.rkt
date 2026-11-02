@@ -9,6 +9,7 @@
          crypto/all
          rackunit
          net/url
+         net/url-connect
          openssl
          rackunit/text-ui
          rivet/distribution
