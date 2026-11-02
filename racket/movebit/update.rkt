@@ -24,8 +24,8 @@
 ;;     Files) take the feed's signed .msi and hand off to msiexec instead.
 ;;   macOS — same shape as Windows: the zip carries movebit.app, the helper
 ;;     swaps the bundle with a backup + rollback rename and relaunches.
-;;   Linux — AppImage installs update through the sibling .AppImage release
-;;     asset (downloaded, sidecar-checked, swapped over the running image);
+;;   Linux — AppImage installs select a first-class Ed25519-signed .AppImage
+;;     artifact (size + digest verified before atomic replacement);
 ;;     tarball/package installs stay manual, so `prepare-install!` refuses
 ;;     and the host hands off the downloaded file or shows guidance.
 
@@ -67,7 +67,6 @@
          cancel-download!
          prepare-install!
          appimage-flavor?
-         appimage-asset-name
          zip-apply-script
          msi-apply-script
          ;; test seams: drive the download paths against a local server
@@ -88,7 +87,7 @@
 (define update-key-id "movebit-2026-10")
 
 (define default-update-base-url
-  "https://github.com/turinglambdaai/movebit/releases/latest/download")
+  "https://github.com/turlamai/movebit/releases/latest/download")
 
 (define maximum-download-bytes (* 512 1024 1024))
 
@@ -189,9 +188,8 @@
 ;; scope), where the in-place zip swap has no write access — those installs
 ;; take the signed .msi artifact and hand off to msiexec (one UAC consent);
 ;; per-user / portable installs keep the automatic zip swap. macOS zips are
-;; portable. Linux stays unfiltered: the feed entry is the tarball (the
-;; AppImage swaps the sibling asset at download time; deb/rpm/tarball
-;; installs get guidance, never a download). Same ProgramFiles* prefix
+;; portable. Linux AppImage installs select the signed 'appimage artifact;
+;; deb/rpm/tarball installs stay manual. Same ProgramFiles* prefix
 ;; signal taskly's IsMsiInstall uses.
 
 ;; Pure over current-install-dir so tests can pin the decision.
@@ -219,8 +217,8 @@
           (path->string (current-install-dir)))
          'msi
          'portable)]
-    ;; Linux: unfiltered — the only linux artifact is the tarball.
-    [else #f]))
+    ;; AppImage MUST select its own signed artifact, never a tar.gz sibling.
+    [else (if (appimage-flavor?) 'appimage #f)]))
 
 ;; ---------- shared update state (UI-visible) ----------
 
@@ -323,6 +321,16 @@
        (define candidate
          (select-update (updater-config* (* 4 1024 1024)) manifest
                         #:install-kind (install-kind)))
+       ;; A signed feed lacking this platform's AppImage is a hard error,
+       ;; never a silent fallback to an unauthenticated sibling download.
+       (when (and (appimage-flavor?)
+                  (not (for/or ([item (in-list (update-manifest-artifacts manifest))])
+                         (and (eq? (update-artifact-platform item) 'linux)
+                              (eq? (update-artifact-architecture item)
+                                   (architecture-symbol))
+                              (eq? (update-artifact-installer item) 'appimage)
+                              (not (update-artifact-component item))))))
+         (error 'perform-check! "signed update manifest lacks an AppImage artifact for this architecture"))
        (cond
          [candidate
           (set-box! candidate-box candidate)
@@ -400,16 +408,14 @@
 
 ;; ---------- AppImage flavor (Linux installs run from an AppImage) ----------
 ;;
-;; The feed's linux entry is the tar.gz; AppImage installs update through the
-;; sibling .AppImage release asset: same asset base with .tar.gz → .AppImage
-;; (movebit publishes AppImages under the release-contract arch spelling,
-;; x64|arm64 — identical to the feed entry, so the derivation is only the
-;; extension swap), checksummed against the published .AppImage.sha256
-;; sidecar. The Ed25519 manifest still authenticates the tar.gz entry that
-;; carried the version; the sidecar is a plain checksum over the same HTTPS
-;; origin. The download lands NEXT TO the running image (same filesystem →
-;; atomic rename) and replaces it after the sidecar verifies; the host
-;; re-execs the replaced image on user consent.
+;; The signed release feed contains a first-class per-architecture AppImage
+;; artifact with the exact byte count and SHA-256 digest. Rivet verifies both
+;; under the embedded Ed25519 public key before any replacement; mutable
+;; .AppImage.sha256 sidecars are never consulted. The verified image downloads
+;; beside the running executable (same filesystem for atomic rename), saves
+;; the previous version as .previous, and replaces it only after verification.
+;; The host may re-exec the new image on user consent; the backup remains
+;; available for recovery if the new version fails to launch.
 
 ;; $APPIMAGE (set by the AppImage runtime) is inherited by the embedded
 ;; backend — its presence IS the install shape; no config plumbing needed.
@@ -421,124 +427,52 @@
        (let ([self (getenv "APPIMAGE")])
          (and self (not (string=? self ""))))))
 
-;; Pure so tests can pin the derivation.
-(define (appimage-asset-name tar-gz-filename)
-  (unless (string-suffix? tar-gz-filename ".tar.gz")
-    (error 'appimage-asset-name "not a tar.gz filename: ~a" tar-gz-filename))
-  (string-append (substring tar-gz-filename 0
-                            (- (string-length tar-gz-filename) 7))
-                 ".AppImage"))
-
-(define (appimage-artifact-urls candidate)
-  (define url (update-artifact-url (update-candidate-artifact candidate)))
-  (define filename
-    (last (string-split (car (string-split url "?")) "/")))
-  (define appimage-name (appimage-asset-name filename))
-  (values (string-replace url filename appimage-name)
-          (string-append (string-replace url filename appimage-name)
-                         ".sha256")))
-
 (define (appimage-download-target)
-  ;; Stage the download next to the running image so the final rename stays
-  ;; on one device (atomic).
+  ;; Keep staging on the same filesystem for an atomic final rename.
   (define self (getenv "APPIMAGE"))
   (unless (and self (non-empty-string? self))
     (error 'start-download "APPIMAGE is not set; not running as an AppImage"))
   (values self
           (make-temporary-file "movebit-update-~a.AppImage" #f (path-only self))))
 
-;; sha256sum format: "<hex>  <filename>"; the first token is the digest.
-(define (fetch-sidecar-sha256! url)
-  (define in (get-pure-port (string->url url)
-                            '("User-Agent: MoveBit-Updater/1")
-                            #:redirections 10))
-  (dynamic-wind
-    void
-    (lambda ()
-      (define digest
-        (let ([body (string-trim (port->string in))])
-          (if (string=? body "") "" (first (string-split body)))))
-      (unless (regexp-match? #px"^[0-9a-fA-F]{64}$" digest)
-        (error 'start-download "checksum sidecar has an unexpected shape"))
-      (string-downcase digest))
-    (lambda () (close-input-port in))))
-
-;; Sibling-asset downloads come without a signed manifest, so the response
-;; head is the only total available: parse Content-Length for the progress
-;; percent (0 → indeterminate), then hand the body port to the copy loop.
-;; Connection: close keeps the copy ending at EOF, like the manifest-verified
-;; flow.
-(define (open-download-with-total! url)
-  (define in (get-impure-port (string->url url)
-                              '("User-Agent: MoveBit-Updater/1"
-                                "Connection: close")))
-  (let loop ([total 0])
-    (define line (read-line in 'return-linefeed))
-    (cond
-      [(eof-object? line) (values in 0)]
-      [(non-empty-string? (string-trim line))
-       (define match
-         (regexp-match #px"(?i:^content-length:\\s*(\\d+))" line))
-       (loop (if match (string->number (second match)) total))]
-      [else (values in total)])))
-
-;; Copy with progress; feeds the watchdog's stall clock on every read (not
-;; just integer percent changes, so a slow link never false-trips it).
-(define (copy-with-progress! in out total)
-  (define buffer (make-bytes 65536))
-  (let loop ([done 0] [last-percent -1])
-    (define count (read-bytes-avail! buffer in))
-    (cond
-      [(eof-object? count) done]
-      [else
-       (set-box! last-progress-seconds (current-seconds))
-       (write-bytes buffer out 0 count)
-       (define next (+ done count))
-       (define percent
-         (if (> total 0)
-             (min 100 (quotient (* next 100) total))
-             0))
-       (when (> percent last-percent)
-         (state-set! 'percent percent))
-       (loop next percent)])))
-
 (define (download-appimage-with-progress! candidate)
-  (define-values (appimage-url sidecar-url)
-    (appimage-artifact-urls candidate))
+  (define artifact (update-candidate-artifact candidate))
+  ;; A candidate is selected from a verified Ed25519 manifest in production.
+  ;; Never derive an AppImage URL or expected digest from an unsigned sidecar.
+  (unless (and (eq? (platform-symbol) 'linux)
+               (eq? (update-artifact-platform artifact) 'linux)
+               (eq? (update-artifact-architecture artifact) (architecture-symbol))
+               (eq? (update-artifact-installer artifact) 'appimage)
+               (not (update-artifact-component artifact))
+               (member artifact
+                       (update-manifest-artifacts (update-candidate-manifest candidate))
+                       equal?))
+    (error 'download-appimage-with-progress!
+           "candidate is not this architecture's signed AppImage artifact"))
   (define-values (self temporary) (appimage-download-target))
-  (define expected (fetch-sidecar-sha256! sidecar-url))
-  (with-handlers ([exn:fail?
+  (define backup-temp
+    (make-temporary-file "movebit-backup-~a.AppImage" #f (path-only self)))
+  (define backup (string-append self ".previous"))
+  (with-handlers ([exn?
                    (lambda (e)
-                     (when (file-exists? temporary)
-                       (delete-file temporary))
+                     (for ([path (in-list (list temporary backup-temp))])
+                       (when (file-exists? path) (delete-file path)))
                      (raise e))])
-    (define-values (in total) (open-download-with-total! appimage-url))
-    (dynamic-wind
-      void
-      (lambda ()
-        (call-with-output-file temporary
-          #:exists 'truncate/replace
-          #:mode 'binary
-          (lambda (out) (copy-with-progress! in out total))))
-      (lambda () (close-input-port in)))
-    (define actual (string-downcase (sha256-file/hex temporary)))
-    (unless (string=? actual expected)
-      (raise-arguments-error 'start-download
-                             "downloaded appimage does not match its checksum sidecar"
-                             "expected" expected
-                             "actual" actual))
-    ;; The replaced image must stay executable: rename carries the temp
-    ;; file's modes, so set them explicitly before the swap. The setter
-    ;; only takes integer bits — the vector form is a contract violation
-    ;; on every platform (the same trap taskly 63c1f00 fixed), so the
-    ;; AppImage swap must set modes the portable way.
+    ;; Rivet bounds bytes to the signed size, verifies both size and SHA-256,
+    ;; and removes partial downloads on error. No sidecar is consulted.
+    (download-with-progress! candidate temporary)
     (file-or-directory-permissions temporary #o755)
+    ;; Preserve the previous runnable image for recovery. Copy into a unique
+    ;; sibling and rename atomically: never follow a pre-existing backup
+    ;; symlink or truncate an existing known-good backup in place.
+    (copy-file self backup-temp #t)
+    (file-or-directory-permissions backup-temp #o755)
+    (rename-file-or-directory backup-temp backup #t)
+    ;; On any failure before this final atomic rename the original remains.
+    ;; Keep .previous after success for manual recovery if startup fails.
     (rename-file-or-directory temporary self #t)
     self))
 
-;; A cancelled download is not a failure: the broken worker lands the phase
-;; back on idle with the candidate intact, so the UI returns to the
-;; available state and another start is one click away.
 (define cancel-requested-box (box #f))
 
 (define (download-running?)
@@ -599,9 +533,8 @@
                      (state-set! 'message (exn-message e))]))])
             (define path
               (if (appimage-flavor?)
-                  ;; AppImage: the sibling asset is sidecar-checked and swapped
-                  ;; over the running image in place; downloadedPath IS the
-                  ;; image path.
+                  ;; AppImage: only the manifest-signed payload is accepted;
+                  ;; downloadedPath is the atomically replaced image path.
                   (download-appimage-with-progress! candidate)
                   (download-with-progress! candidate destination)))
             (state-set! 'phase "downloaded")
