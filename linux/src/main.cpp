@@ -1624,6 +1624,10 @@ void build_main_content() {
     box_append(GTK_BOX(cycle), counter_tile("💧", l10n::t("today.water").c_str(), &mw.today_water));
     box_append(GTK_BOX(cycle), counter_tile("👀", l10n::t("today.micro").c_str(), &mw.today_micro));
     box_append(GTK_BOX(card), cycle);
+    auto* counts_note = label_with(l10n::t("today.countsNote").c_str(), "caption");
+    gtk_label_set_wrap(GTK_LABEL(counts_note), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(counts_note), 0.0f);
+    box_append(GTK_BOX(card), counts_note);
     box_append(left, card);
   }
 
@@ -3084,12 +3088,32 @@ void handle_health_cue(rivet_app::HealthCue const& cue, GtkApplication* app) {
       default: state = State::Idle; break;
     }
     std::string message;
-    switch (cue.action) {
-      case rivet_app::CueAction::drink_water: message = pick_water(); break;
-      case rivet_app::CueAction::rest_eyes: message = l10n::t("micro.hint"); break;
-      case rivet_app::CueAction::stand_and_stretch:
-        message = l10n::t("notif.sitTitle"); break;
-      default: break;
+    if (kinds.size() > 1) {
+      // One reminder event may contain three independently due health kinds.
+      // Preserve every meaning in the same small, readable character card.
+      auto has = [&kinds](rivet_app::ReminderKind kind) {
+        return std::find(kinds.begin(), kinds.end(), kind) != kinds.end();
+      };
+      std::vector<std::string> parts;
+      if (has(rivet_app::ReminderKind::sit))
+        parts.push_back(l10n::t("notif.sitTitle"));
+      if (has(rivet_app::ReminderKind::water))
+        parts.push_back(l10n::t("notif.waterTitle"));
+      if (has(rivet_app::ReminderKind::micro))
+        parts.push_back(l10n::t("micro.defaultTitle"));
+      for (auto const& part : parts) {
+        if (!message.empty()) message += " / ";
+        message += part;
+      }
+    } else {
+      switch (cue.action) {
+        case rivet_app::CueAction::drink_water: message = pick_water(); break;
+        case rivet_app::CueAction::rest_eyes:
+          message = l10n::t("micro.defaultTitle"); break;
+        case rivet_app::CueAction::stand_and_stretch:
+          message = l10n::t("notif.sitTitle"); break;
+        default: break;
+      }
     }
     mubi::present(static_cast<int>(state), message, app, cue.id);
     cue_displayed(cue.id);

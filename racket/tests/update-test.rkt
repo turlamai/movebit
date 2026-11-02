@@ -6,8 +6,9 @@
 ;; same way the live checker does — then the REAL download paths against a
 ;; local TCP server: the manifest-verified chain into the swap chain
 ;; (chmod -> rename -> staged apply helper via prepare-install!), the
-;; AppImage sibling-asset flow with its sidecar checksum, the persistent
-;; 4-hour silent-check throttle stamp, and the failed-check contract
+;; first-class signed AppImage verification and rejection of a malicious
+;; checksum sidecar, the persistent 4-hour silent-check throttle stamp,
+;; and the failed-check contract
 ;; against an unreachable feed.
 ;;
 ;; (fetch-update-manifest itself only accepts HTTPS, so the live-feed
@@ -60,20 +61,6 @@
   (check-equal? upd:update-key-id "movebit-2026-10")
   (check-equal? upd:default-update-base-url
                 "https://github.com/turlamai/movebit/releases/latest/download"))
-
-;; ---- AppImage sibling-asset derivation ----------------------------------------
-
-;; The feed's linux entry and the sibling .AppImage release asset share the
-;; release-contract arch spelling (x64|arm64), so the derivation is only the
-;; extension swap.
-(test-case "appimage asset derivation swaps the extension"
-  (check-equal? (upd:appimage-asset-name "movebit-0.3.1-linux-x64.tar.gz")
-                "movebit-0.3.1-linux-x64.AppImage")
-  (check-equal? (upd:appimage-asset-name "movebit-1.0.0-linux-arm64.tar.gz")
-                "movebit-1.0.0-linux-arm64.AppImage")
-  ;; A non-tar.gz feed entry cannot derive a sibling — refuse loudly.
-  (check-exn exn:fail?
-             (lambda () (upd:appimage-asset-name "movebit-0.3.1-windows-x64.zip"))))
 
 ;; ---- offline trust chain (throwaway keypair, same DER shapes the
 ;; ---- release pipeline uses) ------------------------------------------------------
@@ -271,79 +258,106 @@
 
   (stop-server!))
 
-;; ---- AppImage flavor (in-place swap: sidecar check, chmod, rename) -----------
+;; ---- AppImage: signed manifest identity, exact payload and atomic swap ----
 
-(test-case "appimage download verifies its sidecar and swaps in place"
-  ;; The mechanics run wherever permissions exist; the production flow is
-  ;; Linux-only (AppImage installs), and Windows rejects permission bits
-  ;; outright (the threadly suite gates the same way).
-  (unless (eq? (system-type 'os) 'windows)
+(test-case "signed AppImage entry is selected only for matching platform and version"
+  (define digest (make-string 64 #\a))
+  (define artifact
+    (apply update-artifact 'linux (upd:architecture-symbol)
+           "https://downloads.example/movebit-9.9.9-linux.AppImage"
+           digest 100 'appimage '() component-tail))
+  (define manifest
+    (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
+                     "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
+                     (list artifact)))
+  (define wrapped (open-output-bytes))
+  (define verified
+    (begin
+      (write-signed-manifest manifest priv "movebit-test" wrapped)
+      (verify-signed-manifest (open-input-bytes (get-output-bytes wrapped))
+                              pub #:key-id "movebit-test")))
+  (define (config platform version)
+    (apply updater-config "site.jrtx.movebit" version 'stable
+           platform (upd:architecture-symbol) pub "movebit-test" 0
+           download-limit component-tail))
+  (define selected (select-update (config 'linux "0.1.0") verified
+                                  #:install-kind 'appimage))
+  (check-true (update-candidate? selected))
+  (check-equal? (update-artifact-sha256 (update-candidate-artifact selected)) digest)
+  (check-false (select-update (config 'windows "0.1.0") verified
+                              #:install-kind 'appimage))
+  (check-false (select-update (config 'linux "9.9.9") verified
+                              #:install-kind 'appimage))
+  (check-false (select-update (config 'linux "10.0.0") verified
+                              #:install-kind 'appimage))
+  (check-false (select-update (config 'linux "0.1.0")
+                              (struct-copy update-manifest verified [artifacts '()])
+                              #:install-kind 'appimage)))
+
+(test-case "AppImage rejects tampered payload and size; ignores malicious sidecar"
+  (when (eq? (upd:platform-symbol) 'linux)
+    (define arch (symbol->string (upd:architecture-symbol)))
+    (define asset (format "movebit-9.9.9-linux-~a.AppImage" arch))
     (define payload (make-bytes 65536 7))
-    (define payload-digest (bytes->hex-string (sha256-bytes payload)))
+    (define tampered (make-bytes 65536 8))
+    (define digest (bytes->hex-string (sha256-bytes payload)))
     (define-values (port-number stop-server!)
       (serve-files!
-       (list (cons "/movebit-9.9.9-linux-x64.AppImage.sha256"
+       (list (cons (string-append "/" asset ".sha256")
                    (string->bytes/utf-8
-                    (format "~a  movebit.AppImage\n" payload-digest)))
-             (cons "/movebit-9.9.9-linux-x64.AppImage" payload))))
+                    (format "~a  ~a\n" (bytes->hex-string (sha256-bytes tampered)) asset)))
+             (cons (string-append "/valid/" asset) payload)
+             (cons (string-append "/tampered/" asset) tampered))))
     (define image-dir (make-temporary-file "movebit-appimage-~a" 'directory))
     (define image-path (build-path image-dir "movebit.AppImage"))
+    (define original (make-bytes 16 3))
+    (define old-appimage (getenv "APPIMAGE"))
+    (define (candidate suffix sha size)
+      (define artifact
+        (apply update-artifact 'linux (upd:architecture-symbol)
+               (format "http://127.0.0.1:~a/~a/~a" port-number suffix asset)
+               sha size 'appimage '() component-tail))
+      (update-candidate
+       (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
+                        "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
+                        (list artifact))
+       artifact))
     (call-with-output-file image-path #:exists 'truncate
-      (lambda (out) (write-bytes (make-bytes 16 3) out)))
-    ;; $APPIMAGE is the install-shape signal the embedded backend inherits;
-    ;; point it at a fake running image so the swap stays in the test's own
-    ;; temp dir.
+      (lambda (out) (write-bytes original out)))
     (putenv "APPIMAGE" (path->string image-path))
     (dynamic-wind
       void
       (lambda ()
-        ;; flavor detection follows the platform symbol AND the env marker;
-        ;; the swap mechanics below run on any POSIX platform
-        (check-equal? (upd:appimage-flavor?)
-                      (and (eq? (upd:platform-symbol) 'linux)
-                           (let ([v (getenv "APPIMAGE")])
-                             (and v (not (string=? v ""))))))
-        ;; The feed entry is the linux tar.gz no matter where the mechanics
-        ;; run — pin the config AND the artifact to linux (the manifest
-        ;; helper pins to the running platform, wrong for this flow).
-        (define config
-          (apply updater-config "site.jrtx.movebit" "0.1.0" 'stable
-                 'linux (upd:architecture-symbol)
-                 pub "movebit-test" 0 download-limit
-                 component-tail))
-        (define candidate
-          (select-update config
-                         (update-manifest
-                          "site.jrtx.movebit" "9.9.9" 7 'stable
-                          "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-                          (list (apply update-artifact
-                                        'linux (upd:architecture-symbol)
-                                        (format "http://127.0.0.1:~a/movebit-9.9.9-linux-x64.tar.gz"
-                                                port-number)
-                                        payload-digest
-                                        (bytes-length payload)
-                                        'zip '()
-                                        component-tail)))))
-        (check-true (update-candidate? candidate))
-        (upd:reset-update-state!)
-        (upd:set-candidate! candidate)
-        (define swapped (upd:download-appimage-with-progress! candidate))
-        (check-equal? swapped (path->string image-path))
-        (check-equal? (file-size image-path) (bytes-length payload))
-        (check-equal? (sha256-file/hex image-path) payload-digest)
+        (check-exn exn:fail?
+                   (lambda ()
+                     (upd:download-appimage-with-progress!
+                      (candidate "tampered" digest (bytes-length payload)))))
+        (check-equal? (file->bytes image-path) original)
+        (check-exn exn:fail?
+                   (lambda ()
+                     (upd:download-appimage-with-progress!
+                      (candidate "valid" digest (sub1 (bytes-length payload))))))
+        (check-equal? (file->bytes image-path) original)
+        ;; The sidecar deliberately advertises the tampered hash. A valid
+        ;; signed digest still accepts only the exact AppImage bytes.
+        (let ([swapped
+               (upd:download-appimage-with-progress!
+                (candidate "valid" digest (bytes-length payload)))])
+          (check-equal? swapped (path->string image-path)))
+        (check-equal? (sha256-file/hex image-path) digest)
         (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
-        ;; the staged temp image was renamed over the running one, and the
-        ;; replaced image is executable — the exact regression 2f5632f
-        ;; fixed (the vector-form chmod killed every AppImage update)
-        (check-equal? (length (directory-list image-dir)) 1)
+        (check-equal? (length (directory-list image-dir)) 2)
+        (check-equal? (file->bytes (string-append (path->string image-path) ".previous"))
+                      original)
         (check-not-false
          (memq 'execute (file-or-directory-permissions image-path #f))))
       (lambda ()
-        (putenv "APPIMAGE" "")
-        (delete-file image-path)
-        (delete-directory image-dir)))
-    (check-false (upd:appimage-flavor?))  ; env marker restored
-    (stop-server!)))
+        (putenv "APPIMAGE" (or old-appimage ""))
+        (when (file-exists? image-path) (delete-file image-path))
+        (let ([previous (string-append (path->string image-path) ".previous")])
+          (when (file-exists? previous) (delete-file previous)))
+        (delete-directory image-dir)
+        (stop-server!)))))
 
 ;; ---- persistent silent-check throttle ------------------------------------------
 
@@ -462,7 +476,8 @@
 (test-case "the zip swap script backs up, rolls back, and marks failures"
   (define script (upd:zip-apply-script "C:\\Apps\\MoveBit" "C:\\stage" 4242))
   ;; wait for the exact PID, then move the old install aside FIRST
-  (check-true (string-contains? script "PID eq 4242"))
+  (check-true (string-contains? script "GetProcessById(4242)"))
+  (check-true (string-contains? script "$p.WaitForExit(120000)"))
   (check-true (string-contains? script "ren \"C:\\Apps\\MoveBit\" \"MoveBit.old\""))
   (check-true (string-contains? script "robocopy \"C:\\stage\" \"C:\\Apps\\MoveBit\""))
   ;; a failed copy restores the .old and relaunches the old exe — the
@@ -472,7 +487,18 @@
   ;; a failed rename also relaunches the untouched old install
   (check-true (string-contains? script ":renamefail"))
   ;; both failure paths leave the marker the next launch surfaces once
-  (check-equal? (length (regexp-match* #rx"update-failed\\.txt" script)) 2))
+  (check-equal? (length (regexp-match* #rx"update-failed\\.txt" script)) 4)
+  (check-true (string-contains? script "if errorlevel 1 goto :launchfail"))
+  (check-true (string-contains? script "-ErrorAction Stop"))
+  (check-true (string-contains? script "if errorlevel 1 goto :restorefail")))
+
+(test-case "Windows portable exit deadline is bounded and rejects invalid inputs"
+  (check-exn exn:fail:contract?
+             (lambda () (upd:zip-apply-script "C:\\Apps\\MoveBit" "C:\\stage" 0)))
+  (for ([seconds (in-list '(0 -1 601 1.5 "120"))])
+    (check-exn exn:fail:contract?
+               (lambda () (upd:zip-apply-script "C:\\Apps\\MoveBit" "C:\\stage" 42
+                                                #:exit-wait-seconds seconds)))))
 
 (test-case "the msi handoff script runs one passive msiexec upgrade"
   (define script

@@ -6,7 +6,7 @@ Water, stand-up and eye-rest reminders delivered by Mubi（沐比）, a small or
 
 ## Availability
 
-v0.0.1. Free community application under MIT; no commercial activation or subscription.
+Current public preview: MIT-licensed source and no enabled paid activation or subscription. Select the actual published version from Releases; this guide does not claim the historical v0.0.1 baseline is the latest build.
 
 ## Platforms and installation
 
@@ -44,6 +44,10 @@ Reminder and accounting work is local. Update checks and release downloads conta
 ## Updates and removal
 
 The in-app **Check for updates** reads the Ed25519-signed `update-manifest.json`, verifies size and SHA-256 after download, and swaps the payload only through **Update & restart**. A failed check aborts without touching the current install. Removing the program does not erase the separate data directory; verify your backup before deleting personal data.
+
+For Windows portable ZIP updates, a failed copy or an executable that Windows cannot start restores the previous installation and attempts to relaunch it. The updater records the failure in `updates/update-failed.txt` under the application data directory. Acceptance of a launch by Windows is not a full application-health check: a later crash, complete GUI restart and real-version rollback remain separate qualification gates. MSI updates use the Windows Installer handoff instead of this portable swap.
+
+Before replacing a Windows portable installation, the helper waits up to two minutes for the previous process to exit. If exit cannot be confirmed, it leaves the installation untouched and records that the update was not applied; it does not force the application to quit. Close the existing application normally before trying the update again.
 
 ## Get help
 
