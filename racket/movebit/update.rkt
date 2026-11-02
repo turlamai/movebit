@@ -573,7 +573,7 @@
 ;;     the helper waits for the running app to exit, moves the install
 ;;     directory aside, robocopys the staged payload over a fresh install
 ;;     directory (restoring the old one when the copy fails), relaunches,
-;;     and removes itself. MSI installs (Program Files) skip all of that:
+;;     and retains its helper/trace for diagnostics. MSI installs (Program Files) skip all of that:
 ;;     the helper runs one passive msiexec upgrade instead — msiexec
 ;;     elevates, so the unwritable install directory is not an obstacle.
 ;;   macOS — the zip carries movebit.app. Extract the same way (bsdtar reads
@@ -649,47 +649,79 @@
 ;; surface the failure once. `cd /d` first: the helper inherits the app's
 ;; working directory, and a cmd whose cwd sits inside a directory being
 ;; renamed would hold it open.
-(define (zip-apply-script install staged pid)
+(define (zip-apply-script install staged pid #:exit-wait-seconds [exit-wait-seconds 120])
+  (unless (and (exact-positive-integer? pid) (<= pid 2147483647))
+    (raise-argument-error 'zip-apply-script "positive Windows process ID" pid))
+  (unless (and (exact-positive-integer? exit-wait-seconds) (<= exit-wait-seconds 600))
+    (raise-argument-error 'zip-apply-script "integer timeout from 1 through 600 seconds" exit-wait-seconds))
   (define old (string-append install ".old"))
   (string-append
    "@echo off\r\n"
+   "setlocal DisableDelayedExpansion\r\n"
    "set TRACE=%~dp0apply-update-trace.txt\r\n"
+   "set \"MOVEBIT_UPDATE_EXE=" install "\\RivetHost.exe\"\r\n"
    "cd /d \"%~dp0\"\r\n"
    "echo [%date% %time%] helper started, waiting for PID "
    (number->string pid) " > \"%TRACE%\"\r\n"
-   ":waitloop\r\n"
-   "tasklist /FI \"PID eq " (number->string pid) "\" | find \""
-   (number->string pid) "\" >nul\r\n"
-   "if not errorlevel 1 (\r\n"
-   "  timeout /t 1 /nobreak >nul\r\n"
-   "  goto waitloop\r\n"
-   ")\r\n"
+   ;; Wait on one process handle with a deadline, without parsing tasklist
+   ;; text or depending on TIMEOUT's interactive console input. Only a
+   ;; confirmed missing/exited process permits any filesystem mutation.
+   "powershell.exe -NoProfile -NonInteractive -Command \"try { $p = [Diagnostics.Process]::GetProcessById("
+   (number->string pid)
+   "); } catch [System.ArgumentException] { exit 0 } catch { exit 2 }; try { if ($p.WaitForExit("
+   (number->string (* exit-wait-seconds 1000))
+   ")) { exit 0 }; exit 1 } catch { exit 2 }\" >> \"%TRACE%\" 2>&1\r\n"
+   "if errorlevel 1 goto :waitfail\r\n"
    "echo [%time%] app exited, backing up the old install >> \"%TRACE%\"\r\n"
    "ren \"" install "\" \"" (install-base-name install) ".old\"\r\n"
    "if errorlevel 1 goto :renamefail\r\n"
    "echo [%time%] swapping payload >> \"%TRACE%\"\r\n"
-   "robocopy \"" staged "\" \"" install "\" /E /NFL /NDL /NJH /NJS >> \"%TRACE%\" 2>&1\r\n"
-   "echo [%time%] robocopy exit %errorlevel% >> \"%TRACE%\"\r\n"
-   "if errorlevel 8 goto :rollback\r\n"
-   "start \"\" \"" install "\\RivetHost.exe\"\r\n"
-   "echo [%time%] relaunched, retiring backup >> \"%TRACE%\"\r\n"
+   "robocopy \"" staged "\" \"" install "\" /E /R:2 /W:1 /NFL /NDL /NJH /NJS >> \"%TRACE%\" 2>&1\r\n"
+   "set \"MOVEBIT_COPY_EXIT=%errorlevel%\"\r\n"
+   "echo [%time%] robocopy exit %MOVEBIT_COPY_EXIT% >> \"%TRACE%\"\r\n"
+   "if %MOVEBIT_COPY_EXIT% GEQ 8 goto :copyfail\r\n"
+   ;; START does not reliably report CreateProcess/ShellExecute failures.
+   ;; Require an observable OS launch result before retiring the old install.
+   ;; This is not a full application/backend health acknowledgement.
+   "call :launch\r\n"
+   "if errorlevel 1 goto :launchfail\r\n"
+   "echo [%time%] OS accepted launch, retiring backup >> \"%TRACE%\"\r\n"
    ;; A lingering .old (a file briefly held by antivirus) must not fail the
    ;; update that already succeeded — best effort only.
    "rmdir /s /q \"" old "\" >nul 2>&1\r\n"
-   "del \"%~f0\"\r\n"
+   ;; Keep the helper with its trace. CMD may need the file to unwind CALL
+   ;; frames; deleting it here can turn a successful update into exit 1.
+   ;; write-apply-helper! replaces it on the next explicit update attempt.
    "exit /b 0\r\n"
+   ":waitfail\r\n"
+   "echo [%time%] old process exit not confirmed; update left unapplied >> \"%TRACE%\"\r\n"
+   "> \"%~dp0update-failed.txt\" echo old process exit not confirmed within deadline; update left unapplied\r\n"
+   "exit /b 1\r\n"
+   ":copyfail\r\n"
+   "set \"MOVEBIT_UPDATE_FAILURE=robocopy failed (%MOVEBIT_COPY_EXIT%)\"\r\n"
+   "goto :rollback\r\n"
+   ":launchfail\r\n"
+   "set \"MOVEBIT_UPDATE_FAILURE=updated executable launch failed\"\r\n"
+   "goto :rollback\r\n"
    ":rollback\r\n"
-   "echo [%time%] FAILED swap, restoring the old install >> \"%TRACE%\"\r\n"
+   "echo [%time%] %MOVEBIT_UPDATE_FAILURE%, restoring the old install >> \"%TRACE%\"\r\n"
    "rmdir /s /q \"" install "\" >nul 2>&1\r\n"
    "ren \"" old "\" \"" (install-base-name install) "\"\r\n"
-   "> \"%~dp0update-failed.txt\" echo robocopy failed (%errorlevel%)\r\n"
-   "start \"\" \"" install "\\RivetHost.exe\"\r\n"
+   "if errorlevel 1 goto :restorefail\r\n"
+   "> \"%~dp0update-failed.txt\" echo %MOVEBIT_UPDATE_FAILURE%\r\n"
+   "call :launch\r\n"
+   "exit /b 1\r\n"
+   ":restorefail\r\n"
+   "> \"%~dp0update-failed.txt\" echo restore failed; old install retained beside current install\r\n"
    "exit /b 1\r\n"
    ":renamefail\r\n"
    "echo [%time%] FAILED backup rename >> \"%TRACE%\"\r\n"
    "> \"%~dp0update-failed.txt\" echo backup rename failed\r\n"
    "start \"\" \"" install "\\RivetHost.exe\"\r\n"
-   "exit /b 1\r\n"))
+   "exit /b 1\r\n"
+   ":launch\r\n"
+   "powershell.exe -NoProfile -NonInteractive -Command \"try { Start-Process -FilePath $env:MOVEBIT_UPDATE_EXE -WorkingDirectory (Split-Path -LiteralPath $env:MOVEBIT_UPDATE_EXE) -ErrorAction Stop | Out-Null; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }\" >> \"%TRACE%\" 2>&1\r\n"
+   "exit /b %errorlevel%\r\n"))
 
 (define (write-apply-helper! data-dir pid)
   (define staged (staged-dir data-dir))
