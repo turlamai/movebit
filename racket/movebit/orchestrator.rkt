@@ -19,11 +19,11 @@
 ;; completion — the reminder's cycle already restarted at fire time, so the
 ;; next reminder arrives on the normal schedule and nothing is silently lost.
 ;;
-;; Focus/presentation silence (quiet) changes presentation only: cues created
-;; while quiet stay `pending` and are NOT emitted to the host. When quiet
-;; ends they collapse into ONE bounded summary cue (companion-cue.rkt) —
-;; never a pile-up. Quiet never fabricates completion and never drops a
-;; due reminder's meaning.
+;; Focus/presentation silence changes PRESENTATION, not completion. It
+;; retracts an already-displayed open cue (the host now hides Mubi immediately)
+;; back into 'pending, and queues new cues without emitting them. Pending cues
+;; do NOT age out during Focus, even in a long meeting; leaving Focus emits one
+;; bounded merged invitation. No interrupted/hidden cue becomes "Done".
 
 (require "companion-cue.rkt"
          "config.rkt"
@@ -220,18 +220,27 @@
 ;; Host reports the cue actually visible: pending → displayed.
 (define (orchestrator-cue-displayed! o id)
   (define record (find-cue o id))
-  (when (and record (eq? (cue-record-status record) 'pending))
+  ;; UI delivery acknowledgments can arrive after a user has entered Focus.
+  ;; The character has already been withdrawn, so a late report must not
+  ;; consume the deferred invitation or mark a hidden notice as presented.
+  (when (and (not (movebit-orchestrator-quiet? o))
+             record (eq? (cue-record-status record) 'pending))
     (set-status! o record 'displayed)))
 
-;; Focus/presentation silence. Entering quiet only flips the flag — already
-;; open cues were emitted before quiet and stay on screen per host policy.
-;; LEAVING quiet collapses the queued-but-unshown cues into one summary cue;
-;; the superseded entries expire (their kinds ride along, nothing is lost).
+;; Focus is the existing single meeting/quiet action. Entering Focus cancels
+;; an open, already-visible invitation in the native host; put it back into
+;; the pending set so it can be recalled when the meeting ends.
+;; LEAVING Focus collapses the pending types into ONE re-invitation, without
+;; repeating every missed due moment or pretending anyone took a break.
 (define (orchestrator-set-quiet! o enabled?)
   (unless (boolean? enabled?)
     (raise-argument-error 'orchestrator-set-quiet! "boolean?" enabled?))
   (define was (movebit-orchestrator-quiet? o))
   (set-movebit-orchestrator-quiet?! o enabled?)
+  (when (and (not was) enabled?)
+    (for ([c (in-list (filter open? (movebit-orchestrator-cues o)))])
+      (when (eq? (cue-record-status c) 'displayed)
+        (set-status! o c 'pending))))
   (when (and was (not enabled?))
     (define summary-kinds
       (summarize-open-cues
@@ -272,8 +281,12 @@
 (define (expire-stale-cues! o)
   (define now ((movebit-orchestrator-now o)))
   (for ([c (in-list (filter open? (movebit-orchestrator-cues o)))])
-    (when (>= (- now (cue-record-created-ms c)) cue-expiry-ms)
-      (set-status! o c 'expired))))
+    ;; A long Focus session cannot erase deferred health reminders. Only
+    ;; normal visible pending/displayed cues expire after their policy window.
+    (unless (and (movebit-orchestrator-quiet? o)
+                 (eq? (cue-record-status c) 'pending))
+      (when (>= (- now (cue-record-created-ms c)) cue-expiry-ms)
+        (set-status! o c 'expired)))))
 
 ;; Advance one tick: scheduler, same-tick cue merge, expiry, stats flush.
 (define (orchestrator-tick! o)

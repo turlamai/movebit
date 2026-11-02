@@ -92,14 +92,15 @@
                     (and (eq? delivery 'character)
                          (not reduce-motion?)))]))
 
-;; Collapse the open-cue ledger into at most ONE summary cue: the union of
-;; the queued-but-NEVER-SHOWN kinds, priority-ordered. Entries the host
-;; already reported as displayed were seen before quiet began — they are
-;; carried by the host surface, not re-emitted as a second interruption.
-;; Returns the summary kinds or #f when nothing is queued. The orchestrator
-;; turns the result into a fresh cue with a new id; superseded entries close
-;; as expired — a Focus window can hide a reminder moment, never delete its
-;; meaning.
+;; Collapse the open-cue ledger into at most ONE summary invitation:
+;; the union of 'pending kinds, priority-ordered. On ENTERING Focus the
+;; orchestrator retracts already-shown, still-open reminders back to 'pending
+;; because native hosts now hide Mubi immediately; acknowledged/snoozed/hidden
+;; events are settled and never replayed. A late "displayed" callback during
+;; Focus is deliberately ignored.
+;; Returns the summary kinds or #f when none need replay. The orchestrator
+;; gives the re-invitation one fresh id and expires all superseded entries.
+;; The visible timer and a long meeting NEVER fabricate a Done.
 (define (summarize-open-cues entries)
   (unless (and (list? entries)
                (andmap open-cue? entries))
