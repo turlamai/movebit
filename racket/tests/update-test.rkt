@@ -476,7 +476,8 @@
 (test-case "the zip swap script backs up, rolls back, and marks failures"
   (define script (upd:zip-apply-script "C:\\Apps\\MoveBit" "C:\\stage" 4242))
   ;; wait for the exact PID, then move the old install aside FIRST
-  (check-true (string-contains? script "PID eq 4242"))
+  (check-true (string-contains? script "GetProcessById(4242)"))
+  (check-true (string-contains? script "$p.WaitForExit(120000)"))
   (check-true (string-contains? script "ren \"C:\\Apps\\MoveBit\" \"MoveBit.old\""))
   (check-true (string-contains? script "robocopy \"C:\\stage\" \"C:\\Apps\\MoveBit\""))
   ;; a failed copy restores the .old and relaunches the old exe — the
@@ -486,10 +487,18 @@
   ;; a failed rename also relaunches the untouched old install
   (check-true (string-contains? script ":renamefail"))
   ;; both failure paths leave the marker the next launch surfaces once
-  (check-equal? (length (regexp-match* #rx"update-failed\\.txt" script)) 3)
+  (check-equal? (length (regexp-match* #rx"update-failed\\.txt" script)) 4)
   (check-true (string-contains? script "if errorlevel 1 goto :launchfail"))
   (check-true (string-contains? script "-ErrorAction Stop"))
   (check-true (string-contains? script "if errorlevel 1 goto :restorefail")))
+
+(test-case "Windows portable exit deadline is bounded and rejects invalid inputs"
+  (check-exn exn:fail:contract?
+             (lambda () (upd:zip-apply-script "C:\\Apps\\MoveBit" "C:\\stage" 0)))
+  (for ([seconds (in-list '(0 -1 601 1.5 "120"))])
+    (check-exn exn:fail:contract?
+               (lambda () (upd:zip-apply-script "C:\\Apps\\MoveBit" "C:\\stage" 42
+                                                #:exit-wait-seconds seconds)))))
 
 (test-case "the msi handoff script runs one passive msiexec upgrade"
   (define script

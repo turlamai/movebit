@@ -76,18 +76,38 @@
     (if (eq? kind 'launch-failure)
         (write-text (build-path staged "RivetHost.exe") "not a Windows executable")
         (copy-file new-exe (build-path staged "RivetHost.exe"))))
+  ;; A real disposable process stays alive past the short test deadline.
+  ;; Let it finish naturally; a forced kill must never count as updater success.
+  (define-values (blocker blocker-out blocker-in blocker-err)
+    (if (eq? kind 'busy-process)
+        (subprocess #f #f #f (find-system-path 'exec-file) "-e" "(sleep 12)")
+        (values #f #f #f #f)))
+  (when blocker (close-output-port blocker-in))
   (write-text helper (upd:zip-apply-script (path->string install)
-                                        (path->string staged) 2147483646))
+                                        (path->string staged)
+                                        (if blocker (subprocess-pid blocker) 2147483646)
+                                        #:exit-wait-seconds (if blocker 1 120)))
   (define code (run-helper helper (build-path root "helper-output.log")))
   (check-equal? code (if (eq? kind 'success) 0 1))
-  (check-equal? (wait-marker (build-path install "launched.txt"))
-                (if (eq? kind 'success) "new" "old"))
+  (if blocker
+      (begin
+        (check-equal? (subprocess-status blocker) 'running)
+        (check-false (file-exists? (build-path install "launched.txt")))
+        (check-false (directory-exists? (string-append (path->string install) ".old")))
+        (subprocess-wait blocker)
+        (close-input-port blocker-out)
+        (close-input-port blocker-err))
+      (check-equal? (wait-marker (build-path install "launched.txt"))
+                    (if (eq? kind 'success) "new" "old")))
   (check-equal? (file->bytes data) #"{\"disposable\":true}")
   (unless (eq? kind 'success)
     (check-equal? (file->bytes (build-path install "RivetHost.exe"))
                   (file->bytes old-exe))
     (check-equal? (file->string (build-path install "old-layout.txt")) "original distribution")
-    (check-regexp-match (if (eq? kind 'launch-failure) #rx"launch failed" #rx"robocopy failed")
+    (check-regexp-match (case kind
+                          [(launch-failure) #rx"launch failed"]
+                          [(busy-process) #rx"old process exit not confirmed"]
+                          [else #rx"robocopy failed"])
                         (file->string (build-path root "update-failed.txt")))))
 
 (define failures
@@ -95,9 +115,10 @@
    (test-suite "Windows portable update helper recovery"
      (test-case "successful copy launches the new executable" (scenario 'success))
      (test-case "invalid updated executable restores and runs the original" (scenario 'launch-failure))
-     (test-case "failed copy restores and runs the original" (scenario 'copy-failure)))))
+     (test-case "failed copy restores and runs the original" (scenario 'copy-failure))
+     (test-case "live old process times out without replacement or termination" (scenario 'busy-process)))))
 ;; Keep failed evidence in the throwaway runner directory for diagnosis.
 (if (zero? failures)
     (begin (delete-directory/files scratch)
-           (displayln "Windows portable update: native success/copy failure/launch failure recovery PASS"))
+           (displayln "Windows portable update: native success/copy failure/launch failure/exit deadline PASS"))
     (begin (eprintf "Windows helper failure evidence: ~a\n" scratch) (exit 1)))

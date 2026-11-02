@@ -573,7 +573,7 @@
 ;;     the helper waits for the running app to exit, moves the install
 ;;     directory aside, robocopys the staged payload over a fresh install
 ;;     directory (restoring the old one when the copy fails), relaunches,
-;;     and removes itself. MSI installs (Program Files) skip all of that:
+;;     and retains its helper/trace for diagnostics. MSI installs (Program Files) skip all of that:
 ;;     the helper runs one passive msiexec upgrade instead — msiexec
 ;;     elevates, so the unwritable install directory is not an obstacle.
 ;;   macOS — the zip carries movebit.app. Extract the same way (bsdtar reads
@@ -649,7 +649,11 @@
 ;; surface the failure once. `cd /d` first: the helper inherits the app's
 ;; working directory, and a cmd whose cwd sits inside a directory being
 ;; renamed would hold it open.
-(define (zip-apply-script install staged pid)
+(define (zip-apply-script install staged pid #:exit-wait-seconds [exit-wait-seconds 120])
+  (unless (and (exact-positive-integer? pid) (<= pid 2147483647))
+    (raise-argument-error 'zip-apply-script "positive Windows process ID" pid))
+  (unless (and (exact-positive-integer? exit-wait-seconds) (<= exit-wait-seconds 600))
+    (raise-argument-error 'zip-apply-script "integer timeout from 1 through 600 seconds" exit-wait-seconds))
   (define old (string-append install ".old"))
   (string-append
    "@echo off\r\n"
@@ -659,13 +663,15 @@
    "cd /d \"%~dp0\"\r\n"
    "echo [%date% %time%] helper started, waiting for PID "
    (number->string pid) " > \"%TRACE%\"\r\n"
-   ":waitloop\r\n"
-   "tasklist /FI \"PID eq " (number->string pid) "\" | find \""
-   (number->string pid) "\" >nul\r\n"
-   "if not errorlevel 1 (\r\n"
-   "  timeout /t 1 /nobreak >nul\r\n"
-   "  goto waitloop\r\n"
-   ")\r\n"
+   ;; Wait on one process handle with a deadline, without parsing tasklist
+   ;; text or depending on TIMEOUT's interactive console input. Only a
+   ;; confirmed missing/exited process permits any filesystem mutation.
+   "powershell.exe -NoProfile -NonInteractive -Command \"try { $p = [Diagnostics.Process]::GetProcessById("
+   (number->string pid)
+   "); } catch [System.ArgumentException] { exit 0 } catch { exit 2 }; try { if ($p.WaitForExit("
+   (number->string (* exit-wait-seconds 1000))
+   ")) { exit 0 }; exit 1 } catch { exit 2 }\" >> \"%TRACE%\" 2>&1\r\n"
+   "if errorlevel 1 goto :waitfail\r\n"
    "echo [%time%] app exited, backing up the old install >> \"%TRACE%\"\r\n"
    "ren \"" install "\" \"" (install-base-name install) ".old\"\r\n"
    "if errorlevel 1 goto :renamefail\r\n"
@@ -687,6 +693,10 @@
    ;; frames; deleting it here can turn a successful update into exit 1.
    ;; write-apply-helper! replaces it on the next explicit update attempt.
    "exit /b 0\r\n"
+   ":waitfail\r\n"
+   "echo [%time%] old process exit not confirmed; update left unapplied >> \"%TRACE%\"\r\n"
+   "> \"%~dp0update-failed.txt\" echo old process exit not confirmed within deadline; update left unapplied\r\n"
+   "exit /b 1\r\n"
    ":copyfail\r\n"
    "set \"MOVEBIT_UPDATE_FAILURE=robocopy failed (%MOVEBIT_COPY_EXIT%)\"\r\n"
    "goto :rollback\r\n"
