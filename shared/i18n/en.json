@@ -168,6 +168,7 @@
   "tray.exit": "Quit MoveBit",
   "tray.focusOff": "Turn off Focus",
   "tray.focusOn": "Turn on Focus",
+  "tray.moveAside": "Move Mubi aside",
   "tray.open": "Settings & stats",
   "tray.pause": "Pause reminders for 1 hour",
   "tray.paused": "MoveBit · {0}paused until {1:HH:mm}",

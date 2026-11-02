@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Delete only unchanged local heads of already merged PRs
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const {owner, repo} = context.repo;

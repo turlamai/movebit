@@ -178,6 +178,7 @@ enum GeneratedI18n {
         "tray.focusOn": ["zh": "开启专注", "en": "Turn on Focus"],
         "tray.hideHintBody": ["zh": "主窗口已收起，提醒继续。点托盘水滴图标随时叫它回来。", "en": "The main window is tucked away and reminders continue. Click the tray droplet anytime to bring it back."],
         "tray.hideHintTitle": ["zh": "沐比在托盘等你", "en": "Mubi is waiting in the tray"],
+        "tray.moveAside": ["zh": "挪开沐比", "en": "Move Mubi aside"],
         "tray.open": ["zh": "设置与统计", "en": "Settings & stats"],
         "tray.pause": ["zh": "暂停提醒 1 小时", "en": "Pause reminders for 1 hour"],
         "tray.paused": ["zh": "MoveBit · {0}已暂停至 {1:HH:mm}", "en": "MoveBit · {0}paused until {1:HH:mm}"],

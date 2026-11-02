@@ -150,6 +150,7 @@ struct AppState {
   GtkButton* pause_button{nullptr};
   GtkButton* quit_button{nullptr};
   GtkButton* focus_button{nullptr};
+  GtkButton* move_button{nullptr};  // tray-less desktop fallback
   GtkBox* content_root{nullptr};  // cleared + rebuilt on language change
 
   std::unique_ptr<rivet::linux_runtime::Backend> backend;
@@ -839,6 +840,10 @@ void refresh_focus_button() {
 void refresh_header_buttons() {
   refresh_pause_button();
   refresh_focus_button();
+  if (g_state.move_button != nullptr) {
+    gtk_button_set_label(g_state.move_button, l10n::t("tray.moveAside").c_str());
+    gtk_widget_set_sensitive(GTK_WIDGET(g_state.move_button), g_state.mubi_x11);
+  }
   refresh_quit_button();
 }
 
@@ -1011,6 +1016,7 @@ void reload_history();
 // run before the companion window exists (the pose call no-ops there).
 namespace mubi {
 void set_quiet(bool enabled);
+void move_aside();
 }
 
 void on_pause_clicked(GtkButton*, gpointer) {
@@ -1035,6 +1041,10 @@ void on_quit_clicked(GtkButton*, gpointer) {
 // Focus (presentation silence): the backend queues cues and returns one
 // bounded summary; the character settles into its quiet pose. The pose
 // update is local so the toggle works even while the backend is down (#54).
+void on_move_clicked(GtkButton*, gpointer) {
+  if (g_state.mubi_x11) mubi::move_aside();
+}
+
 void on_focus_clicked(GtkButton*, gpointer) {
   auto const next = !g_state.model.quiet;
   g_state.model.quiet = next;
@@ -2385,10 +2395,8 @@ void present(int state, std::string const& message, GtkApplication* app,
         // the compositor composes the character's alpha against the
         // desktop instead of a solid surface.
         gdk_surface_set_opaque_region(surface, nullptr);
-        // GTK can_target=FALSE only controls GTK dispatch: it does not
-        // make the X11 top-level click-through. Empty *native input region*
-        // ensures cursor clicks/selection reach the app underneath, even
-        // when a large health note visits the center of the work area.
+        // GTK can-target is not native X11 click-through. Use an empty
+        // input shape so clicks and selections reach background applications.
         cairo_region_t* empty_input = cairo_region_create();
         gdk_surface_set_input_region(surface, empty_input);
         cairo_region_destroy(empty_input);
@@ -2445,8 +2453,7 @@ void present(int state, std::string const& message, GtkApplication* app,
   int const win_w = canvas_w;
   int const win_h = canvas_h + (label_visible ? 44 : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
-  // Unlike gtk_window_present(), mapping an already-created nonfocusable
-  // X11 overlay does not request the user's keyboard focus on each cue.
+  // Do not request window-manager keyboard focus for a floating pet.
   gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
 
   // Dock inside the monitor work area. GTK4 has no gtk_window_move; on
@@ -2512,6 +2519,20 @@ void present(int state, std::string const& message, GtkApplication* app,
 }
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
+
+// Cycle a local, temporary corner to get out of the user's way.
+// Do not update persisted settings or the Racket reminder ledger.
+void move_aside() {
+  if (!g_state.mubi_x11) return;
+  if (g_state.mubi_dock == "bottom-right") g_state.mubi_dock = "bottom-left";
+  else if (g_state.mubi_dock == "bottom-left") g_state.mubi_dock = "top-left";
+  else if (g_state.mubi_dock == "top-left") g_state.mubi_dock = "top-right";
+  else g_state.mubi_dock = "bottom-right";
+  // Keep the same due cue and readable text when parking Mubi elsewhere.
+  // Re-presenting is visual only: no backend acknowledge/snooze/dismiss.
+  present(g_state.mubi_state, g_state.mubi_message, nullptr,
+          g_state.mubi_cue_id);
+}
 
 void show_ack() {
   if (!g_state.mubi_quiet) present(4, "", nullptr);
@@ -2690,6 +2711,10 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
     }));
   }
   items.push_back(TrayMenuItem(TrayMenuItem::Type::separator));
+  if (g_state.mubi_x11) {
+    items.push_back(menu_item(l10n::t("tray.moveAside"),
+                              [] { mubi::move_aside(); }));
+  }
   items.push_back(menu_item(l10n::t(g_state.model.is_paused() ? "tray.resume"
                                                               : "tray.pause"),
                             [] { on_pause_clicked(nullptr, nullptr); }));
@@ -3624,12 +3649,10 @@ int on_backend_finished(gpointer user_data) {
       return (wayland && *wayland) ||
              (session && std::string(session) == "wayland");
     }();
-    // If this X11 display cannot make an empty native input shape, do NOT
-    // put a transparent-but-click-blocking character on top of editors.
-    // Fall back to the existing nonblocking notification presentation.
     auto* display = gdk_display_get_default();
     g_state.mubi_x11 = !on_wayland && display != nullptr &&
                        gdk_display_supports_input_shapes(display);
+    refresh_header_buttons();
     (void)g_state.api->set_host_capability_async(g_state.mubi_x11, false,
                                                  [](rivet_app::Result<void>) {});
   }
@@ -3729,6 +3752,12 @@ void on_activate(GtkApplication* app, gpointer) {
     g_signal_connect(focus, "clicked", G_CALLBACK(on_focus_clicked), nullptr);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), focus);
     g_state.focus_button = GTK_BUTTON(focus);
+    // On desktops without an SNI watcher, quick actions live here instead.
+    auto* move = gtk_button_new_with_label(l10n::t("tray.moveAside").c_str());
+    gtk_widget_set_sensitive(move, FALSE); // enabled on X11 capability report
+    g_signal_connect(move, "clicked", G_CALLBACK(on_move_clicked), nullptr);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), move);
+    g_state.move_button = GTK_BUTTON(move);
     auto* quit = gtk_button_new_with_label(l10n::t("tray.exit").c_str());
     g_signal_connect(quit, "clicked", G_CALLBACK(on_quit_clicked), nullptr);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), quit);
