@@ -120,6 +120,8 @@
                                                Foreground="#6E6A5E" />
                                 </StackPanel>
                             </Grid>
+                            <TextBlock x:Name="TodayCountsNote" TextWrapping="Wrap"
+                                       FontSize="11" Foreground="#6E6A5E" />
                         </StackPanel>
                     </Border>
 

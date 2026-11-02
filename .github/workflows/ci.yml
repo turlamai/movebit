@@ -18,6 +18,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  signed-appimage-feed-contract:
+    name: Offline signed AppImage feed contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify signed feed and attacker-negative fixtures
+        run: python3 scripts/check-signed-appimage-feed.py --self-test
+
+  appimage-updater-arm64:
+    name: Linux arm64 signed AppImage updater tests
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Bogdanp/setup-racket@v1.16
+        with:
+          architecture: arm64
+          version: stable
+      - name: Install pinned Rivet
+        shell: bash
+        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
+      - name: Run signed update and attacker-negative tests natively
+        run: raco test racket/tests/update-test.rkt
+
   release-signing-contract:
     name: Offline Ed25519 release trust-root contract
     runs-on: ubuntu-latest
@@ -71,6 +94,16 @@ jobs:
 
       - name: Domain core tests
         run: raco test racket/
+      # Permit is optional: ordinary Free/core and host builds have no
+      # commercial dependency. Only this Linux contract step installs it.
+      - name: Real signed Permit integration contract (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          raco pkg install --auto --no-docs --name permit \
+            'https://github.com/turlamai/permit.git#df47436013c5e3929c58dd809a97db77b2cfd423'
+          raco test integration-tests/
   # The Linux host needs an embeddable static libracketcs, which the standard
   # Racket installers do not ship; rivet's own composite action builds and
   # caches it (docs/ci.md — product workflows should not copy the recipe).

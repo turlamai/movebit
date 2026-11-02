@@ -6,7 +6,7 @@ Water, stand-up and eye-rest reminders delivered by Mubi（沐比）, a small or
 
 ## Availability
 
-v0.0.1. Free community application under MIT; no commercial activation or subscription.
+Current public preview: MIT-licensed source and no enabled paid activation or subscription. Select the actual published version from Releases; this guide does not claim the historical v0.0.1 baseline is the latest build.
 
 ## Platforms and installation
 
