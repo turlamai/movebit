@@ -8,6 +8,8 @@
 (require crypto
          crypto/all
          rackunit
+         net/url
+         openssl
          rackunit/text-ui
          rivet/distribution
          racket/file
@@ -38,15 +40,36 @@
 (file-or-directory-permissions installed #o755)
 (define old-appimage (getenv "APPIMAGE"))
 
-;; This ephemeral server supplies actual AppImage bytes. The signed expected
-;; SHA-256 and byte size come from the authenticated manifest, not the server.
-(define listener (tcp-listen 0 8 #f "127.0.0.1"))
-(define-values (_addr port _peer _p) (tcp-addresses listener #t))
+;; Serve the actual AppImage over loopback HTTPS with an ephemeral, trusted
+;; test-only certificate. Rivet correctly rejects HTTP artifact URLs in a
+;; signed manifest; do not relax that release security boundary for tests.
+;; The signed SHA-256 and size still authenticate the downloaded bytes.
+(define openssl-exe (find-executable-path "openssl"))
+(unless openssl-exe
+  (error 'appimage-release-acceptance "openssl is required for local HTTPS acceptance"))
+(define cert (build-path scratch "loopback-cert.pem"))
+(define key (build-path scratch "loopback-key.pem"))
+(unless (zero? (system*/exit-code openssl-exe
+                                  "req" "-x509" "-newkey" "rsa:2048" "-nodes"
+                                  "-days" "1" "-subj" "/CN=localhost"
+                                  "-addext" "subjectAltName=IP:127.0.0.1,DNS:localhost"
+                                  "-keyout" (path->string key)
+                                  "-out" (path->string cert)))
+  (error 'appimage-release-acceptance "failed to create ephemeral loopback TLS certificate"))
+(define server-context
+  (ssl-make-server-context 'secure
+                           #:private-key (list 'pem (path->string key))
+                           #:certificate-chain (path->string cert)))
+(define client-context
+  (parameterize ([ssl-default-verify-sources (list (path->string cert))])
+    (ssl-secure-client-context)))
+(define listener (ssl-listen 0 8 #f "127.0.0.1" server-context))
+(define-values (_addr port _peer _p) (ssl-addresses listener #t))
 (define server
   (thread
    (lambda ()
      (let loop ()
-       (define-values (in out) (tcp-accept listener))
+       (define-values (in out) (ssl-accept listener))
        (thread
         (lambda ()
           (with-handlers ([exn:fail? (lambda (_) (void))])
@@ -74,7 +97,7 @@
 (define (signed-candidate digest size)
   (define artifact
     (apply update-artifact 'linux (upd:architecture-symbol)
-           (format "http://127.0.0.1:~a/release.AppImage" port)
+           (format "https://127.0.0.1:~a/release.AppImage" port)
            digest size 'appimage '() component-tail))
   (define inner
     (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
@@ -88,6 +111,12 @@
   (define selected (select-update config verified #:install-kind 'appimage))
   (check-true (update-candidate? selected))
   selected)
+
+;; Preserve normal certificate-chain and hostname verification while
+;; trusting only this ephemeral test certificate, never a production key.
+(define (download-local! candidate)
+  (parameterize ([current-https-protocol client-context])
+    (upd:download-appimage-with-progress! candidate)))
 
 ;; run-tests reports a nonzero failure count; a raw top-level rackunit
 ;; check can print FAILURE but leave the process exit code at zero.
@@ -104,7 +133,7 @@
     ;; Both rejection paths must leave the original launchable image intact.
     (check-exn exn:fail?
                (lambda ()
-                 (upd:download-appimage-with-progress!
+                 (download-local!
                   (signed-candidate (make-string 64 #\0) source-size))))
     (check-equal? (sha256-file/hex installed) original-digest)
     (check-exn exn:fail?
@@ -114,7 +143,7 @@
     (check-equal? (sha256-file/hex installed) original-digest)
     (check-false (file-exists? (string-append (path->string installed) ".previous")))
 
-    (let ([updated (upd:download-appimage-with-progress!
+    (let ([updated (download-local!
                     (signed-candidate source-digest source-size))]
           [backup (string-append (path->string installed) ".previous")])
       (check-equal? updated (path->string installed))
@@ -137,6 +166,6 @@
 ;; "the current custodian does not solely manage the specified thread".
 ;; Clean up from the owning outer custodian after run-tests has returned.
 (kill-thread server)
-(tcp-close listener)
+(ssl-close listener)
 (delete-directory/files scratch)
 (unless (zero? failures) (exit 1))
