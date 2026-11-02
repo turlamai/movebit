@@ -14,11 +14,12 @@
 
 (define minute-ms 60000)
 
-(struct orch-harness (h o cues flushes) #:transparent)
+(struct orch-harness (h o cues flushes outcomes) #:transparent)
 
-;; Build a scheduler harness plus its orchestrator with a recording on-cue.
-;; Only an explicit micro opt-in patches the config (patching clamps — a
-;; sub-limit #:sit like 5 must survive raw for short-cycle tests).
+;; Build a scheduler harness plus its orchestrator with a recording on-cue
+;; and a recording on-outcome (issue #88). Only an explicit micro opt-in
+;; patches the config (patching clamps — a sub-limit #:sit like 5 must
+;; survive raw for short-cycle tests).
 (define (make-oh #:sit [sit 45]
                  #:water [water 30]
                  #:micro [micro #f]
@@ -28,6 +29,7 @@
     (h-patch-config! h #:micro-enabled #t #:micro-interval micro))
   (define cue-box (box '()))
   (define flushes (box 0))
+  (define outcomes (box '()))
   (define o
     (make-orchestrator (h-scheduler h)
                        (lambda () (h-now-ms h))
@@ -35,8 +37,12 @@
                        (lambda (record)
                          (set-box! cue-box (cons record (unbox cue-box))))
                        #:on-flush
-                       (lambda () (set-box! flushes (add1 (unbox flushes))))))
-  (orch-harness h o cue-box flushes))
+                       (lambda () (set-box! flushes (add1 (unbox flushes))))
+                       #:on-outcome
+                       (lambda (kind status)
+                         (set-box! outcomes
+                                   (cons (list kind status) (unbox outcomes))))))
+  (orch-harness h o cue-box flushes outcomes))
 
 (define (oh-step! oh ms)
   ;; Advance the virtual clock and drive the ORCHESTRATOR tick (the backend's
@@ -57,6 +63,8 @@
   (define cs (oh-cues oh))
   (and (pair? cs) (car (reverse cs))))
 (define (oh-open oh) (orchestrator-open-cues (orch-harness-o oh)))
+;; Outcome events, oldest first.
+(define (oh-outcomes oh) (reverse (unbox (orch-harness-outcomes oh))))
 
 ;; --- merge rule: one cue per tick, kinds preserved --------------------------
 
@@ -173,14 +181,15 @@
   (oh-step-minutes! oh 4 1)
   (check-equal? (h-fired-kinds (orch-harness-h oh)) '(water micro water micro)))
 
-;; Hide expires the cue WITHOUT claiming completion and without deferring:
-;; water re-fires on its normal full interval, not after a snooze.
+;; Hide ends the cue WITHOUT claiming completion and without deferring:
+;; water re-fires on its normal full interval, not after a snooze. Hide keeps
+;; its own terminal status so the outcome history can tell it from a timeout.
 (let ([oh (make-oh #:sit 300 #:water 10 #:snooze 5)])
   (oh-step-minutes! oh 10)
   (define id (cue-record-id (oh-last-cue oh)))
   (orchestrator-dismiss-cue! (orch-harness-o oh) id)
   (check-equal? (cue-record-status (orchestrator-find-cue (orch-harness-o oh) id))
-                'expired)
+                'dismissed)
   (check-equal? (length (oh-open oh)) 0)
   (check-equal? (h-session-ms (orch-harness-h oh)) (* 10 minute-ms))
   ;; normal schedule: the next water reminder is one FULL interval after the
@@ -201,6 +210,69 @@
   (oh-step-minutes! oh 2 1)
   (check-equal? (length (oh-open oh)) 0) ; past cue-expiry-ms: expired
   (check-equal? (h-fired-kinds (orch-harness-h oh)) '(water)))
+
+;; --- outcome events (issue #88): presentation ≠ response ≠ timeout ----------
+
+;; The full delivery/response path: presenting a merged cue reports one
+;; 'presented per kind; Done reports 'self-reported-done; neither implies
+;; more than the user actually did.
+(let ([oh (make-oh #:sit 10 #:water 10)])
+  (oh-step-minutes! oh 10)
+  (check-equal? (cue-record-kinds (oh-last-cue oh)) '(sit water))
+  (define id (cue-record-id (oh-last-cue oh)))
+  (check-equal? (oh-outcomes oh) '()) ; pending, not yet on screen
+  (orchestrator-cue-displayed! (orch-harness-o oh) id)
+  (check-equal? (oh-outcomes oh) '((sit presented) (water presented)))
+  (orchestrator-acknowledge-cue! (orch-harness-o oh) id)
+  (check-equal? (oh-outcomes oh)
+                '((sit presented) (water presented)
+                  (sit self-reported-done) (water self-reported-done))))
+
+;; Later reports its own terminal, distinct from a timeout (oldest first).
+(let ([oh (make-oh #:sit 300 #:water 10)])
+  (oh-step-minutes! oh 10)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (orchestrator-cue-displayed! (orch-harness-o oh) id)
+  (orchestrator-snooze-cue! (orch-harness-o oh) id)
+  (check-equal? (oh-outcomes oh)
+                '((water presented) (water snoozed))))
+
+;; Hide reports 'dismissed, again distinct from a timeout.
+(let ([oh (make-oh #:sit 300 #:water 10)])
+  (oh-step-minutes! oh 10)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (orchestrator-cue-displayed! (orch-harness-o oh) id)
+  (orchestrator-dismiss-cue! (orch-harness-o oh) id)
+  (check-equal? (oh-outcomes oh)
+                '((water presented) (water dismissed))))
+
+;; A shown cue that times out unanswered is 'expired.
+(let ([oh (make-oh #:sit 300 #:water 15)])
+  (oh-step-minutes! oh 15 5)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (orchestrator-cue-displayed! (orch-harness-o oh) id)
+  (oh-step-minutes! oh 11 1)
+  (check-equal? (oh-outcomes oh) '((water presented) (water expired))))
+
+;; A never-shown pending cue that times out outside Focus is 'not-delivered:
+;; nothing reached the screen, and history must not pretend it did.
+(let ([oh (make-oh #:sit 300 #:water 5)])
+  ;; A host that never reports displayed: the cue fires and times out unseen.
+  (oh-step-minutes! oh 5)
+  (check-equal? (length (oh-open oh)) 1)
+  (oh-step-minutes! oh 11 1)
+  (check-equal? (oh-outcomes oh) '((water not-delivered))))
+
+;; Superseding by Focus-exit fires NO outcome event for the superseded cue.
+(let ([oh (make-oh #:sit 300 #:water 10)])
+  (oh-step-minutes! oh 10)
+  (define first-id (cue-record-id (oh-last-cue oh)))
+  (orchestrator-cue-displayed! (orch-harness-o oh) first-id)
+  (orchestrator-set-quiet! (orch-harness-o oh) #t)
+  (orchestrator-set-quiet! (orch-harness-o oh) #f)
+  ;; Only the original presentation exists — no expired/not-delivered entry.
+  (check-equal? (length (oh-outcomes oh)) 1)
+  (check-equal? (oh-outcomes oh) '((water presented))))
 
 ;; --- quiet mode: queue, never emit; bounded summary on exit -----------------
 
@@ -268,9 +340,11 @@
   (check-equal? (length (oh-cues oh)) 2)
   (define summary (oh-last-cue oh))
   (check-equal? (cue-record-kinds summary) '(water))
+  ;; The retracted cue is superseded by the merged invitation — a bookkeeping
+  ;; terminal with NO outcome event, never a fabricated expiry.
   (check-equal? (cue-record-status
                  (orchestrator-find-cue (orch-harness-o oh) id))
-                'expired)
+                'superseded)
   (check-equal? (length (oh-open oh)) 1)
   ;; Repeated Focus-off command does not re-emit or fabricate a new cue.
   (orchestrator-set-quiet! (orch-harness-o oh) #f)
