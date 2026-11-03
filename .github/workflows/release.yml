@@ -346,51 +346,58 @@ jobs:
           rm -f "$KEY_DER"
       - name: Verify signed AppImage feed matches x64/arm64 bytes
         run: python3 scripts/check-signed-appimage-feed.py dist/update-manifest.json dist
-      - name: Ensure SHA256SUMS
-        run: |
-          cd dist
-          [ -f SHA256SUMS ] || {
-            find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS
-          }
-          shasum -a 256 --check SHA256SUMS
-      - name: Create stable download aliases
+      - name: Validate and stage the canonical 18-asset desktop matrix
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          cd dist
-          # Stable, version-free names so the site can link
-          # releases/latest/download/<alias> without knowing the version.
-          # Bytes are identical copies of the tagged assets, created after
-          # SHA256SUMS so the checksum manifest stays versioned-asset-only.
-          required="macos-arm64.dmg macos-x64.dmg windows-x64.msi linux-x64.deb linux-arm64.deb linux-x64.AppImage linux-x64.flatpak linux-arm64.flatpak"
-          for a in $required; do
-            test -f "movebit-${VERSION}-${a}" || { echo "::error::missing movebit-${VERSION}-${a}"; exit 1; }
-            cp "movebit-${VERSION}-${a}" "movebit-${a}"
+          VERSION="$(printf '%s' "$GITHUB_REF_NAME" | cut -c2-)"
+          mkdir -p public
+          for suffix in \
+            macos-arm64.dmg macos-arm64.zip macos-x64.dmg macos-x64.zip \
+            windows-x64.msi windows-x64.zip \
+            linux-arm64.AppImage linux-arm64.deb linux-arm64.flatpak \
+            linux-arm64.tar.gz linux-arm64.zip linux-aarch64.rpm \
+            linux-x64.AppImage linux-x64.deb linux-x64.flatpak \
+            linux-x64.tar.gz linux-x64.zip linux-x86_64.rpm; do
+            name="movebit-$VERSION-$suffix"
+            test -s "dist/$name" || { echo "::error::Missing or empty release asset $name"; exit 1; }
+            cp "dist/$name" "public/$name"
           done
-          # arm64 AppImage is best-effort upstream; alias it only when present.
-          if [ -f "movebit-${VERSION}-linux-arm64.AppImage" ]; then
-            cp "movebit-${VERSION}-linux-arm64.AppImage" "movebit-linux-arm64.AppImage"
-          fi
-          ls -la
+          cp dist/update-manifest.json public/
+          test -s public/update-manifest.json
+          cd public
+          shasum -a 256 movebit-* | LC_ALL=C sort -k2 > SHA256SUMS
+          shasum -a 256 --check SHA256SUMS
+          test "$(grep -c '^' SHA256SUMS)" -eq 18
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          awk -v header="## [${VERSION}]" '
+          set -euo pipefail
+          VERSION="$(printf '%s' "$GITHUB_REF_NAME" | cut -c2-)"
+          awk -v header="## [$VERSION]" '
             index($0, header) == 1 {on=1; next}
             on && /^## / {exit}
             on {print}
           ' CHANGELOG.md > /tmp/notes.md
-          if gh release view "${{ github.ref_name }}" -R turlamai/movebit >/dev/null 2>&1; then
-            gh release upload "${{ github.ref_name }}" dist/* --clobber -R turlamai/movebit
+          test -s /tmp/notes.md
+          if gh release view "$GITHUB_REF_NAME" -R turlamai/movebit >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" -R turlamai/movebit --notes-file /tmp/notes.md
+            gh release upload "$GITHUB_REF_NAME" public/* --clobber -R turlamai/movebit
           else
-            gh release create "${{ github.ref_name }}" dist/* \
+            gh release create "$GITHUB_REF_NAME" public/* \
               -R turlamai/movebit \
-              --title "MoveBit ${{ github.ref_name }}" \
+              --title "MoveBit $VERSION" \
               --notes-file /tmp/notes.md
           fi
-      - name: Attest build provenance
+          # Keep reruns idempotent without accumulating stale aliases or
+          # per-installer sidecars from older pipeline generations.
+          gh release view "$GITHUB_REF_NAME" -R turlamai/movebit --json assets --jq '.assets[].name' |
+            while IFS= read -r name; do
+              if [ ! -f "public/$name" ]; then
+                gh release delete-asset "$GITHUB_REF_NAME" "$name" --yes -R turlamai/movebit
+              fi
+            done
+      - name: Attest public build provenance
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/*
+          subject-path: public/*
