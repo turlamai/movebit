@@ -73,7 +73,7 @@ raco rivet acceptance --json # 当前平台的打包产品验收
 - **i18n 单源**：`shared/i18n/{zh,en}.json`，平台副本必须逐字节一致；zh 为默认
 - **RPC 面**：`app/backend.rkt` 的 define-rpc 是宿主唯一数据通道；改签名 = 各端宿主 + 生成客户端同步改
 - **宿主只做渲染与交互**：业务一律走 RPC；定时器/调度/HTTP/存储都在 Racket 后端
-- **Rivet 改动走上游**：缺能力先提 issue/PR 到 turinglambdaai/rivet
+- **Rivet 改动走上游**：缺能力先提 issue/PR 到 turlamai/rivet
 
 ## 项目结构
 

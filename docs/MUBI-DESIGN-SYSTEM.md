@@ -2,7 +2,7 @@
 
 [中文](MUBI-DESIGN-SYSTEM.zh-CN.md) · English
 
-The authoritative visual/interaction spec lives in [issue #56](https://github.com/turinglambdaai/movebit/issues/56) (design freeze, owner-approved 2026-10-26). This document is the repo-side implementation reference: where the art comes from, what hosts must render, and how to verify. Mubi is a **means of delivering health reminders** (charter #51), never a pet product.
+The authoritative visual/interaction spec lives in [issue #56](https://github.com/turlamai/movebit/issues/56) (design freeze, owner-approved 2026-10-26). This document is the repo-side implementation reference: where the art comes from, what hosts must render, and how to verify. Mubi is a **means of delivering health reminders** (charter #51), never a pet product.
 
 ![Mubi contact sheet](../assets/mubi/contact-sheet.png)
 

@@ -2,7 +2,7 @@
 
 中文 · [English](MUBI-DESIGN-SYSTEM.md)
 
-权威视觉/交互规范在 [issue #56](https://github.com/turinglambdaai/movebit/issues/56)（2026-10-26 owner 定稿）。本文是仓库侧的实现参考：美术从哪来、各端要画什么、怎么验收。沐比是**健康提醒的交付界面**（章程 #51），永远不是宠物产品。
+权威视觉/交互规范在 [issue #56](https://github.com/turlamai/movebit/issues/56)（2026-10-26 owner 定稿）。本文是仓库侧的实现参考：美术从哪来、各端要画什么、怎么验收。沐比是**健康提醒的交付界面**（章程 #51），永远不是宠物产品。
 
 ![沐比 contact sheet](../assets/mubi/contact-sheet.png)
 

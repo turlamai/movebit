@@ -1003,7 +1003,7 @@ void MainWindow::ApplyStagedUpdate() {
               w->SetStatus(e.what());
               ::ShellExecuteW(
                   nullptr, L"open",
-                  L"https://github.com/turinglambdaai/movebit/releases/latest",
+                  L"https://github.com/turlamai/movebit/releases/latest",
                   nullptr, nullptr, SW_SHOWNORMAL);
             }
             }
@@ -1466,7 +1466,7 @@ void MainWindow::InitTray() {
   tray_.on_mubi_move_aside = [this]() { companion_.MoveAside(); };
   tray_.on_check_updates = [this]() {
     ::ShellExecuteW(nullptr, L"open",
-                    L"https://github.com/turinglambdaai/movebit/releases/latest",
+                    L"https://github.com/turlamai/movebit/releases/latest",
                     nullptr, nullptr, SW_SHOWNORMAL);
   };
   // Mandatory reminder controls (#54): act on the newest open cue.

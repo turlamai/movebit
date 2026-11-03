@@ -524,7 +524,7 @@
                                                      Foreground="#C25E3E"
                                                      Padding="0" FontSize="12" />
                                     <HyperlinkButton x:Name="IssueLink"
-                                                     NavigateUri="https://github.com/turinglambdaai/movebit/issues"
+                                                     NavigateUri="https://github.com/turlamai/movebit/issues"
                                                      Foreground="#C25E3E"
                                                      Padding="0" FontSize="12" />
                                 </StackPanel>

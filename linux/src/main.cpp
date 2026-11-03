@@ -1893,7 +1893,7 @@ void build_main_content() {
     gtk_box_append(
         GTK_BOX(links),
         gtk_link_button_new_with_label(
-            "https://github.com/turinglambdaai/movebit/issues",
+            "https://github.com/turlamai/movebit/issues",
             l10n::t("about.reportIssue").c_str()));
     box_append(GTK_BOX(card), links);
     box_append(GTK_BOX(card),
