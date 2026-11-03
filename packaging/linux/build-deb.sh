@@ -42,7 +42,7 @@ Version: ${version}
 Section: utils
 Priority: optional
 Architecture: ${deb_arch}
-Maintainer: turinglambdaai
+Maintainer: turlamai
 Homepage: https://movebit.jrtx.site/
 Depends: libgtk-4-1, libtinfo6
 Description: Healthy work rhythm companion

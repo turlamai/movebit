@@ -813,7 +813,7 @@ private struct AboutCard: View {
                      destination: URL(string: "https://movebit.jrtx.site")!)
                 Link(L10n.t("about.reportIssue"),
                      destination: URL(string:
-                        "https://github.com/turinglambdaai/movebit/issues")!)
+                        "https://github.com/turlamai/movebit/issues")!)
             }
             .font(.system(size: 12))
             .tint(Palette.accent)
