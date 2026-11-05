@@ -2,7 +2,7 @@
 
 ;; Login autostart, port of the old Services/AutoStart.cs — a health tool whose
 ;; whole value is "always running". Per-platform targets:
-;;   macOS   ~/Library/LaunchAgents/com.turinglambdaai.movebit.plist (RunAtLoad)
+;;   macOS   ~/Library/LaunchAgents/com.turlamai.movebit.plist (RunAtLoad)
 ;;   Linux   $XDG_CONFIG_HOME/autostart/movebit.desktop
 ;;   Windows HKCU\Software\Microsoft\Windows\CurrentVersion\Run, value "MoveBit"
 ;; Best-effort exactly like the old app: an enabled check never throws and a
@@ -18,9 +18,13 @@
 
 (provide autostart-enabled?
          set-autostart!
+         migrate-launch-agent!
          ;; test hooks
          autostart-home
          autostart-executable-path
+         launch-agent-label
+         launch-agent-path
+         legacy-launch-agent-path
          ;; CI probe: surface the errors set-autostart! swallows
          windows-value-present?
          windows-set!)
@@ -42,9 +46,37 @@
   (make-parameter
    (path->string (find-system-path 'exec-file))))
 
+;; launchd identifiers. `com.turinglambdaai.movebit` is the retired GitHub
+;; owner baked into releases up to 0.0.5; renaming it without migration would
+;; orphan the plist of every existing install and silently disable autostart
+;; (issue #128).
+(define launch-agent-label "com.turlamai.movebit")
+(define legacy-launch-agent-label "com.turinglambdaai.movebit")
+
 (define (launch-agent-path)
   (build-path (autostart-base-dir) "Library" "LaunchAgents"
-              "com.turinglambdaai.movebit.plist"))
+              (string-append launch-agent-label ".plist")))
+
+(define (legacy-launch-agent-path)
+  (build-path (autostart-base-dir) "Library" "LaunchAgents"
+              (string-append legacy-launch-agent-label ".plist")))
+
+;; One-time idempotent migration of the retired-owner LaunchAgent.
+;;
+;; Deliberately file-based: the running process may itself have been started
+;; by the old agent, so `launchctl bootout` could kill the app mid-launch.
+;; launchd reads ~/Library/LaunchAgents at login, and the new plist is written
+;; with RunAtLoad, so the next login picks it up. Re-registering here (rather
+;; than only deleting the old file) preserves the user's enabled choice.
+(define (migrate-launch-agent!)
+  (with-handlers ([exn:fail? void])
+    (define old (legacy-launch-agent-path))
+    (when (file-exists? old)
+      (define new (launch-agent-path))
+      (unless (file-exists? new)
+        (write-launch-agent! new))
+      (delete-file old))))
+
 
 (define (xdg-autostart-dir)
   (define xdg (getenv "XDG_CONFIG_HOME"))
@@ -84,24 +116,26 @@
 (define (macos-set! enable?)
   (define plist (launch-agent-path))
   (if enable?
-      (begin
-        (make-directory* (path-only plist))
-        (with-output-to-file plist #:exists 'replace
-          (lambda ()
-            (displayln "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-            (displayln "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
-\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">")
-            (displayln "<plist version=\"1.0\">")
-            (displayln "<dict>")
-            (displayln "  <key>Label</key><string>com.turinglambdaai.movebit</string>")
-            (displayln "  <key>ProgramArguments</key>")
-            (displayln (~a "  <array><string>" (xml-escape (autostart-executable-path))
-                           "</string></array>"))
-            (displayln "  <key>RunAtLoad</key><true/>")
-            (displayln "</dict>")
-            (display "</plist>"))))
+      (write-launch-agent! plist)
       (when (file-exists? plist)
         (delete-file plist))))
+
+(define (write-launch-agent! plist)
+  (make-directory* (path-only plist))
+  (with-output-to-file plist #:exists 'replace
+    (lambda ()
+      (displayln "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+      (displayln "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
+\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">")
+      (displayln "<plist version=\"1.0\">")
+      (displayln "<dict>")
+      (displayln (~a "  <key>Label</key><string>" launch-agent-label "</string>"))
+      (displayln "  <key>ProgramArguments</key>")
+      (displayln (~a "  <array><string>" (xml-escape (autostart-executable-path))
+                     "</string></array>"))
+      (displayln "  <key>RunAtLoad</key><true/>")
+      (displayln "</dict>")
+      (display "</plist>"))))
 
 (define (xml-escape s)
   (string-append*

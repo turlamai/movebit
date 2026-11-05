@@ -343,7 +343,7 @@
    (check-true
     (file-exists?
      (build-path autostart-sandbox "Library" "LaunchAgents"
-                 "com.turinglambdaai.movebit.plist")))])
+                 "com.turlamai.movebit.plist")))])
 (define-values (unset-autostart-result asunset-ev) (call "set-autostart" #f))
 (check-true (void? unset-autostart-result))
 (define-values (autostart-off asoff-ev) (call "get-autostart"))

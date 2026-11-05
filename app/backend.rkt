@@ -451,6 +451,9 @@
 
 (define-rpc (initialize : Void)
   (unless (unbox runtime-box)
+    ;; One-time, idempotent rename of the retired-owner LaunchAgent (issue
+    ;; #128). Best-effort: a failed migration must never block startup.
+    (migrate-launch-agent!)
     (define data-dir (current-data-dir))
     (define device-id (ensure-device-id))
     (define loaded-config (load-config data-dir))

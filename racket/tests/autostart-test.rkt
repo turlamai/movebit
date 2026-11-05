@@ -47,16 +47,60 @@
       (set-autostart! #t)
       (define plist
         (build-path sandbox "Library" "LaunchAgents"
-                    "com.turinglambdaai.movebit.plist"))
+                    "com.turlamai.movebit.plist"))
       (check-true (file-exists? plist))
       (check-true (autostart-enabled?))
       (define text (file->string plist))
-      (check-true (string-contains? text "com.turinglambdaai.movebit"))
+      (check-true (string-contains? text "com.turlamai.movebit"))
+      (check-false (string-contains? text "turinglambdaai"))
       (check-true (string-contains? text "<key>RunAtLoad</key><true/>"))
       (check-true (string-contains? text "<string>/opt/apps/MoveBit Host</string>"))
       (set-autostart! #f)
       (check-false (file-exists? plist))
-      (check-false (autostart-enabled?))))]
+      (check-false (autostart-enabled?))))
+
+   ;; #128: an install created before the owner rename keeps autostart on by
+   ;; migrating the retired label to the canonical one.
+   (with-sandbox
+    (lambda (sandbox)
+      (define dir (build-path sandbox "Library" "LaunchAgents"))
+      (make-directory* dir)
+      (define old (build-path dir "com.turinglambdaai.movebit.plist"))
+      (define new (build-path dir "com.turlamai.movebit.plist"))
+      (call-with-output-file old
+        (lambda (out) (display "<plist>legacy</plist>" out)))
+      ;; Before migration the legacy file alone is not "enabled" under the
+      ;; canonical label.
+      (check-false (autostart-enabled?))
+      (migrate-launch-agent!)
+      (check-true (file-exists? new))
+      (check-false (file-exists? old))
+      (check-true (autostart-enabled?))
+      (define text (file->string new))
+      (check-true (string-contains? text "com.turlamai.movebit"))
+      (check-true (string-contains? text "/opt/apps/MoveBit Host"))
+      ;; Idempotent: a second run must not disturb the canonical agent.
+      (migrate-launch-agent!)
+      (check-true (file-exists? new))
+      (check-equal? (file->string new) text)
+      (check-false (file-exists? old))))
+
+   ;; An install that already has the canonical agent must not be rewritten;
+   ;; the stale legacy file is simply removed.
+   (with-sandbox
+    (lambda (sandbox)
+      (define dir (build-path sandbox "Library" "LaunchAgents"))
+      (make-directory* dir)
+      (define old (build-path dir "com.turinglambdaai.movebit.plist"))
+      (define new (build-path dir "com.turlamai.movebit.plist"))
+      (call-with-output-file old
+        (lambda (out) (display "<plist>legacy</plist>" out)))
+      (call-with-output-file new
+        (lambda (out) (display "<plist>canonical</plist>" out)))
+      (migrate-launch-agent!)
+      (check-true (file-exists? new))
+      (check-equal? (file->string new) "<plist>canonical</plist>")
+      (check-false (file-exists? old))))]
 
   [(windows)
    ;; --- Windows HKCU Run key ------------------------------------------------
