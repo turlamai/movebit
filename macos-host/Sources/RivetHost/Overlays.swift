@@ -28,6 +28,7 @@ final class ToastPanelController: ObservableObject {
     private var panel: NSPanel?
     private var dismissGeneration = 0
     private var currentCueId: Int64 = 0
+    private var durationSeconds: Int64 = 20
 
     func show(_ content: ToastContent) {
         let panel = self.panel ?? makePanel()
@@ -180,8 +181,10 @@ private struct ToastView: View {
 @MainActor
 final class MicroPanelController: ObservableObject {
     @Published var progress = 1.0
+    /// The guided rest only starts on an explicit user action (#94).
+    @Published var started = false
     /// The countdown reached zero. Completion is NOT a self-report: the user
-    /// marks Done in the tray, or clicks the card away as a Hide.
+    /// marks Done explicitly, or clicks the card away as a Hide.
     @Published var finished = false
 
     var onDone: ((Int64) -> Void)?
@@ -191,12 +194,14 @@ final class MicroPanelController: ObservableObject {
     private var generation = 0
     private var keyMonitor: Any?
     private var currentCueId: Int64 = 0
+    private var durationSeconds: Int64 = 20
 
     func show(durationSeconds: Int64, title: String, cueId: Int64) {
         dismissInteractive()
         generation += 1
         let generation = generation
         progress = 1
+        started = false
         finished = false
         currentCueId = cueId
 
@@ -211,6 +216,15 @@ final class MicroPanelController: ObservableObject {
         panel.orderFrontRegardless()
         installKeyMonitor()
 
+        self.durationSeconds = max(1, durationSeconds)
+    }
+
+    /// Explicit opt-in: only now does the countdown run.
+    func start() {
+        guard !started, !finished else { return }
+        started = true
+        progress = 1
+        let generation = generation
         let totalNanos = UInt64(max(1, durationSeconds) * 1_000_000_000)
         let tick = min(totalNanos, 250_000_000)
         Task { [weak self] in
@@ -309,23 +323,31 @@ private struct MicroBreakView: View {
             Text(L10n.t(controller.finished ? "micro.finishedHint" : "micro.hint"))
                 .font(.system(size: 11.5))
                 .foregroundColor(Palette.inkMuted)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2).fill(Palette.trackBg)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Palette.accent)
-                        .frame(width: geo.size.width * CGFloat(controller.progress))
+                .fixedSize(horizontal: false, vertical: true)
+            if controller.started {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2).fill(Palette.trackBg)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Palette.accent)
+                            .frame(width: geo.size.width * CGFloat(controller.progress))
+                    }
                 }
+                .frame(height: 4)
+                .padding(.top, 6)
             }
-            .frame(height: 4)
-            .padding(.top, 6)
-            if controller.finished {
+            HStack(spacing: 8) {
+                if !controller.started {
+                    Button(L10n.t("micro.start")) { controller.start() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Palette.accent)
+                        .controlSize(.small)
+                }
                 Button(L10n.t("micro.done")) { controller.finish() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accent)
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .padding(.top, 4)
             }
+            .padding(.top, 6)
         }
         .padding(EdgeInsets(top: 18, leading: 26, bottom: 18, trailing: 26))
         .frame(width: 400)

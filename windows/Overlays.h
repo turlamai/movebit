@@ -305,6 +305,8 @@ struct MicroCard {
   Window window{nullptr};
   Controls::ProgressBar bar{nullptr};
   Controls::TextBlock hint{nullptr};
+  Controls::Button start_button{nullptr};
+  bool started = false;
   double progress = 1.0;
   std::int64_t total_ms = 1000;
   std::int64_t cue_id = 0;
@@ -347,8 +349,17 @@ struct MicroCard {
     body.Children().Append(hint);
 
     bar = make_progress("#C25E3E");
-    bar.Value(1.0);
+    bar.Value(0.0);
     body.Children().Append(bar);
+
+    start_button = make_button(winrt::to_hstring(l10n::t("micro.start")),
+                               "#C25E3E", "#FFFFFF", false);
+    start_button.HorizontalAlignment(HorizontalAlignment::Left);
+    start_button.Margin(Thickness{0, 6, 0, 0});
+    start_button.Click([this](IInspectable const&, RoutedEventArgs const&) {
+      StartTapped();
+    });
+    body.Children().Append(start_button);
 
     auto done = make_button(winrt::to_hstring(l10n::t("micro.done")),
                             "#F3EEE3", "#26241F", false);
@@ -368,10 +379,19 @@ struct MicroCard {
     });
 
     total_ms = std::max<std::int64_t>(1, duration_seconds) * 1000;
-    progress = 1.0;
+    progress = 0.0;
+    started = false;
     position_card(window, 400, false);
     window.Activate();
+  }
 
+  /// Explicit opt-in (#94): the countdown only runs after Start.
+  void StartTapped() {
+    if (started) return;
+    started = true;
+    progress = 1.0;
+    if (bar) bar.Value(progress);
+    if (start_button) start_button.Visibility(Visibility::Collapsed);
     timer = make_timer(std::chrono::milliseconds(250), true, [this] {
       progress = std::max(0.0, progress - 250.0 / total_ms);
       if (bar) bar.Value(progress);
@@ -410,6 +430,8 @@ struct MicroCard {
       window = {nullptr};
       bar = {nullptr};
       hint = {nullptr};
+      start_button = {nullptr};
+      started = false;
     }
   }
 };
