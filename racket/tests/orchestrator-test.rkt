@@ -246,6 +246,15 @@
   (check-equal? (oh-outcomes oh)
                 '((water presented) (water dismissed))))
 
+;; Stopping a guided session is 'abandoned — not Hide, not Done.
+(let ([oh (make-oh #:sit 300 #:water 10)])
+  (oh-step-minutes! oh 10)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (orchestrator-cue-displayed! (orch-harness-o oh) id)
+  (orchestrator-abandon-cue! (orch-harness-o oh) id)
+  (check-equal? (oh-outcomes oh)
+                '((water presented) (water abandoned))))
+
 ;; A shown cue that times out unanswered is 'expired.
 (let ([oh (make-oh #:sit 300 #:water 15)])
   (oh-step-minutes! oh 15 5)

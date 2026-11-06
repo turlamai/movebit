@@ -49,7 +49,8 @@ public enum RivetTypes {
         public let dismissed: Int64
         public let expired: Int64
         public let not_delivered: Int64
-        public init(kind: RivetTypes.ReminderKind, presented: Int64, self_reported_done: Int64, snoozed: Int64, dismissed: Int64, expired: Int64, not_delivered: Int64) {
+        public let abandoned: Int64
+        public init(kind: RivetTypes.ReminderKind, presented: Int64, self_reported_done: Int64, snoozed: Int64, dismissed: Int64, expired: Int64, not_delivered: Int64, abandoned: Int64) {
             self.kind = kind
             self.presented = presented
             self.self_reported_done = self_reported_done
@@ -57,6 +58,7 @@ public enum RivetTypes {
             self.dismissed = dismissed
             self.expired = expired
             self.not_delivered = not_delivered
+            self.abandoned = abandoned
         }
     }
 
@@ -231,7 +233,7 @@ private func encode__List_ReminderKind_(_ v: [RivetTypes.ReminderKind]) -> Rivet
 private func encode_CueAction(_ v: RivetTypes.CueAction) -> RivetValue { .string(v.rawValue) }
 private func encode_CueDelivery(_ v: RivetTypes.CueDelivery) -> RivetValue { .string(v.rawValue) }
 private func encode_HealthCue(_ v: RivetTypes.HealthCue) -> RivetValue { .list([encode_Int64(v.id), encode__List_ReminderKind_(v.kinds), encode_CueAction(v.action), encode_CueDelivery(v.delivery), encode_Bool(v.animated), encode_Int64(v.due_at_ms), encode_Int64(v.expires_at_ms)]) }
-private func encode_CueOutcomeTotals(_ v: RivetTypes.CueOutcomeTotals) -> RivetValue { .list([encode_ReminderKind(v.kind), encode_Int64(v.presented), encode_Int64(v.self_reported_done), encode_Int64(v.snoozed), encode_Int64(v.dismissed), encode_Int64(v.expired), encode_Int64(v.not_delivered)]) }
+private func encode_CueOutcomeTotals(_ v: RivetTypes.CueOutcomeTotals) -> RivetValue { .list([encode_ReminderKind(v.kind), encode_Int64(v.presented), encode_Int64(v.self_reported_done), encode_Int64(v.snoozed), encode_Int64(v.dismissed), encode_Int64(v.expired), encode_Int64(v.not_delivered), encode_Int64(v.abandoned)]) }
 private func encode__List_CueOutcomeTotals_(_ v: [RivetTypes.CueOutcomeTotals]) -> RivetValue { .list(v.map(encode_CueOutcomeTotals)) }
 private func encode_LoopInfo(_ v: RivetTypes.LoopInfo) -> RivetValue { .list([encode_ReminderKind(v.kind), encode__Optional_Int64_(v.due_in_active_mins), encode_Int64(v.accumulated_mins)]) }
 private func encode__List_LoopInfo_(_ v: [RivetTypes.LoopInfo]) -> RivetValue { .list(v.map(encode_LoopInfo)) }
@@ -257,7 +259,7 @@ private func decode__List_ReminderKind_(_ v: RivetValue) throws -> [RivetTypes.R
 private func decode_CueAction(_ v: RivetValue) throws -> RivetTypes.CueAction { guard case .string(let x) = v, let result = RivetTypes.CueAction(rawValue: x) else { throw RivetGeneratedError.typeMismatch("CueAction") }; return result }
 private func decode_CueDelivery(_ v: RivetValue) throws -> RivetTypes.CueDelivery { guard case .string(let x) = v, let result = RivetTypes.CueDelivery(rawValue: x) else { throw RivetGeneratedError.typeMismatch("CueDelivery") }; return result }
 private func decode_HealthCue(_ v: RivetValue) throws -> RivetTypes.HealthCue { guard case .list(let xs) = v, xs.count == 7 else { throw RivetGeneratedError.typeMismatch("HealthCue") }; return RivetTypes.HealthCue(id: try decode_Int64(xs[0]), kinds: try decode__List_ReminderKind_(xs[1]), action: try decode_CueAction(xs[2]), delivery: try decode_CueDelivery(xs[3]), animated: try decode_Bool(xs[4]), due_at_ms: try decode_Int64(xs[5]), expires_at_ms: try decode_Int64(xs[6])) }
-private func decode_CueOutcomeTotals(_ v: RivetValue) throws -> RivetTypes.CueOutcomeTotals { guard case .list(let xs) = v, xs.count == 7 else { throw RivetGeneratedError.typeMismatch("CueOutcomeTotals") }; return RivetTypes.CueOutcomeTotals(kind: try decode_ReminderKind(xs[0]), presented: try decode_Int64(xs[1]), self_reported_done: try decode_Int64(xs[2]), snoozed: try decode_Int64(xs[3]), dismissed: try decode_Int64(xs[4]), expired: try decode_Int64(xs[5]), not_delivered: try decode_Int64(xs[6])) }
+private func decode_CueOutcomeTotals(_ v: RivetValue) throws -> RivetTypes.CueOutcomeTotals { guard case .list(let xs) = v, xs.count == 8 else { throw RivetGeneratedError.typeMismatch("CueOutcomeTotals") }; return RivetTypes.CueOutcomeTotals(kind: try decode_ReminderKind(xs[0]), presented: try decode_Int64(xs[1]), self_reported_done: try decode_Int64(xs[2]), snoozed: try decode_Int64(xs[3]), dismissed: try decode_Int64(xs[4]), expired: try decode_Int64(xs[5]), not_delivered: try decode_Int64(xs[6]), abandoned: try decode_Int64(xs[7])) }
 private func decode__List_CueOutcomeTotals_(_ v: RivetValue) throws -> [RivetTypes.CueOutcomeTotals] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List CueOutcomeTotals)") }; return try xs.map(decode_CueOutcomeTotals) }
 private func decode_LoopInfo(_ v: RivetValue) throws -> RivetTypes.LoopInfo { guard case .list(let xs) = v, xs.count == 3 else { throw RivetGeneratedError.typeMismatch("LoopInfo") }; return RivetTypes.LoopInfo(kind: try decode_ReminderKind(xs[0]), due_in_active_mins: try decode__Optional_Int64_(xs[1]), accumulated_mins: try decode_Int64(xs[2])) }
 private func decode__List_LoopInfo_(_ v: RivetValue) throws -> [RivetTypes.LoopInfo] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List LoopInfo)") }; return try xs.map(decode_LoopInfo) }
@@ -319,6 +321,10 @@ public struct RivetAPI: Sendable {
         self.client = RivetGeneratedClosureClient(invoke: call)
     }
 
+    public func abandon_cue(id: Int64) async throws -> Void {
+        let rivetResult = try await client.call("abandon-cue", arguments: [encode_Int64(id)])
+        return try decode_Void(rivetResult)
+    }
     public func acknowledge_cue(id: Int64) async throws -> Void {
         let rivetResult = try await client.call("acknowledge-cue", arguments: [encode_Int64(id)])
         return try decode_Void(rivetResult)

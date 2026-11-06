@@ -3006,7 +3006,7 @@ void on_toast_done(GtkButton*, gpointer) {
 void on_toast_hide(GtkButton*, gpointer) {
   auto cue_id = g_state.toast_cue_id;
   if (g_state.api != nullptr && cue_id != 0) {
-    (void)g_state.api->dismiss_cue_async(cue_id, [](rivet_app::Result<void>) {});
+    (void)g_state.api->abandon_cue_async(cue_id, [](rivet_app::Result<void>) {});
   }
   toast_dismiss();
 }
@@ -3042,7 +3042,7 @@ void on_mubi_later(GtkButton*, gpointer) {
 void on_mubi_hide(GtkButton*, gpointer) {
   auto cue_id = g_state.mubi_cue_id;
   if (g_state.api != nullptr && cue_id != 0) {
-    (void)g_state.api->dismiss_cue_async(cue_id, [](rivet_app::Result<void>) {});
+    (void)g_state.api->abandon_cue_async(cue_id, [](rivet_app::Result<void>) {});
   }
   mubi::present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
 }
@@ -3315,7 +3315,7 @@ void micro_dismiss() {
   auto cue_id = g_state.micro_cue_id;
   micro_close();
   if (g_state.api != nullptr && cue_id != 0) {
-    (void)g_state.api->dismiss_cue_async(cue_id, [](rivet_app::Result<void>) {});
+    (void)g_state.api->abandon_cue_async(cue_id, [](rivet_app::Result<void>) {});
   }
 }
 
@@ -3365,7 +3365,8 @@ void micro_start() {
 void micro_show(std::int64_t duration_seconds, std::string const& title,
                 std::string const& hint_text, std::int64_t cue_id,
                 GtkApplication* app) {
-  micro_dismiss();
+  // Replacing a session must not record the previous cue as abandoned.
+  micro_close();
   g_state.micro_cue_id = cue_id;
   auto* window = gtk_application_window_new(app);
   gtk_widget_add_css_class(GTK_WIDGET(window), "micro-bg");

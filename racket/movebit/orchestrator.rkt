@@ -48,6 +48,7 @@
          orchestrator-acknowledge-cue!
          orchestrator-snooze-cue!
          orchestrator-dismiss-cue!
+         orchestrator-abandon-cue!
          orchestrator-cue-displayed!
          orchestrator-set-quiet!
          orchestrator-set-host-capability!
@@ -164,6 +165,7 @@
     [(acknowledged) 'self-reported-done]
     [(snoozed) 'snoozed]
     [(dismissed) 'dismissed]
+    [(abandoned) 'abandoned]
     [(expired)
      (case from
        [(pending) 'not-delivered]
@@ -254,6 +256,15 @@
   (define record (find-cue o id))
   (when (and record (open? record))
     (set-status! o record 'dismissed)))
+
+;; Abandon: a guided session (eye rest / stretch) was started and then
+;; stopped. Distinct from Hide ("put the reminder away") and from a timeout,
+;; so the outcome ledger can keep the deliberate act separate. Never marks
+;; the health action as done.
+(define (orchestrator-abandon-cue! o id)
+  (define record (find-cue o id))
+  (when (and record (open? record))
+    (set-status! o record 'abandoned)))
 
 ;; Host reports the cue actually visible: pending → displayed.
 (define (orchestrator-cue-displayed! o id)

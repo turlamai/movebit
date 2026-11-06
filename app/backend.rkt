@@ -174,7 +174,9 @@
    [snoozed : Int64]
    [dismissed : Int64]
    [expired : Int64]
-   [not-delivered : Int64]))
+   [not-delivered : Int64]
+   ;; A guided eye/movement session that the user stopped (issue #94).
+   [abandoned : Int64]))
 
 (define-record PauseState
   ([paused : Bool]
@@ -322,7 +324,8 @@
                       (hash-ref per-kind 'snoozed 0)
                       (hash-ref per-kind 'dismissed 0)
                       (hash-ref per-kind 'expired 0)
-                      (hash-ref per-kind 'not-delivered 0))))
+                      (hash-ref per-kind 'not-delivered 0)
+                      (hash-ref per-kind 'abandoned 0))))
 
 (define (publish-outcomes! rt)
   (state-set! cue-outcomes (outcomes->dto (outcomes-snapshot rt))))
@@ -628,6 +631,12 @@
 (define-rpc (dismiss-cue [id : Int64] : Void)
   (define rt (require-runtime))
   (orchestrator-dismiss-cue! (runtime-orchestrator rt) id)
+  (publish-pending-cues! rt)
+  (void))
+
+(define-rpc (abandon-cue [id : Int64] : Void)
+  (define rt (require-runtime))
+  (orchestrator-abandon-cue! (runtime-orchestrator rt) id)
   (publish-pending-cues! rt)
   (void))
 

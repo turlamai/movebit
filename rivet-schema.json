@@ -135,6 +135,13 @@
             "kind": "scalar",
             "name": "Int64"
           }
+        },
+        {
+          "name": "abandoned",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
         }
       ],
       "name": "CueOutcomeTotals"
@@ -606,6 +613,22 @@
     }
   ],
   "rpcs": [
+    {
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "abandon-cue",
+      "result": {
+        "kind": "scalar",
+        "name": "Void"
+      }
+    },
     {
       "arguments": [
         {
