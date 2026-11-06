@@ -29,6 +29,8 @@ final class ToastPanelController: ObservableObject {
     private var dismissGeneration = 0
     private var currentCueId: Int64 = 0
     private var durationSeconds: Int64 = 20
+    /// Invitation copy for this session (eye rest vs guided movement).
+    private(set) var hintText = L10n.t("micro.hint")
 
     func show(_ content: ToastContent) {
         let panel = self.panel ?? makePanel()
@@ -195,14 +197,18 @@ final class MicroPanelController: ObservableObject {
     private var keyMonitor: Any?
     private var currentCueId: Int64 = 0
     private var durationSeconds: Int64 = 20
+    /// Invitation copy for this session (eye rest vs guided movement).
+    private(set) var hintText = L10n.t("micro.hint")
 
-    func show(durationSeconds: Int64, title: String, cueId: Int64) {
+    func show(durationSeconds: Int64, title: String, hint: String,
+              cueId: Int64) {
         dismissInteractive()
         generation += 1
         let generation = generation
         progress = 1
         started = false
         finished = false
+        hintText = hint
         currentCueId = cueId
 
         let panel = self.panel ?? makePanel()
@@ -320,7 +326,8 @@ private struct MicroBreakView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(Palette.inkPrimary)
             }
-            Text(L10n.t(controller.finished ? "micro.finishedHint" : "micro.hint"))
+            Text(controller.finished ? L10n.t("micro.finishedHint")
+                                     : controller.hintText)
                 .font(.system(size: 11.5))
                 .foregroundColor(Palette.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -346,6 +353,9 @@ private struct MicroBreakView: View {
                 Button(L10n.t("micro.done")) { controller.finish() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                Button(L10n.t("notif.hide")) { controller.dismissInteractive() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             }
             .padding(.top, 6)
         }
@@ -355,7 +365,5 @@ private struct MicroBreakView: View {
         .overlay(RoundedRectangle(cornerRadius: 18)
             .strokeBorder(Palette.cardBorder, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .contentShape(Rectangle())
-        .onTapGesture { controller.dismissInteractive() }
     }
 }

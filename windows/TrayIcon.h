@@ -41,8 +41,12 @@ struct TrayUi {
   std::function<void()> on_focus_toggle;
   std::function<void()> on_mubi_move_aside;
   std::function<void()> on_mubi_place;
+  std::function<void()> on_eye_rest;
+  std::function<void()> on_stretch;
   bool cue_open = false;
   bool quiet = false;
+  bool cue_has_sit = false;
+  bool cue_has_micro = false;
 
   void Attach(winrt::Microsoft::UI::Xaml::Window const& window) {
     paused_ = false;
@@ -68,10 +72,16 @@ struct TrayUi {
     if (controller_) controller_->SetMenu(BuildMenu());
   }
 
-  void RefreshCueState(bool cue_open, bool quiet) {
-    if (cue_open_ == cue_open && quiet_ == quiet) return;
+  void RefreshCueState(bool cue_open, bool quiet, bool has_sit = false,
+                       bool has_micro = false) {
+    if (cue_open_ == cue_open && quiet_ == quiet && cue_has_sit_ == has_sit &&
+        cue_has_micro_ == has_micro) {
+      return;
+    }
     cue_open_ = cue_open;
     quiet_ = quiet;
+    cue_has_sit_ = has_sit;
+    cue_has_micro_ = has_micro;
     if (controller_) controller_->SetMenu(BuildMenu());
   }
 
@@ -96,13 +106,17 @@ struct TrayUi {
     kMenuCueHide = 7,
     kMenuFocusToggle = 8,
     kMenuMubiMoveAside = 9,
-    kMenuMubiPlace = 10
+    kMenuMubiPlace = 10,
+    kMenuEyeRest = 11,
+    kMenuStretch = 12
   };
 
   bool paused_ = false;
   bool cue_open_ = false;
   bool quiet_ = false;
   bool placing_ = false;
+  bool cue_has_sit_ = false;
+  bool cue_has_micro_ = false;
   std::unique_ptr<rivet::system::TrayController> controller_;
 
   static HICON LoadAppIcon() {

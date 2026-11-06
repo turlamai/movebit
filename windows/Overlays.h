@@ -316,7 +316,7 @@ struct MicroCard {
   Microsoft::UI::Dispatching::DispatcherQueueTimer hide_timer{nullptr};
 
   void Show(std::int64_t duration_seconds, std::string const& title,
-            std::int64_t id) {
+            std::string const& hint_text, std::int64_t id) {
     Dismiss();
     cue_id = id;
     window = Window{};
@@ -343,8 +343,7 @@ struct MicroCard {
     head.Children().Append(title_block);
     body.Children().Append(head);
 
-    hint = make_text(winrt::to_hstring(l10n::t("micro.hint")), 11.5,
-                     false, "#A39B8D");
+    hint = make_text(winrt::to_hstring(hint_text), 11.5, false, "#A39B8D");
     hint.HorizontalAlignment(HorizontalAlignment::Left);
     body.Children().Append(hint);
 
@@ -369,14 +368,18 @@ struct MicroCard {
       DoneTapped();
     });
     body.Children().Append(done);
-    root.Children().Append(body);
-    window.Content(root);
 
-    // Click anywhere ends the rest early as a Hide.
-    root.PointerPressed([this](IInspectable const&,
-                               Input::PointerRoutedEventArgs const&) {
+    auto hide = make_button(winrt::to_hstring(l10n::t("notif.hide")),
+                            "#FFFDFB", "#26241F", true);
+    hide.HorizontalAlignment(HorizontalAlignment::Left);
+    hide.Margin(Thickness{0, 6, 0, 0});
+    hide.Click([this](IInspectable const&, RoutedEventArgs const&) {
       HideTapped();
     });
+    body.Children().Append(hide);
+
+    root.Children().Append(body);
+    window.Content(root);
 
     total_ms = std::max<std::int64_t>(1, duration_seconds) * 1000;
     progress = 0.0;

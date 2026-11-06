@@ -244,6 +244,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             items.append(.action(label: L10n.t("tray.cueHide"),
                                  identifier: "tray-cue-hide",
                                  handler: { [weak self] in self?.model?.dismissCue(cue.id) }))
+            // Opt-in guided sessions (#94): only offered while a real cue is
+            // open, never as ambient entertainment.
+            if cue.kinds.contains(.micro) {
+                items.append(.action(
+                    label: L10n.t("tray.eyeRest"), identifier: "tray-eye-rest",
+                    handler: { [weak self] in
+                        guard let self, let model = self.model else { return }
+                        self.microController?.show(
+                            durationSeconds: model.config.micro_break_duration_seconds,
+                            title: L10n.t("tray.eyeRest"),
+                            hint: L10n.t("micro.hint"),
+                            cueId: cue.id)
+                    }))
+            }
+            if cue.kinds.contains(.sit) {
+                items.append(.action(
+                    label: L10n.t("tray.stretch"), identifier: "tray-stretch",
+                    handler: { [weak self] in
+                        self?.microController?.show(
+                            durationSeconds: 120,
+                            title: L10n.t("stretch.title"),
+                            hint: L10n.t("stretch.hint"),
+                            cueId: cue.id)
+                    }))
+            }
         }
         items.append(contentsOf: [
             .action(label: L10n.t("tray.moveAside"), identifier: "tray-mubi-move-aside",
@@ -452,11 +477,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Notification fallback (transitional cards, R1-era presentation).
         let kinds: [ReminderKind] = cue.kinds
         if kinds == [.micro] {
-            // Micro-only cue: the eye-rest card; finishing it acknowledges.
-            microController?.onDone = { [weak self] id in self?.model?.acknowledgeCue(id) }
-            microController?.onHide = { [weak self] id in self?.model?.dismissCue(id) }
+            // Micro-only cue: the eye-rest invitation card (opt-in start).
             microController?.show(durationSeconds: model.config.micro_break_duration_seconds,
                                   title: CopyPool.pickMicro(),
+                                  hint: L10n.t("micro.hint"),
                                   cueId: cue.id)
             model.cueDisplayed(cue.id)
             return
@@ -536,6 +560,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toastController = toast
 
         microController = MicroPanelController()
+        microController?.onDone = { [weak self] id in self?.model?.acknowledgeCue(id) }
+        microController?.onHide = { [weak self] id in self?.model?.dismissCue(id) }
     }
 
     // MARK: onboarding
