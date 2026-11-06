@@ -30,7 +30,7 @@ env:
   (let ([from-env (getenv "RIVET_PIN")])
     (if (and from-env (not (equal? from-env ""))) from-env default-rivet-pin)))
 
-(unless (regexp-match? #rx"^[0-9a-f]{40}$" rivet-pin)
+(unless (regexp-match? #px"^[0-9a-f]{40}$" rivet-pin)
   (error 'ci-install-windows-deps
          "RIVET_PIN must be a full 40-character commit SHA"))
 
