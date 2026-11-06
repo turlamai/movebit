@@ -298,7 +298,7 @@
   (call "set-config"
         (list 5 999 0 999 #f 99 99 #t #t #t #f "klingon"
               "huge" "fast" "center" "sometimes"
-              "balanced" #f #f #f 1320 420)))
+              "balanced" #f #f #f 1320 420 -1 -1)))
 (check-true (void? cfg-result))
 (define config-event
   (for/first ([e (in-list cfg-events)] #:when (string=? (car e) "config-changed"))
@@ -321,7 +321,7 @@
   (call "set-config"
         (list 50 60 5 10 #t 20 20 #t #f #f #f "en"
               "M" "subtle" "bottom-right" "cue"
-              "balanced" #t #t #t 0 1380)))
+              "balanced" #t #t #t 0 1380 -1 -1)))
 (check-true (void? quiet-hours-on-result))
 (define quiet-paused (get-state "paused"))
 (check-true (list-ref quiet-paused 0))
@@ -329,7 +329,7 @@
   (call "set-config"
         (list 50 60 5 10 #t 20 20 #t #f #f #f "en"
               "M" "subtle" "bottom-right" "cue"
-              "balanced" #t #t #f 0 1380)))
+              "balanced" #t #t #f 0 1380 -1 -1)))
 (check-true (void? quiet-hours-off-result))
 (define quiet-resumed (get-state "paused"))
 (check-false (list-ref quiet-resumed 0))

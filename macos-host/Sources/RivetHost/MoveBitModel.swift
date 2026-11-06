@@ -99,7 +99,8 @@ final class MoveBitModel: ObservableObject {
         companion_dock: "bottom-right", companion_labels: "cue",
         preset: "balanced", sit_enabled: true, water_enabled: true,
         quiet_hours_enabled: false, quiet_hours_start_minutes: 1320,
-        quiet_hours_end_minutes: 420)
+        quiet_hours_end_minutes: 420, companion_free_x: -1,
+        companion_free_y: -1)
     @Published var paused = PauseState(paused: false, until_ms: nil)
     @Published var loops: [LoopInfo] = []
     /// Per-kind delivery/response truth for today (issue #88): shown and

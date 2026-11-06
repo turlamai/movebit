@@ -321,7 +321,11 @@ void MainWindow::Bootstrap() {
                                                   w->model_.config
                                                       .companion_dock,
                                                   w->model_.config
-                                                      .companion_labels);
+                                                      .companion_labels,
+                                                  w->model_.config
+                                                      .companion_free_x,
+                                                  w->model_.config
+                                                      .companion_free_y);
                                               w->companion_.ShowIdle();
                                               w->ReloadOutcomes();
                                               w->ReloadHistory();
@@ -595,7 +599,8 @@ void MainWindow::ApplyConfig(rivet_app::ReminderConfig const& changed,
       movebit::resolve_language(changed.language) != language_;
   model_.config = changed;
   companion_.ApplyConfig(changed.companion_size, changed.companion_motion,
-                         changed.companion_dock, changed.companion_labels);
+                         changed.companion_dock, changed.companion_labels,
+                         changed.companion_free_x, changed.companion_free_y);
   language_ = movebit::resolve_language(changed.language);
   l10n::g_language = language_;
   if (language_changed || announce) {

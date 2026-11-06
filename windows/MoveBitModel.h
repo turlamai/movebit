@@ -174,7 +174,7 @@ struct Model {
   rivet_app::ReminderConfig config{
       50, 60, 5, 10, true, 20, 20, true, false, true, false, "auto",
       "M", "subtle", "bottom-right", "cue",
-      "balanced", true, true, false, 1320, 420};
+      "balanced", true, true, false, 1320, 420, -1, -1};
   rivet_app::DayStats today{"", 0, 0, 0, 0, 0};
   rivet_app::PauseState paused{false, std::nullopt};
   std::vector<rivet_app::LoopInfo> loops;

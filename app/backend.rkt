@@ -151,7 +151,10 @@
    [water-enabled : Bool]
    [quiet-hours-enabled : Bool]
    [quiet-hours-start-minutes : Int64]
-   [quiet-hours-end-minutes : Int64]))
+   [quiet-hours-end-minutes : Int64]
+   ;; Issue #104: normalized directly-placed home position (-1 = named dock).
+   [companion-free-x : Int64]
+   [companion-free-y : Int64]))
 
 (define-record DayStats
   ([date : String]
@@ -255,7 +258,9 @@
    (reminder-config-water-enabled c)
    (reminder-config-quiet-hours-enabled c)
    (reminder-config-quiet-hours-start-minutes c)
-   (reminder-config-quiet-hours-end-minutes c)))
+   (reminder-config-quiet-hours-end-minutes c)
+   (reminder-config-companion-free-x c)
+   (reminder-config-companion-free-y c)))
 
 (define (dto->config dto)
   (clamp-config
@@ -281,7 +286,9 @@
     (record-ref dto 'water-enabled)
     (record-ref dto 'quiet-hours-enabled)
     (record-ref dto 'quiet-hours-start-minutes)
-    (record-ref dto 'quiet-hours-end-minutes))))
+    (record-ref dto 'quiet-hours-end-minutes)
+    (record-ref dto 'companion-free-x)
+    (record-ref dto 'companion-free-y))))
 
 (define (stats->dto stats)
   (DayStats (day-stats-date-key stats)

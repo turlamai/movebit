@@ -119,7 +119,7 @@ struct Model {
   rivet_app::ReminderConfig config{
       50, 60, 5, 10, true, 20, 20, true, false, true, false, "auto",
       "M", "subtle", "bottom-right", "cue", "balanced", true, true, false,
-      1320, 420};
+      1320, 420, -1, -1};
   rivet_app::DayStats today{"", 0, 0, 0, 0, 0};
   rivet_app::PauseState paused{false, std::nullopt};
   std::vector<rivet_app::LoopInfo> loops;
@@ -240,6 +240,10 @@ struct AppState {
   std::string mubi_size = "M";
   std::string mubi_motion = "subtle";
   std::string mubi_dock = "bottom-right";
+  // Issue #104: normalized directly placed home (-1 = named dock). The GTK
+  // host honors a persisted position; direct manipulation is macOS-first.
+  std::int64_t mubi_free_x = -1;
+  std::int64_t mubi_free_y = -1;
   bool mubi_labels_always = false;
   bool mubi_quiet = false;
   bool mubi_x11 = false;
@@ -2845,15 +2849,28 @@ void present(int state, std::string const& message, GtkApplication* app,
       int const px_w = static_cast<int>(win_w * xs);
       int const px_h = static_cast<int>(win_h * xs);
       int const px_clear = static_cast<int>(clearance * xs);
-      int x = static_cast<int>(work.x * xs) +
-              static_cast<int>(work.width * xs) - px_w - px_clear;
-      int y = static_cast<int>(work.y * xs) +
-              static_cast<int>(work.height * xs) - px_h - px_clear;
-      if (s.mubi_dock == "bottom-left" || s.mubi_dock == "top-left") {
-        x = static_cast<int>(work.x * xs) + px_clear;
-      }
-      if (s.mubi_dock == "top-right" || s.mubi_dock == "top-left") {
-        y = static_cast<int>(work.y * xs) + px_clear;
+      int const work_x = static_cast<int>(work.x * xs);
+      int const work_y = static_cast<int>(work.y * xs);
+      int const work_w = static_cast<int>(work.width * xs);
+      int const work_h = static_cast<int>(work.height * xs);
+      int x = work_x + work_w - px_w - px_clear;
+      int y = work_y + work_h - px_h - px_clear;
+      if (s.mubi_free_x >= 0 && s.mubi_free_y >= 0) {
+        // Clamp to the usable travel range so a stale or synced position can
+        // never leave the character off-screen.
+        int const travel_w = std::max(0, work_w - px_w - 2 * px_clear);
+        int const travel_h = std::max(0, work_h - px_h - 2 * px_clear);
+        x = work_x + px_clear +
+            static_cast<int>(travel_w * s.mubi_free_x / 1000);
+        y = work_y + px_clear +
+            static_cast<int>(travel_h * s.mubi_free_y / 1000);
+      } else {
+        if (s.mubi_dock == "bottom-left" || s.mubi_dock == "top-left") {
+          x = work_x + px_clear;
+        }
+        if (s.mubi_dock == "top-right" || s.mubi_dock == "top-left") {
+          y = work_y + px_clear;
+        }
       }
       XMoveWindow(xdisplay, xid, x, y);
       XFlush(xdisplay);
@@ -2886,6 +2903,8 @@ void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
 // Do not update persisted settings or the Racket reminder ledger.
 void move_aside() {
   if (!g_state.mubi_x11) return;
+  g_state.mubi_free_x = -1;
+  g_state.mubi_free_y = -1;
   if (g_state.mubi_dock == "bottom-right") g_state.mubi_dock = "bottom-left";
   else if (g_state.mubi_dock == "bottom-left") g_state.mubi_dock = "top-left";
   else if (g_state.mubi_dock == "top-left") g_state.mubi_dock = "top-right";
@@ -2906,11 +2925,14 @@ void set_quiet(bool enabled) {
 }
 
 void apply_config(std::string const& size, std::string const& motion,
-                  std::string const& dock, std::string const& labels) {
+                  std::string const& dock, std::string const& labels,
+                  std::int64_t freeX, std::int64_t freeY) {
   g_state.mubi_size = size;
   g_state.mubi_motion = motion;  // static-state leg; budget tuning is #56 D3
   g_state.mubi_dock = dock;
   g_state.mubi_labels_always = labels == "always";
+  g_state.mubi_free_x = freeX;
+  g_state.mubi_free_y = freeY;
   show_idle();
 }
 
@@ -3563,7 +3585,8 @@ void apply_config(rivet_app::ReminderConfig const& changed, bool announce,
       resolve_language(changed.language) != g_state.language;
   g_state.model.config = changed;
   mubi::apply_config(changed.companion_size, changed.companion_motion,
-                     changed.companion_dock, changed.companion_labels);
+                     changed.companion_dock, changed.companion_labels,
+                     changed.companion_free_x, changed.companion_free_y);
   g_state.language = resolve_language(changed.language);
   apply_language();
   refresh_header_buttons();
@@ -3842,7 +3865,11 @@ int on_backend_finished(gpointer user_data) {
                                                     g_state.model.config
                                                         .companion_dock,
                                                     g_state.model.config
-                                                        .companion_labels);
+                                                        .companion_labels,
+                                                    g_state.model.config
+                                                        .companion_free_x,
+                                                    g_state.model.config
+                                                        .companion_free_y);
                                                 bootstrap(app);
                                               });
                                             });

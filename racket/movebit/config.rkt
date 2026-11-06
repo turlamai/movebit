@@ -34,9 +34,9 @@
          quiet-hours-active?
          quiet-hours-seconds-remaining)
 
-;; Bump only for a breaking on-disk change; readers migrate v2 and reject
+;; Bump only for a breaking on-disk change; readers migrate v2/v3 and reject
 ;; everything else.
-(define config-schema-version 3)
+(define config-schema-version 4)
 
 (struct reminder-config
   (sit-reminder-minutes      ; 50 balanced (10-240, UI step 5)
@@ -60,7 +60,12 @@
    water-enabled             ; #t — hydration reminders on/off
    quiet-hours-enabled       ; #f
    quiet-hours-start-minutes ; 1320 = 22:00 local
-   quiet-hours-end-minutes)  ; 420  = 07:00 local
+   quiet-hours-end-minutes   ; 420  = 07:00 local
+   ;; Issue #104: a directly placed home position, normalized to the usable
+   ;; work area (0..1000 per-mille) so it survives monitor/DPI changes.
+   ;; -1 means "use the named dock".
+   companion-free-x
+   companion-free-y)
   #:transparent)
 
 ;; v1 has exactly one reminder experience: gentle character-delivered cues.
@@ -73,7 +78,7 @@
 (define (default-config)
   (reminder-config 50 60 5 10 #t 20 20 #t #f #t #f "auto"
                    "M" "subtle" "bottom-right" "cue"
-                   "balanced" #t #t #f 1320 420))
+                   "balanced" #t #t #f 1320 420 -1 -1))
 
 (define (clamp v lo hi) (min (max v lo) hi))
 
@@ -125,7 +130,9 @@
    (reminder-config-water-enabled c)
    (reminder-config-quiet-hours-enabled c)
    (reminder-config-quiet-hours-start-minutes c)
-   (reminder-config-quiet-hours-end-minutes c)))
+   (reminder-config-quiet-hours-end-minutes c)
+   (reminder-config-companion-free-x c)
+   (reminder-config-companion-free-y c)))
 
 ;; Derive the label from the values, so a stale or hand-edited config can
 ;; never advertise a preset it does not implement.
@@ -191,6 +198,12 @@
                    (* 60 (reminder-config-quiet-hours-start-minutes c)))
                 day-seconds))]))
 
+;; -1 = "use the dock"; otherwise a 0..1000 per-mille of the usable work area.
+(define (clamp-free-coord v)
+  (if (and (exact-integer? v) (>= v 0))
+      (min v 1000)
+      -1))
+
 (define (bool-field c accessor)
   (define v (accessor c))
   (if (boolean? v) v (not (false? v))))
@@ -227,7 +240,9 @@
            (bool-field c reminder-config-water-enabled)
            (bool-field c reminder-config-quiet-hours-enabled)
            (clamp (exact-floor (reminder-config-quiet-hours-start-minutes c)) 0 1439)
-           (clamp (exact-floor (reminder-config-quiet-hours-end-minutes c)) 0 1439))])
+           (clamp (exact-floor (reminder-config-quiet-hours-end-minutes c)) 0 1439)
+           (clamp-free-coord (reminder-config-companion-free-x c))
+           (clamp-free-coord (reminder-config-companion-free-y c)))])
     ;; The stored label always agrees with the stored numbers.
     (struct-copy reminder-config clamped
                  [preset (symbol->string (effective-preset clamped))])))
@@ -256,7 +271,9 @@
           'WaterEnabled (reminder-config-water-enabled clamped)
           'QuietHoursEnabled (reminder-config-quiet-hours-enabled clamped)
           'QuietHoursStartMinutes (reminder-config-quiet-hours-start-minutes clamped)
-          'QuietHoursEndMinutes (reminder-config-quiet-hours-end-minutes clamped)))
+          'QuietHoursEndMinutes (reminder-config-quiet-hours-end-minutes clamped)
+          'CompanionFreeX (reminder-config-companion-free-x clamped)
+          'CompanionFreeY (reminder-config-companion-free-y clamped)))
 
 ;; Tolerant reader with a hard version gate: a file written by an unknown
 ;; schema (v0.x PascalCase, future versions) is foreign — use defaults, never
@@ -265,7 +282,7 @@
 (define (jsexpr->config js)
   (cond
     [(and (hash? js)
-          (eq? (hash-ref js 'SchemaVersion #f) config-schema-version))
+          (memq (hash-ref js 'SchemaVersion #f) (list 3 config-schema-version)))
      (define (int-field key default lo hi)
        (define v (hash-ref js key default))
        (if (exact-integer? v) (clamp v lo hi) default))
@@ -301,7 +318,9 @@
        (bool-field 'WaterEnabled #t)
        (bool-field 'QuietHoursEnabled #f)
        (int-field 'QuietHoursStartMinutes 1320 0 1439)
-       (int-field 'QuietHoursEndMinutes 420 0 1439)))]
+       (int-field 'QuietHoursEndMinutes 420 0 1439)
+       (int-field 'CompanionFreeX -1 -1 1000)
+       (int-field 'CompanionFreeY -1 -1 1000)))]
     ;; The format shipped with 0.0.1: preserve the user's cadence, sound and
     ;; companion choices; the new switches start enabled, quiet hours off.
     [(and (hash? js) (eq? (hash-ref js 'SchemaVersion #f) 2))
@@ -334,7 +353,7 @@
          (if (valid-choice? v companion-dock-choices) v "bottom-right"))
        (let ([v (hash-ref js 'CompanionLabels "cue")])
          (if (valid-choice? v companion-labels-choices) v "cue"))
-       "custom" #t #t #f 1320 420))]
+       "custom" #t #t #f 1320 420 -1 -1))]
     [else (default-config)]))
 
 (define (config-path directory)

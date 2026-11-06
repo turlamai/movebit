@@ -173,6 +173,10 @@ struct MubiCompanion {
   std::string dock = "bottom-right";
   bool labels_always = false;
   bool quiet = false;
+  // Issue #104: normalized directly placed home (-1 = named dock). Rendering
+  // honors it; the direct-manipulation mode itself is macOS-first for now.
+  std::int64_t free_x = -1;
+  std::int64_t free_y = -1;
 
   HWND hwnd = nullptr;
   Microsoft::UI::Dispatching::DispatcherQueueTimer anim_timer{nullptr};
@@ -196,12 +200,15 @@ struct MubiCompanion {
   }
 
   void ApplyConfig(std::string const& size, std::string const& m,
-                   std::string const& d, std::string const& labels) {
+                   std::string const& d, std::string const& labels,
+                   std::int64_t freeX, std::int64_t freeY) {
     StopVisit();
     body_height = body_height_for(size);
     motion = m;
     dock = d;
     labels_always = labels == "always";
+    free_x = freeX;
+    free_y = freeY;
     if (hwnd != nullptr) {
       // Reset a stale due state and its label width before redocking.
       Show(quiet ? MubiState::Focus : MubiState::Idle, L"");
@@ -213,6 +220,8 @@ struct MubiCompanion {
   // This changes only the local visual dock, not the Racket user settings
   // or any still-pending reminder's completion state.
   void MoveAside() {
+    free_x = -1;
+    free_y = -1;
     if (dock == "bottom-right") dock = "bottom-left";
     else if (dock == "bottom-left") dock = "top-left";
     else if (dock == "top-left") dock = "top-right";
@@ -331,6 +340,19 @@ struct MubiCompanion {
     int const clearance = 16;
     int x = 0;
     int y = 0;
+    if (free_x >= 0 && free_y >= 0) {
+      // Clamp to the usable travel range so a stale/synced position can
+      // never put the character partly or wholly off-screen.
+      LONG const travel_w =
+          std::max<LONG>(0, (wa.right - wa.left) - size.cx - 2 * clearance);
+      LONG const travel_h =
+          std::max<LONG>(0, (wa.bottom - wa.top) - size.cy - 2 * clearance);
+      x = wa.left + clearance +
+          static_cast<int>(travel_w * free_x / 1000);
+      y = wa.top + clearance +
+          static_cast<int>(travel_h * free_y / 1000);
+      return POINT{x, y};
+    }
     if (dock == "bottom-left") {
       x = wa.left + clearance;
       y = wa.bottom - size.cy - clearance;

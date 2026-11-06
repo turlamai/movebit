@@ -17,7 +17,7 @@
 (let* ([dir (make-temp-dir "cfg")]
        [expected (reminder-config 50 40 7 25 #f 25 30 #f #f #f #t "auto"
                              "L" "lively" "top-right" "always"
-                             "custom" #t #t #f 1320 420)])
+                             "custom" #t #t #f 1320 420 250 750)])
   (check-true (save-config dir expected))
   (define actual (load-config dir))
   (check-equal? (reminder-config-sit-reminder-minutes actual) 50)
@@ -35,6 +35,8 @@
   (check-equal? (reminder-config-companion-motion actual) "lively")
   (check-equal? (reminder-config-companion-dock actual) "top-right")
   (check-equal? (reminder-config-companion-labels actual) "always")
+  (check-equal? (reminder-config-companion-free-x actual) 250)
+  (check-equal? (reminder-config-companion-free-y actual) 750)
   ;; atomic write: no .tmp residue
   (check-false (file-exists? (build-path dir "config.json.tmp")))
   ;; every write stamps the schema version
@@ -174,7 +176,7 @@ EOF
 (let* ([dir (make-temp-dir "saveclamp")])
   (save-config dir (reminder-config 1 999 0 999 #t 1 999 "x" #t #t #f "klingon"
                                    "huge" "fast" "center" "sometimes"
-                                   "bogus" #f #f #t -5 9999))
+                                   "bogus" #f #f #t -5 9999 5000 -7))
   (define actual (load-config dir))
   (check-equal? (reminder-config-sit-reminder-minutes actual) 10)
   (check-equal? (reminder-config-water-reminder-minutes actual) 180)
@@ -186,6 +188,9 @@ EOF
   (check-equal? (reminder-config-companion-motion actual) "subtle")
   (check-equal? (reminder-config-companion-dock actual) "bottom-right")
   (check-equal? (reminder-config-companion-labels actual) "cue")
+  ;; free position: 5000 clamps to 1000, -7 means "use the dock"
+  (check-equal? (reminder-config-companion-free-x actual) 1000)
+  (check-equal? (reminder-config-companion-free-y actual) -1)
   (delete-directory/files dir))
 
 ;; --- issue #87: rhythm presets -------------------------------------------
@@ -324,3 +329,47 @@ EOF
 (let ([c (clamp-config (struct-copy reminder-config (quiet-config 1320 420)
                                      [quiet-hours-enabled #f]))])
   (check-false (quiet-hours-active? c (at 23 0))))
+
+;; --- issue #104: free placement -----------------------------------------
+
+;; Free coordinates round-trip as per-mille values; -1 means "named dock".
+(let* ([dir (make-temp-dir "free-pos")]
+       [config (clamp-config
+                (struct-copy reminder-config (default-config)
+                             [companion-free-x 123]
+                             [companion-free-y 987]))])
+  (check-true (save-config dir config))
+  (define loaded (load-config dir))
+  (check-equal? (reminder-config-companion-free-x loaded) 123)
+  (check-equal? (reminder-config-companion-free-y loaded) 987)
+  (delete-directory/files dir))
+
+;; Out-of-range free coordinates normalize to -1 (dock), never off-screen.
+(let ([c (clamp-config (struct-copy reminder-config (default-config)
+                                     [companion-free-x 4000]
+                                     [companion-free-y -5]))])
+  (check-equal? (reminder-config-companion-free-x c) 1000)
+  (check-equal? (reminder-config-companion-free-y c) -1))
+
+;; A v3 file (previous main) migrates additively: settings kept, dock used.
+(let* ([dir (make-temp-dir "v3-free")]
+       [path (build-path dir "config.json")]
+       [v3 (hasheq 'SchemaVersion 3
+                   'SitReminderMinutes 65
+                   'WaterReminderMinutes 55
+                   'Preset "custom"
+                   'SoundEnabled #t
+                   'CompanionDock "top-left"
+                   'QuietHoursEnabled #t
+                   'QuietHoursStartMinutes 1200
+                   'QuietHoursEndMinutes 480)])
+  (call-with-output-file path (lambda (out) (write-json v3 out)))
+  (define migrated (load-config dir))
+  (check-equal? (reminder-config-sit-reminder-minutes migrated) 65)
+  (check-equal? (reminder-config-water-reminder-minutes migrated) 55)
+  (check-true (reminder-config-sound-enabled migrated))
+  (check-equal? (reminder-config-companion-dock migrated) "top-left")
+  (check-true (reminder-config-quiet-hours-enabled migrated))
+  (check-equal? (reminder-config-companion-free-x migrated) -1)
+  (check-equal? (reminder-config-companion-free-y migrated) -1)
+  (delete-directory/files dir))

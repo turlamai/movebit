@@ -459,6 +459,19 @@ final class CompanionController: NSObject {
     private var dock = "bottom-right"
     private var labelsAlways = false
     private var quiet = false
+    // Issue #104: a directly placed home position (per-mille of the usable
+    // work area; -1 = the named dock). The temporary placement mode flips the
+    // pointer-through panel into a draggable surface only while active.
+    private var freeX: Int64 = -1
+    private var freeY: Int64 = -1
+    private var placing = false
+    private var placementTimer: Task<Void, Never>?
+    private var placementSaveTask: Task<Void, Never>?
+    var isPlacing: Bool { placing }
+    /// Persist the normalized position after a drag (debounced) and on exit.
+    var onPlacementChanged: ((Int64, Int64) -> Void)?
+    /// The mode ended (Done or the 30 s safety timeout): refresh menu labels.
+    var onPlacementEnded: (() -> Void)?
 
     override init() {
         super.init()
@@ -472,11 +485,14 @@ final class CompanionController: NSObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    func applyConfig(size: String, motion: String, dock: String, labels: String) {
+    func applyConfig(size: String, motion: String, dock: String, labels: String,
+                     freeX: Int64, freeY: Int64) {
         cancelVisit()
         bodySize = Self.bodyHeight(for: size)
         self.motion = motion
         self.dock = dock
+        self.freeX = freeX
+        self.freeY = freeY
         labelsAlways = labels == "always"
         if let panel, panel.isVisible {
             present(quiet ? .focus : .idle, message: "")
@@ -487,6 +503,11 @@ final class CompanionController: NSObject {
     /// This is an action, not another saved preference; it never edits cue
     /// completion/snooze or asks for screen-wide mouse permissions.
     func moveAside() {
+        endPlacement()
+        // A one-click move falls back to the named docks; it must override a
+        // previously placed free position for this session.
+        freeX = -1
+        freeY = -1
         let corners = ["bottom-right", "bottom-left", "top-left", "top-right"]
         let index = corners.firstIndex(of: dock) ?? 0
         dock = corners[(index + 1) % corners.count]
@@ -509,6 +530,7 @@ final class CompanionController: NSObject {
     /// cancel the visit synchronously and return Mubi to its home dock.
     func show(state: MubiState, message: String) {
         cancelVisit()
+        endPlacement()
         guard !quiet else { return }
         present(state, message: message)
         let current = generation
@@ -523,7 +545,47 @@ final class CompanionController: NSObject {
 
     func showIdle() {
         cancelVisit()
+        endPlacement()
         present(quiet ? .focus : .idle, message: "")
+    }
+
+    /// Temporary explicit placement mode (issue #104): the panel accepts
+    /// mouse events and can be dragged by its background. It is time-bounded,
+    /// never persists as an input-capturing surface, and Hide/Focus/cues end
+    /// it immediately.
+    func beginPlacement() {
+        guard !quiet else { return }
+        cancelVisit()
+        placing = true
+        present(.idle, message: "")
+        panel?.ignoresMouseEvents = false
+        panel?.isMovableByWindowBackground = true
+        panel?.hasShadow = true
+        panel?.delegate = self
+        placementTimer?.cancel()
+        placementTimer = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.endPlacement()
+        }
+    }
+
+    func endPlacement() {
+        guard placing else { return }
+        placing = false
+        placementTimer?.cancel()
+        placementTimer = nil
+        placementSaveTask?.cancel()
+        placementSaveTask = nil
+        savePlacement()
+        panel?.ignoresMouseEvents = true
+        panel?.isMovableByWindowBackground = false
+        panel?.hasShadow = false
+        panel?.delegate = nil
+        if let panel, panel.isVisible {
+            present(quiet ? .focus : .idle, message: "")
+        }
+        onPlacementEnded?()
     }
 
     /// Brief acknowledgment flourish after a tray Done (self-reported).
@@ -541,12 +603,14 @@ final class CompanionController: NSObject {
 
     func setQuiet(_ enabled: Bool) {
         cancelVisit()
+        endPlacement()
         quiet = enabled
         present(quiet ? .focus : .idle, message: "")
     }
 
     func hide() {
         cancelVisit()
+        endPlacement()
         generation += 1
         panel?.orderOut(nil)
     }
@@ -622,10 +686,17 @@ final class CompanionController: NSObject {
         generation += 1
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        let character = MubiView(state: state, message: message,
+                                 bodySize: bodySize, motion: motion,
+                                 labelsAlways: labelsAlways)
         panel.contentView = NSHostingView(
-            rootView: MubiView(state: state, message: message,
-                               bodySize: bodySize, motion: motion,
-                               labelsAlways: labelsAlways))
+            rootView: placing
+                ? AnyView(character.overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color.accentColor,
+                                      style: StrokeStyle(lineWidth: 2,
+                                                         dash: [5, 4]))))
+                : AnyView(character))
         relayout()
         // NSPanel never becomes key or main; the whole window ignores mouse
         // events (#54 pointer-through fallback).
@@ -660,6 +731,18 @@ final class CompanionController: NSObject {
         let clearance: CGFloat = 16
         let x: CGFloat
         let y: CGFloat
+        if freeX >= 0 && freeY >= 0 {
+            // Normalized placement keeps the character fully on-screen after
+            // display/DPI changes: the travel range excludes its own size.
+            let travelW = max(0, safe.width - size.width - 2 * clearance)
+            let travelH = max(0, safe.height - size.height - 2 * clearance)
+            x = safe.minX + clearance
+                + travelW * CGFloat(freeX) / 1000
+            y = safe.minY + clearance
+                + travelH * CGFloat(freeY) / 1000
+            panel.setFrameOrigin(NSPoint(x: x, y: y))
+            return
+        }
         switch dock {
         case "bottom-left":
             x = safe.minX + clearance
@@ -677,11 +760,44 @@ final class CompanionController: NSObject {
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
+    /// Convert the dragged origin back into per-mille of the usable travel
+    /// range. Clamping is inherent: the drag cannot leave the screen.
+    private func savePlacement() {
+        guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
+        let safe = screen.visibleFrame
+        let size = panel.frame.size
+        let clearance: CGFloat = 16
+        let travelW = max(1, safe.width - size.width - 2 * clearance)
+        let travelH = max(1, safe.height - size.height - 2 * clearance)
+        let fractionX = (panel.frame.minX - safe.minX - clearance) / travelW
+        let fractionY = (panel.frame.minY - safe.minY - clearance) / travelH
+        let nx = Int64((min(1, max(0, fractionX)) * 1000).rounded())
+        let ny = Int64((min(1, max(0, fractionY)) * 1000).rounded())
+        guard nx != freeX || ny != freeY else { return }
+        freeX = nx
+        freeY = ny
+        onPlacementChanged?(nx, ny)
+    }
+
     @objc private func screenParametersChanged(_ note: Notification) {
         guard let panel, panel.isVisible else { return }
         // A hotplug/work-area change invalidates the visit's old coordinates.
         // Re-dock immediately; the next due cue recalculates the new bounds.
         cancelVisit()
         present(quiet ? .focus : .idle, message: "")
+    }
+}
+
+
+extension CompanionController: NSWindowDelegate {
+    /// Debounced persistence while the user drags in placement mode.
+    func windowDidMove(_ notification: Notification) {
+        guard placing else { return }
+        placementSaveTask?.cancel()
+        placementSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            self?.savePlacement()
+        }
     }
 }

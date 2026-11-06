@@ -74,7 +74,9 @@ extension ReminderConfig {
         water_enabled: Bool? = nil,
         quiet_hours_enabled: Bool? = nil,
         quiet_hours_start_minutes: Int64? = nil,
-        quiet_hours_end_minutes: Int64? = nil
+        quiet_hours_end_minutes: Int64? = nil,
+        companion_free_x: Int64? = nil,
+        companion_free_y: Int64? = nil
     ) -> ReminderConfig {
         ReminderConfig(
             sit_reminder_minutes: sit_reminder_minutes ?? self.sit_reminder_minutes,
@@ -100,7 +102,9 @@ extension ReminderConfig {
             quiet_hours_start_minutes:
                 quiet_hours_start_minutes ?? self.quiet_hours_start_minutes,
             quiet_hours_end_minutes:
-                quiet_hours_end_minutes ?? self.quiet_hours_end_minutes)
+                quiet_hours_end_minutes ?? self.quiet_hours_end_minutes,
+            companion_free_x: companion_free_x ?? self.companion_free_x,
+            companion_free_y: companion_free_y ?? self.companion_free_y)
     }
 }
 

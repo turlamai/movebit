@@ -449,6 +449,20 @@
             "kind": "scalar",
             "name": "Int64"
           }
+        },
+        {
+          "name": "companion-free-x",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "companion-free-y",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
         }
       ],
       "name": "ReminderConfig"
