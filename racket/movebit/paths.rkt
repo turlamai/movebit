@@ -88,7 +88,7 @@
   (define js (load-bootstrap))
   (define existing (hash-ref js 'device-id #f))
   (if (and (string? existing)
-           (regexp-match? #rx"^[0-9a-f]{8}$" existing))
+           (regexp-match? #px"^[0-9a-f]{8}$" existing))
       existing
       (let ([fresh
              (apply string-append
