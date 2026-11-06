@@ -69,7 +69,12 @@ extension ReminderConfig {
         companion_size: String? = nil,
         companion_motion: String? = nil,
         companion_dock: String? = nil,
-        companion_labels: String? = nil
+        companion_labels: String? = nil,
+        sit_enabled: Bool? = nil,
+        water_enabled: Bool? = nil,
+        quiet_hours_enabled: Bool? = nil,
+        quiet_hours_start_minutes: Int64? = nil,
+        quiet_hours_end_minutes: Int64? = nil
     ) -> ReminderConfig {
         ReminderConfig(
             sit_reminder_minutes: sit_reminder_minutes ?? self.sit_reminder_minutes,
@@ -87,7 +92,15 @@ extension ReminderConfig {
             companion_size: companion_size ?? self.companion_size,
             companion_motion: companion_motion ?? self.companion_motion,
             companion_dock: companion_dock ?? self.companion_dock,
-            companion_labels: companion_labels ?? self.companion_labels)
+            companion_labels: companion_labels ?? self.companion_labels,
+            preset: self.preset,
+            sit_enabled: sit_enabled ?? self.sit_enabled,
+            water_enabled: water_enabled ?? self.water_enabled,
+            quiet_hours_enabled: quiet_hours_enabled ?? self.quiet_hours_enabled,
+            quiet_hours_start_minutes:
+                quiet_hours_start_minutes ?? self.quiet_hours_start_minutes,
+            quiet_hours_end_minutes:
+                quiet_hours_end_minutes ?? self.quiet_hours_end_minutes)
     }
 }
 
@@ -261,7 +274,7 @@ private struct TodayCard: View {
 
             sitCycleBar
 
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(sitCycleText)
                         .font(.system(size: 14, weight: .semibold))
@@ -270,17 +283,75 @@ private struct TodayCard: View {
                         .font(.system(size: 11))
                         .foregroundColor(Palette.inkSecondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                counter(emoji: "🚶", value: model.today.sit_breaks, label: L10n.t("today.sit"))
-                counter(emoji: "💧", value: model.today.water_reminders, label: L10n.t("today.water"))
-                counter(emoji: "👀", value: model.today.micro_breaks, label: L10n.t("today.micro"))
+                Spacer()
+                nextCueBadge
             }
-            Text(L10n.t("today.countsNote"))
+
+            outcomeRows
+
+            Text(L10n.t("today.outcomeLegend"))
                 .font(.system(size: 11))
                 .foregroundColor(Palette.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .modifier(CardBackground())
+    }
+
+    /// The nearest countdown the user can actually expect, or an honest
+    /// "paused"/"off" instead of a promise.
+    @ViewBuilder
+    private var nextCueBadge: some View {
+        if model.isPaused {
+            Text(L10n.t("tpl.running"))
+                .font(.system(size: 11.5))
+                .foregroundColor(Palette.inkMuted)
+        } else if let next = model.nextCue {
+            Text(L10n.t("today.nextCue", "\(next.minutes)"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(Palette.kindAccent(next.kind))
+                .multilineTextAlignment(.trailing)
+        } else {
+            Text(L10n.t("set.nextCueOff"))
+                .font(.system(size: 11.5))
+                .foregroundColor(Palette.inkMuted)
+        }
+    }
+
+    /// Shown vs self-reported done, per kind. Delivery ("presented") and the
+    /// user's own "Done" are deliberately separate numbers (issue #88); a kind
+    /// with no recorded event is omitted rather than displayed as zero.
+    @ViewBuilder
+    private var outcomeRows: some View {
+        let kinds: [ReminderKind] = [.sit, .water, .micro]
+        let visible = kinds.compactMap { kind -> (ReminderKind, CueOutcomeTotals)? in
+            guard let totals = model.outcome(kind) else { return nil }
+            return (kind, totals)
+        }
+        VStack(spacing: 6) {
+            if visible.isEmpty {
+                Text(L10n.t("today.outcomeEmpty"))
+                    .font(.system(size: 12))
+                    .foregroundColor(Palette.inkMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(visible, id: \.0) { kind, totals in
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Palette.kindAccent(kind))
+                            .frame(width: 6, height: 6)
+                        Text(model.kindLabel(kind))
+                            .font(.system(size: 12))
+                            .foregroundColor(Palette.inkSecondary)
+                        Spacer()
+                        Text(L10n.t("today.outcome",
+                                    "\(totals.presented)",
+                                    "\(totals.self_reported_done)"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Palette.inkPrimary)
+                    }
+                }
+            }
+        }
     }
 
     private var statusColor: Color { model.isPaused ? Palette.pausedOrange : Palette.runningGreen }
@@ -316,21 +387,6 @@ private struct TodayCard: View {
         let accumulated = Double(model.loop(.sit)?.accumulated_mins ?? 0)
         let fraction = min(1, max(0, accumulated / Double(model.config.sit_reminder_minutes)))
         return width * CGFloat(fraction)
-    }
-
-    private func counter(emoji: String, value: Int64, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text(emoji).font(.system(size: 14))
-                Text("\(value)")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(Palette.inkPrimary)
-            }
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundColor(Palette.inkSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -551,8 +607,14 @@ private struct InsightCard: View {
 
 // MARK: - settings card
 
+/// Companion-first settings (issues #87/#90): one rhythm choice and sound are
+/// the everyday surface; cadence steppers, quiet hours and character details
+/// live behind one explicit "Customize" disclosure.
 private struct SettingsCard: View {
     @EnvironmentObject var model: MoveBitModel
+    @State private var showAdvanced = false
+
+    private let presets = ["balanced", "gentle", "active"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -568,12 +630,53 @@ private struct SettingsCard: View {
                         .foregroundColor(Palette.accent)
                         .multilineTextAlignment(.trailing)
                 }
-                Text(L10n.t("set.intro"))
+                Text(L10n.t("set.rhythmHint"))
                     .font(.system(size: 11))
                     .foregroundColor(Palette.inkMuted)
             }
-            reminderRows
-            languageRow
+
+            Text(L10n.t("set.rhythm"))
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundColor(Palette.inkPrimary)
+
+            HStack(spacing: 8) {
+                ForEach(presets, id: \.self) { name in
+                    presetButton(name)
+                }
+            }
+
+            // Exact values, always derived from the stored config so the label
+            // can never promise numbers the app does not use.
+            Text(L10n.t("preset.detail",
+                        "\(model.config.sit_reminder_minutes)",
+                        "\(model.config.water_reminder_minutes)",
+                        "\(model.config.micro_break_interval_minutes)",
+                        "\(model.config.micro_break_duration_seconds)"))
+                .font(.system(size: 11.5))
+                .foregroundColor(Palette.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            nextCueLine
+
+            Divider()
+
+            ToggleRow(label: L10n.t("set.sound"),
+                      isOn: model.config.sound_enabled) {
+                save(model.config.with(sound_enabled: $0))
+            }
+            Text(L10n.t("set.soundHint"))
+                .font(.system(size: 11))
+                .foregroundColor(Palette.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(showAdvanced ? L10n.t("set.collapse") : L10n.t("set.customize")) {
+                showAdvanced.toggle()
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12.5, weight: .medium))
+            .foregroundColor(Palette.accent)
+
+            if showAdvanced { advancedSection }
         }
         .modifier(CardBackground())
     }
@@ -582,41 +685,131 @@ private struct SettingsCard: View {
         model.saveConfig(draft)
     }
 
-    private var reminderRows: some View {
-        VStack(spacing: 10) {
-            StepperRow(label: L10n.t("set.sitInterval"), value: model.config.sit_reminder_minutes,
-                       range: 10...240, step: 5) {
-                save(model.config.with(sit_reminder_minutes: $0))
+    private func presetButton(_ name: String) -> some View {
+        let selected = model.config.preset == name
+        return Button {
+            model.applyRhythmPreset(name)
+        } label: {
+            Text(L10n.t("preset.\(name)"))
+                .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                .foregroundColor(selected ? Palette.accent : Palette.inkPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(RoundedRectangle(cornerRadius: 10)
+                    .fill(selected ? Palette.accentSoft : Palette.cardBg))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(selected ? Palette.accent : Palette.cardBorder,
+                                  lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(L10n.t("set.rhythm"))
+    }
+
+    @ViewBuilder
+    private var nextCueLine: some View {
+        if model.config.preset == "custom" {
+            Text(L10n.t("preset.custom"))
+                .font(.system(size: 11.5))
+                .foregroundColor(Palette.inkMuted)
+        }
+        HStack(spacing: 6) {
+            if let next = model.nextCue {
+                Text(L10n.t("set.nextCue", "\(next.minutes)"))
+                    .foregroundColor(Palette.kindAccent(next.kind))
+            } else if model.isPaused {
+                Text(L10n.t("tpl.running"))
+                    .foregroundColor(Palette.inkMuted)
+            } else {
+                Text(L10n.t("set.nextCueOff"))
+                    .foregroundColor(Palette.inkMuted)
             }
-            StepperRow(label: L10n.t("set.waterInterval"), value: model.config.water_reminder_minutes,
-                       range: 5...180, step: 5) {
-                save(model.config.with(water_reminder_minutes: $0))
+        }
+        .font(.system(size: 12, weight: .medium))
+    }
+
+    private var advancedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
+            Text(L10n.t("set.kinds"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(Palette.inkSecondary)
+
+            ToggleRow(label: L10n.t("set.sitEnabled"),
+                      isOn: model.config.sit_enabled) {
+                save(model.config.with(sit_enabled: $0))
             }
-            StepperRow(label: L10n.t("set.awayReset"), value: model.config.away_reset_minutes,
+            if model.config.sit_enabled {
+                StepperRow(label: L10n.t("set.sitInterval"),
+                           value: model.config.sit_reminder_minutes,
+                           range: 10...240, step: 5) {
+                    save(model.config.with(sit_reminder_minutes: $0))
+                }
+            }
+
+            ToggleRow(label: L10n.t("set.waterEnabled"),
+                      isOn: model.config.water_enabled) {
+                save(model.config.with(water_enabled: $0))
+            }
+            if model.config.water_enabled {
+                StepperRow(label: L10n.t("set.waterInterval"),
+                           value: model.config.water_reminder_minutes,
+                           range: 5...180, step: 5) {
+                    save(model.config.with(water_reminder_minutes: $0))
+                }
+            }
+
+            ToggleRow(label: L10n.t("set.eyesToggle"),
+                      isOn: model.config.micro_break_enabled) {
+                save(model.config.with(micro_break_enabled: $0))
+            }
+            if model.config.micro_break_enabled {
+                HStack {
+                    Text(L10n.t("set.eyesParams"))
+                        .font(.system(size: 12.5))
+                        .foregroundColor(Palette.inkSecondary)
+                    Spacer()
+                    StepperRow(label: "", value: model.config.micro_break_interval_minutes,
+                               range: 10...60, step: 5, compact: true) {
+                        save(model.config.with(micro_break_interval_minutes: $0))
+                    }
+                    StepperRow(label: "", value: model.config.micro_break_duration_seconds,
+                               range: 10...60, step: 5, compact: true) {
+                        save(model.config.with(micro_break_duration_seconds: $0))
+                    }
+                }
+            }
+
+            StepperRow(label: L10n.t("set.awayReset"),
+                       value: model.config.away_reset_minutes,
                        range: 1...60, step: 1) {
                 save(model.config.with(away_reset_minutes: $0))
             }
-            StepperRow(label: L10n.t("set.snooze"), value: model.config.snooze_minutes,
+            StepperRow(label: L10n.t("set.snooze"),
+                       value: model.config.snooze_minutes,
                        range: 5...60, step: 5) {
                 save(model.config.with(snooze_minutes: $0))
             }
-            ToggleRow(label: L10n.t("set.microToggle"), isOn: model.config.micro_break_enabled) {
-                save(model.config.with(micro_break_enabled: $0))
+
+            Divider()
+            ToggleRow(label: L10n.t("set.quietHours"),
+                      isOn: model.config.quiet_hours_enabled) {
+                save(model.config.with(quiet_hours_enabled: $0))
             }
-            HStack {
-                Text(L10n.t("set.microParams"))
-                    .font(.system(size: 12.5))
-                    .foregroundColor(Palette.inkSecondary)
-                Spacer()
-                StepperRow(label: "", value: model.config.micro_break_interval_minutes,
-                           range: 10...60, step: 5, compact: true) {
-                    save(model.config.with(micro_break_interval_minutes: $0))
+            Text(L10n.t("set.quietHoursHint"))
+                .font(.system(size: 11))
+                .foregroundColor(Palette.inkMuted)
+            if model.config.quiet_hours_enabled {
+                timeRow(label: L10n.t("set.quietStart"),
+                        minutes: model.config.quiet_hours_start_minutes) {
+                    save(model.config.with(quiet_hours_start_minutes: $0))
                 }
-                StepperRow(label: "", value: model.config.micro_break_duration_seconds,
-                           range: 10...60, step: 5, compact: true) {
-                    save(model.config.with(micro_break_duration_seconds: $0))
+                timeRow(label: L10n.t("set.quietEnd"),
+                        minutes: model.config.quiet_hours_end_minutes) {
+                    save(model.config.with(quiet_hours_end_minutes: $0))
                 }
             }
+
+            Divider()
             pickerRow(label: L10n.t("set.mubiSize"),
                       selection: model.config.companion_size,
                       options: [("S", "S"), ("M", "M"), ("L", "L")]) {
@@ -646,13 +839,36 @@ private struct SettingsCard: View {
             ToggleRow(label: L10n.t("set.motion"), isOn: model.config.motion_enabled) {
                 save(model.config.with(motion_enabled: $0))
             }
-            ToggleRow(label: L10n.t("set.sound"), isOn: model.config.sound_enabled) {
-                save(model.config.with(sound_enabled: $0))
-            }
             ToggleRow(label: L10n.t("set.autostart"), isOn: model.autostart) {
                 model.setAutostart($0)
             }
+            languageRow
         }
+    }
+
+    private func timeRow(label: String, minutes: Int64,
+                         onChange: @escaping (Int64) -> Void) -> some View {
+        // The picker works in 30-minute steps; a value written by another
+        // build is snapped for display only, never silently rewritten.
+        let snapped = (minutes / 30) * 30
+        return HStack {
+            Text(label)
+                .font(.system(size: 12.5))
+                .foregroundColor(Palette.inkSecondary)
+            Spacer()
+            Picker("", selection: Binding(get: { snapped },
+                                          set: { onChange($0) })) {
+                ForEach(Array(stride(from: Int64(0), to: 1440, by: 30)), id: \.self) { m in
+                    Text(Self.timeText(m)).tag(m)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 96)
+        }
+    }
+
+    static func timeText(_ minutes: Int64) -> String {
+        String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
 
     private func pickerRow(label: String, selection: String,
@@ -660,7 +876,8 @@ private struct SettingsCard: View {
                            save: @escaping (String) -> Void) -> some View {
         HStack {
             Text(label)
-                .foregroundColor(Palette.inkPrimary)
+                .font(.system(size: 12.5))
+                .foregroundColor(Palette.inkSecondary)
             Spacer()
             Picker("", selection: Binding(get: { selection },
                                           set: { save($0) })) {
@@ -671,13 +888,13 @@ private struct SettingsCard: View {
             .labelsHidden()
             .frame(width: 132)
         }
-        .font(.system(size: 13))
     }
 
     private var languageRow: some View {
         HStack {
             Text(L10n.t("set.language"))
-                .foregroundColor(Palette.inkPrimary)
+                .font(.system(size: 12.5))
+                .foregroundColor(Palette.inkSecondary)
             Spacer()
             Picker("", selection: languageBinding) {
                 Text(L10n.t("lang.auto")).tag("auto")
@@ -687,7 +904,6 @@ private struct SettingsCard: View {
             .labelsHidden()
             .frame(width: 132)
         }
-        .font(.system(size: 13))
     }
 
     private var languageBinding: Binding<String> {

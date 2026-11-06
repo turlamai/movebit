@@ -8,6 +8,7 @@ typealias ReminderConfig = RivetTypes.ReminderConfig
 typealias PauseState = RivetTypes.PauseState
 typealias LoopInfo = RivetTypes.LoopInfo
 typealias HealthCue = RivetTypes.HealthCue
+typealias CueOutcomeTotals = RivetTypes.CueOutcomeTotals
 typealias CueAction = RivetTypes.CueAction
 typealias CueDelivery = RivetTypes.CueDelivery
 typealias ReminderKind = RivetTypes.ReminderKind

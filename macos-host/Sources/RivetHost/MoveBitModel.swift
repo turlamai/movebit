@@ -89,16 +89,23 @@ final class MoveBitModel: ObservableObject {
                                     water_reminders: 0, micro_breaks: 0,
                                     longest_session_mins: 0)
     @Published var config = ReminderConfig(
-        sit_reminder_minutes: 45, water_reminder_minutes: 30, away_reset_minutes: 5,
-        // Pre-bootstrap placeholder = the shipped default; the backend
-        // overwrites it with the real persisted config right after init.
-        snooze_minutes: 10, micro_break_enabled: true, micro_break_interval_minutes: 30,
-        micro_break_duration_seconds: 20, motion_enabled: true, sound_enabled: true,
+        sit_reminder_minutes: 50, water_reminder_minutes: 60, away_reset_minutes: 5,
+        // Pre-bootstrap placeholder = the shipped balanced default; the
+        // backend overwrites it with the real persisted config right after init.
+        snooze_minutes: 10, micro_break_enabled: true, micro_break_interval_minutes: 20,
+        micro_break_duration_seconds: 20, motion_enabled: true, sound_enabled: false,
         auto_check_updates: true, welcome_shown: false, language: "auto",
         companion_size: "M", companion_motion: "subtle",
-        companion_dock: "bottom-right", companion_labels: "cue")
+        companion_dock: "bottom-right", companion_labels: "cue",
+        preset: "balanced", sit_enabled: true, water_enabled: true,
+        quiet_hours_enabled: false, quiet_hours_start_minutes: 1320,
+        quiet_hours_end_minutes: 420)
     @Published var paused = PauseState(paused: false, until_ms: nil)
     @Published var loops: [LoopInfo] = []
+    /// Per-kind delivery/response truth for today (issue #88): shown and
+    /// self-reported done are separate from the fired-reminder counters, and
+    /// nothing here claims a verified break.
+    @Published var outcomes: [CueOutcomeTotals] = []
     /// Cues currently pending or on screen (the backend's reconciliation view).
     /// All writes go through `setPendingCues` so presentation observers fire.
     @Published var pendingCues: [HealthCue] = [] {
@@ -143,6 +150,31 @@ final class MoveBitModel: ObservableObject {
 
     func loop(_ kind: ReminderKind) -> LoopInfo? {
         loops.first { $0.kind == kind }
+    }
+
+    func outcome(_ kind: ReminderKind) -> CueOutcomeTotals? {
+        outcomes.first { $0.kind == kind }
+    }
+
+    /// Nearest enabled kind still counting down, in active minutes. Nil when
+    /// every kind is off (or paused) — the UI then says so instead of showing
+    /// a promise that will not fire.
+    var nextCue: (kind: ReminderKind, minutes: Int64)? {
+        guard !isPaused else { return nil }
+        let candidates: [(ReminderKind, Int64)] = loops.compactMap { loop in
+            guard let due = loop.due_in_active_mins else { return nil }
+            return (loop.kind, max(0, due))
+        }
+        return candidates.min { $0.1 < $1.1 }
+            .map { (kind: $0.0, minutes: $0.1) }
+    }
+
+    func kindLabel(_ kind: ReminderKind) -> String {
+        switch kind {
+        case .sit: return L10n.t("today.sit")
+        case .water: return L10n.t("today.water")
+        case .micro: return L10n.t("today.micro")
+        }
     }
 
     var isPaused: Bool { paused.paused }
@@ -217,6 +249,7 @@ final class MoveBitModel: ObservableObject {
         status = ""
 
         Task { await reloadHistory() }
+        Task { await reloadOutcomes() }
         Task { await reloadAutostart() }
         Task { await reloadDataDir() }
         Task { reflectPendingUpdate() }
@@ -235,6 +268,7 @@ final class MoveBitModel: ObservableObject {
                     if let l = try? await api.get_loops() { loops = l }
                     if let p = try? await api.get_paused() { paused = p }
                     if let q = try? await api.get_pending_cues() { pendingCues = q }
+                    if let o = try? await api.get_cue_outcomes() { outcomes = o }
                 }
             }
         case .health_cue(let cue):
@@ -254,6 +288,11 @@ final class MoveBitModel: ObservableObject {
     }
 
     // MARK: state reloads
+
+    func reloadOutcomes() async {
+        guard let api = api() else { return }
+        outcomes = (try? await api.get_cue_outcomes()) ?? outcomes
+    }
 
     func reloadHistory() async {
         guard let api = api() else { return }
@@ -303,6 +342,24 @@ final class MoveBitModel: ObservableObject {
                 config = previous
                 language = previous.language
                 L10n.language = resolvedLanguage
+                configStatus = L10n.t("set.statusSaveFailed")
+            }
+        }
+    }
+
+    /// Select a named rhythm preset. The exact cadence values live in the
+    /// Racket config module; the host only sends the name.
+    func applyRhythmPreset(_ name: String) {
+        guard let api = api() else { return }
+        Task {
+            do {
+                try await api.set_rhythm_preset(name: name)
+                if let c = try? await api.get_active_config() {
+                    applyConfig(c, announce: true)
+                }
+                if let l = try? await api.get_loops() { loops = l }
+                configStatus = L10n.t("set.statusSaved", Date())
+            } catch {
                 configStatus = L10n.t("set.statusSaveFailed")
             }
         }

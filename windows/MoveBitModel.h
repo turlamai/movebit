@@ -14,6 +14,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace movebit {
@@ -171,11 +172,15 @@ struct Model {
   // Pre-bootstrap placeholder = the shipped default; the backend overwrites
   // it with the real persisted config right after init.
   rivet_app::ReminderConfig config{
-      45, 30, 5, 10, true, 30, 20, true, true, true, false, "auto",
-      "M", "subtle", "bottom-right", "cue"};
+      50, 60, 5, 10, true, 20, 20, true, false, true, false, "auto",
+      "M", "subtle", "bottom-right", "cue",
+      "balanced", true, true, false, 1320, 420};
   rivet_app::DayStats today{"", 0, 0, 0, 0, 0};
   rivet_app::PauseState paused{false, std::nullopt};
   std::vector<rivet_app::LoopInfo> loops;
+  // Per-kind delivery/response truth for today (issue #88): shown and
+  // self-reported done are separate from the fired-reminder counters.
+  std::vector<rivet_app::CueOutcomeTotals> outcomes;
   // Cues currently pending or on screen (backend reconciliation view).
   std::vector<rivet_app::HealthCue> pending_cues;
   bool quiet = false;
@@ -195,6 +200,34 @@ struct Model {
   std::int64_t current_session_mins() const {
     auto sit = loop(rivet_app::ReminderKind::sit);
     return sit.has_value() ? sit->accumulated_mins : 0;
+  }
+  std::optional<rivet_app::CueOutcomeTotals> outcome(
+      rivet_app::ReminderKind kind) const {
+    for (auto const& o : outcomes) {
+      if (o.kind == kind) return o;
+    }
+    return std::nullopt;
+  }
+  // Nearest enabled kind still counting down, in active minutes. Empty when
+  // paused or every kind is off.
+  std::optional<std::pair<rivet_app::ReminderKind, std::int64_t>> next_cue()
+      const {
+    if (is_paused()) return std::nullopt;
+    std::optional<std::pair<rivet_app::ReminderKind, std::int64_t>> best;
+    for (auto const& l : loops) {
+      if (!l.due_in_active_mins.has_value()) continue;
+      auto const due = std::max<std::int64_t>(0, *l.due_in_active_mins);
+      if (!best.has_value() || due < best->second) best = {l.kind, due};
+    }
+    return best;
+  }
+  std::string kind_label(rivet_app::ReminderKind kind) const {
+    switch (kind) {
+      case rivet_app::ReminderKind::sit: return l10n::t("today.sit");
+      case rivet_app::ReminderKind::water: return l10n::t("today.water");
+      case rivet_app::ReminderKind::micro: return l10n::t("today.micro");
+    }
+    return "";
   }
 };
 

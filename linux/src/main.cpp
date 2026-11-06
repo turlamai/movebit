@@ -37,6 +37,7 @@
 #include <string>
 #include <thread>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include "GeneratedBackend.hpp"
@@ -113,14 +114,21 @@ std::string day_key(std::int64_t epoch_ms) {
 // ---- model ----------------------------------------------------------------
 
 struct Model {
+  // Pre-bootstrap placeholder = the shipped balanced default; the backend
+  // overwrites it with the real persisted config right after init.
   rivet_app::ReminderConfig config{
-      45, 30, 5, 10, true, 30, 20, true, true, true, false, "auto",
-      "M", "subtle", "bottom-right", "cue"};
+      50, 60, 5, 10, true, 20, 20, true, false, true, false, "auto",
+      "M", "subtle", "bottom-right", "cue", "balanced", true, true, false,
+      1320, 420};
   rivet_app::DayStats today{"", 0, 0, 0, 0, 0};
   rivet_app::PauseState paused{false, std::nullopt};
   std::vector<rivet_app::LoopInfo> loops;
   // Cues currently pending or on screen (backend reconciliation view).
   std::vector<rivet_app::HealthCue> pending_cues;
+  // Per-kind delivery/response truth for today (issue #88): shown and
+  // self-reported done are separate from the fired-reminder counters, and
+  // nothing here claims a verified break.
+  std::vector<rivet_app::CueOutcomeTotals> outcomes;
   bool quiet = false;
   std::vector<rivet_app::DayStats> history;
   int history_days = 7;
@@ -134,7 +142,38 @@ struct Model {
     }
     return std::nullopt;
   }
+  std::optional<rivet_app::CueOutcomeTotals> outcome(
+      rivet_app::ReminderKind kind) const {
+    for (auto const& o : outcomes) {
+      if (o.kind == kind) return o;
+    }
+    return std::nullopt;
+  }
   bool is_paused() const { return paused.paused; }
+  /// Nearest enabled kind still counting down, in active minutes. Nil while
+  /// paused or when every kind is off — the UI then says so instead of
+  /// promising a cue that will not fire.
+  std::optional<std::pair<rivet_app::ReminderKind, std::int64_t>> next_cue()
+      const {
+    if (is_paused()) return std::nullopt;
+    std::optional<std::pair<rivet_app::ReminderKind, std::int64_t>> best;
+    for (auto const& l : loops) {
+      if (!l.due_in_active_mins.has_value()) continue;
+      std::int64_t const due = std::max<std::int64_t>(0, *l.due_in_active_mins);
+      if (!best.has_value() || due < best->second) {
+        best = std::make_pair(l.kind, due);
+      }
+    }
+    return best;
+  }
+  static std::string kind_label(rivet_app::ReminderKind kind) {
+    switch (kind) {
+      case rivet_app::ReminderKind::sit: return l10n::t("today.sit");
+      case rivet_app::ReminderKind::water: return l10n::t("today.water");
+      case rivet_app::ReminderKind::micro: return l10n::t("today.micro");
+    }
+    return "";
+  }
   std::int64_t current_session_mins() const {
     auto sit = loop(rivet_app::ReminderKind::sit);
     return sit.has_value() ? sit->accumulated_mins : 0;
@@ -205,17 +244,8 @@ struct AppState {
   bool mubi_quiet = false;
   bool mubi_x11 = false;
 
-  // Onboarding wizard.
+  // Onboarding: one settle-in page, one Start button (issue #90).
   GtkWindow* onboarding_window{nullptr};
-  int onboarding_page = 0;
-  std::int64_t onboarding_water = 30;
-  std::int64_t onboarding_sit = 45;
-  bool onboarding_sound = true;
-  GtkStack* onboarding_stack{nullptr};
-  GtkButton* onboarding_skip{nullptr};
-  GtkButton* onboarding_next{nullptr};
-  GtkLabel* onboarding_pact_summary{nullptr};
-  GtkLabel* onboarding_dots{nullptr};
 
   void set_status(std::string const& text) {
     // Startup errors surface in the window subtitle position; once the main
@@ -395,15 +425,21 @@ bool install();
 bool installed();
 }  // namespace tray
 
+// One per-kind row in the today card's truthful outcome list.
+struct OutcomeRowWidgets {
+  GtkWidget* row{nullptr};
+  GtkLabel* value{nullptr};
+};
+
 // Main-window widgets, rebuilt with the content.
 struct MainWidgets {
   GtkLabel* today_duration{nullptr};
   GtkLabel* today_status{nullptr};
   GtkProgressBar* sit_bar{nullptr};
   GtkLabel* sit_cycle_text{nullptr};
-  GtkLabel* today_sit{nullptr};
-  GtkLabel* today_water{nullptr};
-  GtkLabel* today_micro{nullptr};
+  GtkLabel* today_next_cue{nullptr};
+  OutcomeRowWidgets outcome_rows[3]{};
+  GtkLabel* outcome_empty{nullptr};
   GtkLabel* hist_title{nullptr};
   GtkLabel* hist_total{nullptr};
   GtkDrawingArea* hist_chart{nullptr};
@@ -434,6 +470,20 @@ struct MainWidgets {
   GtkSwitch* autostart_switch{nullptr};
   GtkSwitch* updates_switch{nullptr};
   GtkDropDown* language_drop{nullptr};
+  // Rhythm presets (issues #87/#90): everyday surface above the disclosure.
+  GtkToggleButton* preset_buttons[3]{nullptr, nullptr, nullptr};
+  GtkLabel* preset_custom{nullptr};
+  GtkLabel* preset_detail{nullptr};
+  GtkLabel* settings_next_cue{nullptr};
+  // Advanced (collapsed by default) controls.
+  GtkWidget* advanced_box{nullptr};
+  GtkSwitch* sit_switch{nullptr};
+  GtkSwitch* water_switch{nullptr};
+  GtkSwitch* quiet_switch{nullptr};
+  GtkWidget* quiet_start_row{nullptr};
+  GtkWidget* quiet_end_row{nullptr};
+  GtkSpinButton* quiet_start_spin{nullptr};
+  GtkSpinButton* quiet_end_spin{nullptr};
 } mw;
 
 /// Optimistic save with a targeted mutation; the backend clamps and
@@ -649,6 +699,106 @@ int on_updates_set(GtkSwitch*, gboolean state, gpointer) {
   }
   return FALSE;
 }
+
+// Named rhythm presets: the host only sends the name. The backend owns the
+// cadence values and re-derives the stored preset label from them, so the
+// host never sends "custom" itself.
+static char const* const kPresets[] = {"balanced", "gentle", "active"};
+static char const* const kPresetLabels[] = {"preset.balanced",
+                                            "preset.gentle",
+                                            "preset.active"};
+
+void apply_rhythm_preset(std::string const& name) {
+  if (g_state.api == nullptr) return;
+  (void)g_state.api->set_rhythm_preset_async(
+      name, [](rivet_app::Result<void> result) {
+        dispatch_ui([result = std::move(result)]() mutable {
+          g_state.model.config_status =
+              result.succeeded()
+                  ? l10n::t("set.statusSaved", {l10n::T(now_ms())})
+                  : l10n::t("set.statusSaveFailed");
+          // A failed call leaves model.config.preset unchanged: re-sync the
+          // chips so the optimistic highlight cannot claim a saved rhythm.
+          if (!result.succeeded()) refresh_settings_widgets();
+          refresh_status_label();
+        });
+      });
+}
+
+void on_preset_toggled(GtkToggleButton* button, gpointer) {
+  if (g_state.updating_settings) return;
+  // Clicking the selected chip again must not deselect it (nor re-apply
+  // anything): a segmented control always keeps one choice highlighted.
+  if (!gtk_toggle_button_get_active(button)) {
+    g_state.updating_settings = true;
+    gtk_toggle_button_set_active(button, TRUE);
+    g_state.updating_settings = false;
+    return;
+  }
+  auto const* name =
+      static_cast<char const*>(g_object_get_data(G_OBJECT(button), "preset"));
+  if (name == nullptr) return;
+  // Re-select happens in refresh_settings_widgets once the backend's
+  // config-changed broadcast lands; deselect siblings immediately so the
+  // row never shows two selected chips in the meantime.
+  g_state.updating_settings = true;
+  for (auto*& preset_button : mw.preset_buttons) {
+    if (preset_button != button) {
+      gtk_toggle_button_set_active(preset_button, FALSE);
+      gtk_widget_remove_css_class(GTK_WIDGET(preset_button),
+                                  "rhythm-chip-selected");
+    }
+  }
+  g_state.updating_settings = false;
+  gtk_widget_add_css_class(GTK_WIDGET(button), "rhythm-chip-selected");
+  apply_rhythm_preset(name);
+}
+
+int on_sit_enabled_set(GtkSwitch*, gboolean state, gpointer) {
+  if (!g_state.updating_settings) {
+    mutate_config([&](auto& d) { d.sit_enabled = state != FALSE; });
+  }
+  return FALSE;
+}
+
+int on_water_enabled_set(GtkSwitch*, gboolean state, gpointer) {
+  if (!g_state.updating_settings) {
+    mutate_config([&](auto& d) { d.water_enabled = state != FALSE; });
+  }
+  return FALSE;
+}
+
+int on_quiet_hours_set(GtkSwitch*, gboolean state, gpointer) {
+  if (!g_state.updating_settings) {
+    mutate_config([&](auto& d) {
+      d.quiet_hours_enabled = state != FALSE;
+    });
+  }
+  return FALSE;
+}
+
+void on_quiet_start_changed(GtkSpinButton* spin, gpointer) {
+  if (g_state.updating_settings) return;
+  auto const hour = static_cast<std::int64_t>(
+      gtk_spin_button_get_value(spin));
+  mutate_config([&](auto& d) { d.quiet_hours_start_minutes = hour * 60; });
+}
+
+void on_quiet_end_changed(GtkSpinButton* spin, gpointer) {
+  if (g_state.updating_settings) return;
+  auto const hour = static_cast<std::int64_t>(
+      gtk_spin_button_get_value(spin));
+  mutate_config([&](auto& d) { d.quiet_hours_end_minutes = hour * 60; });
+}
+
+void on_customize_clicked(GtkButton* button, gpointer) {
+  if (mw.advanced_box == nullptr) return;
+  bool const show = !gtk_widget_get_visible(mw.advanced_box);
+  gtk_widget_set_visible(mw.advanced_box, show);
+  gtk_button_set_label(button,
+                       l10n::t(show ? "set.collapse" : "set.customize").c_str());
+}
+
 void on_language_changed(GtkDropDown* drop, GParamSpec*, gpointer) {
   if (g_state.updating_settings) return;
   unsigned selected = 0;
@@ -847,6 +997,40 @@ void refresh_header_buttons() {
   refresh_quit_button();
 }
 
+void refresh_next_cue_line() {
+  auto const& model = g_state.model;
+  if (mw.today_next_cue != nullptr) {
+    if (model.is_paused()) {
+      // Paused says so in the status badge; a countdown would be a promise
+      // that cannot fire.
+      gtk_label_set_text(mw.today_next_cue, "");
+      gtk_widget_set_visible(GTK_WIDGET(mw.today_next_cue), FALSE);
+    } else {
+      gtk_widget_set_visible(GTK_WIDGET(mw.today_next_cue), TRUE);
+      auto const next = model.next_cue();
+      gtk_label_set_text(
+          mw.today_next_cue,
+          next.has_value()
+              ? l10n::t("today.nextCue", {l10n::A(next->second)}).c_str()
+              : l10n::t("set.nextCueOff").c_str());
+    }
+  }
+  if (mw.settings_next_cue != nullptr) {
+    // "Reminders are off" would be a lie while merely paused; the status
+    // badge already explains the pause.
+    if (model.is_paused()) {
+      gtk_label_set_text(mw.settings_next_cue, "");
+    } else {
+      auto const next = model.next_cue();
+      gtk_label_set_text(
+          mw.settings_next_cue,
+          next.has_value()
+              ? l10n::t("set.nextCue", {l10n::A(next->second)}).c_str()
+              : l10n::t("set.nextCueOff").c_str());
+    }
+  }
+}
+
 void refresh_today_card() {
   auto const& model = g_state.model;
   if (mw.today_duration != nullptr) {
@@ -884,16 +1068,32 @@ void refresh_today_card() {
     }
     gtk_label_set_text(mw.sit_cycle_text, text.c_str());
   }
-  if (mw.today_sit != nullptr) {
-    gtk_label_set_text(mw.today_sit, std::to_string(model.today.sit_breaks).c_str());
+  refresh_next_cue_line();
+
+  // Truthful per-kind numbers (issue #88): shown vs the user's own "Done".
+  // Kinds with no recorded event are omitted rather than rendered as 0.
+  static constexpr rivet_app::ReminderKind kKinds[] = {
+      rivet_app::ReminderKind::sit, rivet_app::ReminderKind::water,
+      rivet_app::ReminderKind::micro};
+  bool any_outcome = false;
+  for (std::size_t i = 0; i < 3; ++i) {
+    auto& slot = mw.outcome_rows[i];
+    if (slot.row == nullptr) continue;
+    auto const totals = model.outcome(kKinds[i]);
+    gtk_widget_set_visible(slot.row, totals.has_value());
+    if (!totals.has_value()) continue;
+    any_outcome = true;
+    if (slot.value != nullptr) {
+      gtk_label_set_text(
+          slot.value,
+          l10n::t("today.outcome",
+                  {l10n::A(totals->presented),
+                   l10n::A(totals->self_reported_done)})
+              .c_str());
+    }
   }
-  if (mw.today_water != nullptr) {
-    gtk_label_set_text(mw.today_water,
-                       std::to_string(model.today.water_reminders).c_str());
-  }
-  if (mw.today_micro != nullptr) {
-    gtk_label_set_text(mw.today_micro,
-                       std::to_string(model.today.micro_breaks).c_str());
+  if (mw.outcome_empty != nullptr) {
+    gtk_widget_set_visible(GTK_WIDGET(mw.outcome_empty), !any_outcome);
   }
 }
 
@@ -979,8 +1179,39 @@ void refresh_settings_widgets() {
     gtk_drop_down_set_selected(
         mw.language_drop,
         c.language == "zh" ? 1 : c.language == "en" ? 2 : 0);
+    gtk_switch_set_active(mw.sit_switch, c.sit_enabled);
+    gtk_switch_set_active(mw.water_switch, c.water_enabled);
+    gtk_switch_set_active(mw.quiet_switch, c.quiet_hours_enabled);
+    gtk_spin_button_set_value(mw.quiet_start_spin,
+                              c.quiet_hours_start_minutes / 60);
+    gtk_spin_button_set_value(mw.quiet_end_spin,
+                              c.quiet_hours_end_minutes / 60);
+    gtk_widget_set_visible(mw.quiet_start_row, c.quiet_hours_enabled);
+    gtk_widget_set_visible(mw.quiet_end_row, c.quiet_hours_enabled);
+    for (std::size_t i = 0; i < 3; ++i) {
+      bool const selected = c.preset == kPresets[i];
+      gtk_toggle_button_set_active(mw.preset_buttons[i], selected);
+      if (selected) {
+        gtk_widget_add_css_class(GTK_WIDGET(mw.preset_buttons[i]),
+                                 "rhythm-chip-selected");
+      } else {
+        gtk_widget_remove_css_class(GTK_WIDGET(mw.preset_buttons[i]),
+                                    "rhythm-chip-selected");
+      }
+    }
+    gtk_widget_set_visible(GTK_WIDGET(mw.preset_custom),
+                           c.preset == "custom");
+    gtk_label_set_text(
+        mw.preset_detail,
+        l10n::t("preset.detail",
+                {l10n::A(c.sit_reminder_minutes),
+                 l10n::A(c.water_reminder_minutes),
+                 l10n::A(c.micro_break_interval_minutes),
+                 l10n::A(c.micro_break_duration_seconds)})
+            .c_str());
   }
   g_state.updating_settings = false;
+  refresh_next_cue_line();
   refresh_status_label();
 }
 
@@ -1552,20 +1783,6 @@ void reflect_pending_update() {
       });
 }
 
-GtkWidget* counter_tile(char const* emoji, char const* label_text,
-                        GtkLabel** value_out) {
-  auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-  auto* top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  box_append(GTK_BOX(top), label_with(emoji, nullptr));
-  auto* value = gtk_label_new("0");
-  gtk_widget_add_css_class(value, "counter-value");
-  box_append(GTK_BOX(top), value);
-  box_append(box, top);
-  box_append(box, label_with(label_text, "caption"));
-  *value_out = GTK_LABEL(value);
-  return box;
-}
-
 void build_main_content() {
   if (g_state.content_root == nullptr) return;
 
@@ -1623,14 +1840,43 @@ void build_main_content() {
     box_append(GTK_BOX(cycle_left), label_with(l10n::t("today.sitCycle").c_str(), "caption"));
     gtk_widget_set_hexpand(cycle_left, TRUE);
     box_append(GTK_BOX(cycle), cycle_left);
-    box_append(GTK_BOX(cycle), counter_tile("🚶", l10n::t("today.sit").c_str(), &mw.today_sit));
-    box_append(GTK_BOX(cycle), counter_tile("💧", l10n::t("today.water").c_str(), &mw.today_water));
-    box_append(GTK_BOX(cycle), counter_tile("👀", l10n::t("today.micro").c_str(), &mw.today_micro));
+    auto* next_cue = gtk_label_new("");
+    gtk_widget_add_css_class(next_cue, "row-label");
+    gtk_label_set_xalign(GTK_LABEL(next_cue), 1.0f);
+    gtk_label_set_wrap(GTK_LABEL(next_cue), TRUE);
+    gtk_label_set_justify(GTK_LABEL(next_cue), GTK_JUSTIFY_RIGHT);
+    box_append(GTK_BOX(cycle), next_cue);
+    mw.today_next_cue = GTK_LABEL(next_cue);
     box_append(GTK_BOX(card), cycle);
-    auto* counts_note = label_with(l10n::t("today.countsNote").c_str(), "caption");
-    gtk_label_set_wrap(GTK_LABEL(counts_note), TRUE);
-    gtk_label_set_xalign(GTK_LABEL(counts_note), 0.0f);
-    box_append(GTK_BOX(card), counts_note);
+
+    // Shown vs self-reported done per kind (issue #88). No fired-counter
+    // tiles: one number model only.
+    static constexpr rivet_app::ReminderKind kOutcomeKinds[] = {
+        rivet_app::ReminderKind::sit, rivet_app::ReminderKind::water,
+        rivet_app::ReminderKind::micro};
+    for (std::size_t i = 0; i < 3; ++i) {
+      auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+      auto* name = label_with(Model::kind_label(kOutcomeKinds[i]).c_str(),
+                              "caption");
+      gtk_widget_set_hexpand(name, TRUE);
+      box_append(GTK_BOX(row), name);
+      auto* value = gtk_label_new("");
+      gtk_widget_add_css_class(value, "row-label");
+      gtk_label_set_xalign(GTK_LABEL(value), 1.0f);
+      box_append(GTK_BOX(row), value);
+      gtk_widget_set_visible(row, FALSE);
+      box_append(GTK_BOX(card), row);
+      mw.outcome_rows[i].row = row;
+      mw.outcome_rows[i].value = GTK_LABEL(value);
+    }
+    auto* outcome_empty = label_with(l10n::t("today.outcomeEmpty").c_str(), "caption");
+    box_append(GTK_BOX(card), outcome_empty);
+    mw.outcome_empty = GTK_LABEL(outcome_empty);
+    auto* outcome_legend =
+        label_with(l10n::t("today.outcomeLegend").c_str(), "caption");
+    gtk_label_set_wrap(GTK_LABEL(outcome_legend), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(outcome_legend), 0.0f);
+    box_append(GTK_BOX(card), outcome_legend);
     box_append(left, card);
   }
 
@@ -1721,33 +1967,146 @@ void build_main_content() {
     box_append(GTK_BOX(head), status);
     mw.config_status = GTK_LABEL(status);
     box_append(GTK_BOX(card), head);
-    box_append(GTK_BOX(card), label_with(l10n::t("set.intro").c_str(), "caption"));
+
+    // Everyday surface (issues #87/#90): rhythm, sound, one disclosure.
+    box_append(GTK_BOX(card), label_with(l10n::t("set.rhythm").c_str(), "row-strong"));
+    auto* rhythm_hint =
+        label_with(l10n::t("set.rhythmHint").c_str(), "caption");
+    gtk_label_set_wrap(GTK_LABEL(rhythm_hint), TRUE);
+    box_append(GTK_BOX(card), rhythm_hint);
 
     auto& c = g_state.model.config;
-    mw.sit_spin = add_stepper_row(card, l10n::t("set.sitInterval").c_str(),
+    auto* preset_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    for (std::size_t i = 0; i < 3; ++i) {
+      auto* chip = gtk_toggle_button_new_with_label(
+          l10n::t(kPresetLabels[i]).c_str());
+      gtk_widget_add_css_class(chip, "rhythm-chip");
+      gtk_widget_set_hexpand(chip, TRUE);
+      g_object_set_data(G_OBJECT(chip), "preset",
+                        const_cast<char*>(kPresets[i]));
+      g_signal_connect(chip, "toggled", G_CALLBACK(on_preset_toggled),
+                       nullptr);
+      box_append(GTK_BOX(preset_row), chip);
+      mw.preset_buttons[i] = GTK_TOGGLE_BUTTON(chip);
+    }
+    box_append(GTK_BOX(card), preset_row);
+
+    auto* preset_custom = label_with(l10n::t("preset.custom").c_str(), "caption");
+    gtk_widget_set_visible(preset_custom, FALSE);
+    box_append(GTK_BOX(card), preset_custom);
+    mw.preset_custom = GTK_LABEL(preset_custom);
+
+    // Exact values, derived from the stored config so the label can never
+    // promise numbers the app does not use.
+    auto* preset_detail = label_with("", "caption");
+    gtk_label_set_wrap(GTK_LABEL(preset_detail), TRUE);
+    box_append(GTK_BOX(card), preset_detail);
+    mw.preset_detail = GTK_LABEL(preset_detail);
+
+    auto* settings_next_cue = gtk_label_new("");
+    gtk_widget_add_css_class(settings_next_cue, "row-label");
+    gtk_label_set_xalign(GTK_LABEL(settings_next_cue), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(settings_next_cue), TRUE);
+    box_append(GTK_BOX(card), settings_next_cue);
+    mw.settings_next_cue = GTK_LABEL(settings_next_cue);
+
+    mw.sound_switch = add_toggle_row(card, l10n::t("set.sound").c_str(),
+                                     c.sound_enabled, G_CALLBACK(on_sound_set));
+    auto* sound_hint = label_with(l10n::t("set.soundHint").c_str(), "caption");
+    gtk_label_set_wrap(GTK_LABEL(sound_hint), TRUE);
+    box_append(GTK_BOX(card), sound_hint);
+
+    auto* customize =
+        gtk_button_new_with_label(l10n::t("set.customize").c_str());
+    gtk_widget_add_css_class(customize, "flat");
+    gtk_widget_set_halign(customize, GTK_ALIGN_START);
+    g_signal_connect(customize, "clicked",
+                     G_CALLBACK(on_customize_clicked), nullptr);
+    box_append(GTK_BOX(card), customize);
+
+    // Advanced controls, collapsed by default (rare technical needs).
+    auto* advanced = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_visible(advanced, FALSE);
+    mw.advanced_box = advanced;
+    box_append(GTK_BOX(card), advanced);
+
+    box_append(GTK_BOX(advanced),
+               label_with(l10n::t("set.intro").c_str(), "caption"));
+    box_append(GTK_BOX(advanced),
+               label_with(l10n::t("set.kinds").c_str(), "section"));
+
+    mw.sit_switch = add_toggle_row(advanced, l10n::t("set.sitEnabled").c_str(),
+                                   c.sit_enabled,
+                                   G_CALLBACK(on_sit_enabled_set));
+    mw.sit_spin = add_stepper_row(advanced, l10n::t("set.sitInterval").c_str(),
                                   c.sit_reminder_minutes, 10, 240, 5,
                                   G_CALLBACK(on_sit_changed));
-    mw.water_spin = add_stepper_row(card, l10n::t("set.waterInterval").c_str(),
+    mw.water_switch = add_toggle_row(advanced, l10n::t("set.waterEnabled").c_str(),
+                                     c.water_enabled,
+                                     G_CALLBACK(on_water_enabled_set));
+    mw.water_spin = add_stepper_row(advanced, l10n::t("set.waterInterval").c_str(),
                                     c.water_reminder_minutes, 5, 180, 5,
                                     G_CALLBACK(on_water_changed));
-    mw.away_spin = add_stepper_row(card, l10n::t("set.awayReset").c_str(),
-                                   c.away_reset_minutes, 1, 60, 1,
-                                   G_CALLBACK(on_away_changed));
-    mw.snooze_spin = add_stepper_row(card, l10n::t("set.snooze").c_str(),
-                                     c.snooze_minutes, 5, 60, 5,
-                                     G_CALLBACK(on_snooze_changed));
-    mw.micro_switch = add_toggle_row(card, l10n::t("set.microToggle").c_str(),
+    mw.micro_switch = add_toggle_row(advanced, l10n::t("set.eyesToggle").c_str(),
                                      c.micro_break_enabled,
                                      G_CALLBACK(on_micro_set));
     auto* micro_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    box_append(GTK_BOX(micro_row), label_with(l10n::t("set.microParams").c_str(), "row-label"));
+    box_append(GTK_BOX(micro_row),
+               label_with(l10n::t("set.eyesParams").c_str(), "row-label"));
     mw.micro_interval_spin = add_stepper_row(
         micro_row, "", c.micro_break_interval_minutes, 10, 60, 5,
         G_CALLBACK(on_micro_interval_changed));
     mw.micro_duration_spin = add_stepper_row(
         micro_row, "", c.micro_break_duration_seconds, 10, 60, 5,
         G_CALLBACK(on_micro_duration_changed));
-    box_append(GTK_BOX(card), micro_row);
+    box_append(GTK_BOX(advanced), micro_row);
+
+    mw.away_spin = add_stepper_row(advanced, l10n::t("set.awayReset").c_str(),
+                                   c.away_reset_minutes, 1, 60, 1,
+                                   G_CALLBACK(on_away_changed));
+    mw.snooze_spin = add_stepper_row(advanced, l10n::t("set.snooze").c_str(),
+                                     c.snooze_minutes, 5, 60, 5,
+                                     G_CALLBACK(on_snooze_changed));
+
+    mw.quiet_switch =
+        add_toggle_row(advanced, l10n::t("set.quietHours").c_str(),
+                       c.quiet_hours_enabled,
+                       G_CALLBACK(on_quiet_hours_set));
+    auto* quiet_hint =
+        label_with(l10n::t("set.quietHoursHint").c_str(), "caption");
+    gtk_label_set_wrap(GTK_LABEL(quiet_hint), TRUE);
+    box_append(GTK_BOX(advanced), quiet_hint);
+
+    auto* quiet_start_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    box_append(GTK_BOX(quiet_start_row),
+               label_with(l10n::t("set.quietStart").c_str(), "row-label"));
+    auto* quiet_start_spin = gtk_spin_button_new_with_range(0, 23, 1);
+    gtk_spin_button_set_numeric(GTK_SPIN_BUTTON(quiet_start_spin), TRUE);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(quiet_start_spin),
+                              c.quiet_hours_start_minutes / 60);
+    g_signal_connect(quiet_start_spin, "value-changed",
+                     G_CALLBACK(on_quiet_start_changed), nullptr);
+    box_append(GTK_BOX(quiet_start_row), quiet_start_spin);
+    gtk_widget_set_visible(quiet_start_row, c.quiet_hours_enabled);
+    box_append(GTK_BOX(advanced), quiet_start_row);
+    mw.quiet_start_row = quiet_start_row;
+    mw.quiet_start_spin = GTK_SPIN_BUTTON(quiet_start_spin);
+
+    auto* quiet_end_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    box_append(GTK_BOX(quiet_end_row),
+               label_with(l10n::t("set.quietEnd").c_str(), "row-label"));
+    auto* quiet_end_spin = gtk_spin_button_new_with_range(0, 23, 1);
+    gtk_spin_button_set_numeric(GTK_SPIN_BUTTON(quiet_end_spin), TRUE);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(quiet_end_spin),
+                              c.quiet_hours_end_minutes / 60);
+    g_signal_connect(quiet_end_spin, "value-changed",
+                     G_CALLBACK(on_quiet_end_changed), nullptr);
+    box_append(GTK_BOX(quiet_end_row), quiet_end_spin);
+    gtk_widget_set_visible(quiet_end_row, c.quiet_hours_enabled);
+    box_append(GTK_BOX(advanced), quiet_end_row);
+    mw.quiet_end_row = quiet_end_row;
+    mw.quiet_end_spin = GTK_SPIN_BUTTON(quiet_end_spin);
+
     auto* mubi_size_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     box_append(GTK_BOX(mubi_size_row),
                label_with(l10n::t("set.mubiSize").c_str(), "row-label"));
@@ -1761,7 +2120,7 @@ void build_main_content() {
     box_append(GTK_BOX(mubi_size_row), size_drop);
     gtk_widget_set_halign(size_drop, GTK_ALIGN_END);
     gtk_widget_set_hexpand(size_drop, TRUE);
-    box_append(GTK_BOX(card), mubi_size_row);
+    box_append(GTK_BOX(advanced), mubi_size_row);
     mw.mubi_size_drop = GTK_DROP_DOWN(size_drop);
 
     auto* mubi_motion_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -1781,7 +2140,7 @@ void build_main_content() {
     box_append(GTK_BOX(mubi_motion_row), motion_drop);
     gtk_widget_set_halign(motion_drop, GTK_ALIGN_END);
     gtk_widget_set_hexpand(motion_drop, TRUE);
-    box_append(GTK_BOX(card), mubi_motion_row);
+    box_append(GTK_BOX(advanced), mubi_motion_row);
     mw.mubi_motion_drop = GTK_DROP_DOWN(motion_drop);
 
     auto* mubi_dock_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -1803,7 +2162,7 @@ void build_main_content() {
     box_append(GTK_BOX(mubi_dock_row), dock_drop);
     gtk_widget_set_halign(dock_drop, GTK_ALIGN_END);
     gtk_widget_set_hexpand(dock_drop, TRUE);
-    box_append(GTK_BOX(card), mubi_dock_row);
+    box_append(GTK_BOX(advanced), mubi_dock_row);
     mw.mubi_dock_drop = GTK_DROP_DOWN(dock_drop);
 
     auto* mubi_labels_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -1821,16 +2180,14 @@ void build_main_content() {
     box_append(GTK_BOX(mubi_labels_row), labels_drop);
     gtk_widget_set_halign(labels_drop, GTK_ALIGN_END);
     gtk_widget_set_hexpand(labels_drop, TRUE);
-    box_append(GTK_BOX(card), mubi_labels_row);
+    box_append(GTK_BOX(advanced), mubi_labels_row);
     mw.mubi_labels_drop = GTK_DROP_DOWN(labels_drop);
 
-    mw.motion_switch = add_toggle_row(card, l10n::t("set.motion").c_str(),
+    mw.motion_switch = add_toggle_row(advanced, l10n::t("set.motion").c_str(),
                                       c.motion_enabled,
                                       G_CALLBACK(on_motion_set));
-    mw.sound_switch = add_toggle_row(card, l10n::t("set.sound").c_str(),
-                                     c.sound_enabled, G_CALLBACK(on_sound_set));
     mw.autostart_switch = add_toggle_row(
-        card, l10n::t("set.autostart").c_str(), g_state.model.autostart,
+        advanced, l10n::t("set.autostart").c_str(), g_state.model.autostart,
         G_CALLBACK(on_autostart_set));
 
     auto* lang_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -1845,7 +2202,7 @@ void build_main_content() {
     g_signal_connect(lang, "notify::selected", G_CALLBACK(on_language_changed), nullptr);
     box_append(GTK_BOX(lang_row), lang);
     mw.language_drop = GTK_DROP_DOWN(lang);
-    box_append(GTK_BOX(card), lang_row);
+    box_append(GTK_BOX(advanced), lang_row);
     box_append(right, card);
   }
 
@@ -1972,6 +2329,11 @@ void apply_global_css() {
                 border-radius: 5px; padding: 2px 6px; }
     .ob-primary { font-size: 14px; color: #FFFFFF; background: #C25E3E;
                   border-radius: 8px; padding: 9px 18px; }
+    .rhythm-chip { font-size: 12.5px; color: #26241F; background: #F3EEE3;
+                   border-radius: 8px; padding: 8px 12px; }
+    .rhythm-chip-selected { font-size: 12.5px; color: #C25E3E;
+                            background: #FBEFE2; border: 1px solid #C25E3E;
+                            border-radius: 8px; padding: 8px 12px; }
     .dot { font-size: 18px; color: #EAE6DC; }
     .dot-active { font-size: 18px; color: #C25E3E; }
   )CSS");
@@ -3093,6 +3455,19 @@ void reload_history() {
       });
 }
 
+void reload_outcomes() {
+  if (g_state.api == nullptr) return;
+  (void)g_state.api->get_cue_outcomes_async(
+      [](rivet_app::Result<std::vector<rivet_app::CueOutcomeTotals>> r) {
+        on_result(
+            std::move(r),
+            [](std::vector<rivet_app::CueOutcomeTotals> const& outcomes) {
+              g_state.model.outcomes = outcomes;
+              refresh_today_card();
+            });
+      });
+}
+
 void refresh_states_after_tick() {
   if (g_state.api == nullptr) return;
   (void)g_state.api->get_loops_async(
@@ -3119,6 +3494,7 @@ void refresh_states_after_tick() {
                     tray::sync();
                   });
       });
+  reload_outcomes();
 }
 
 void apply_config(rivet_app::ReminderConfig const& changed,
@@ -3202,15 +3578,9 @@ void apply_config(rivet_app::ReminderConfig const& changed, bool announce,
 // ---- onboarding ------------------------------------------------------------------
 
 void onboarding_persist(bool welcome_shown) {
-  auto& s = g_state;
-  // One set-config call writes the whole first-run choice. There is no
-  // strictness pact in v1: one gentle, non-blocking reminder experience.
-  mutate_config([&](auto& d) {
-    d.sit_reminder_minutes = s.onboarding_sit;
-    d.water_reminder_minutes = s.onboarding_water;
-    d.sound_enabled = s.onboarding_sound;
-    d.welcome_shown = welcome_shown;
-  });
+  // The only first-run write is the "seen" marker: the shipped balanced
+  // rhythm and silent-by-default sound need no confirmation.
+  mutate_config([&](auto& d) { d.welcome_shown = welcome_shown; });
 }
 
 void onboarding_finish(GtkApplication* app) {
@@ -3223,228 +3593,90 @@ void onboarding_finish(GtkApplication* app) {
                    rivet_app::ReminderKind::water, app);
 }
 
+// One screen, under 30 seconds (issue #90): meet Mubi, read one sentence,
+// press Start. No wizard, no cadence questions, nothing to configure first.
 void onboarding_show(GtkApplication* app) {
   if (g_state.onboarding_window != nullptr) {
     gtk_window_present(g_state.onboarding_window);
     return;
   }
-  auto& s = g_state;
-  s.onboarding_page = 0;
-  s.onboarding_water = 30;
-  s.onboarding_sit = 45;
-  s.onboarding_sound = true;
 
   auto* window = gtk_application_window_new(app);
   gtk_widget_add_css_class(GTK_WIDGET(window), "ob-bg");
   gtk_window_set_title(GTK_WINDOW(window), l10n::t("ob.title").c_str());
-  gtk_window_set_default_size(GTK_WINDOW(window), 500, 640);
-  s.onboarding_window = GTK_WINDOW(window);
+  gtk_window_set_default_size(GTK_WINDOW(window), 460, 520);
+  g_state.onboarding_window = GTK_WINDOW(window);
 
-  auto* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+  auto* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
   gtk_widget_set_margin_top(root, 28);
   gtk_widget_set_margin_bottom(root, 28);
-  gtk_widget_set_margin_start(root, 32);
-  gtk_widget_set_margin_end(root, 32);
+  gtk_widget_set_margin_start(root, 28);
+  gtk_widget_set_margin_end(root, 28);
 
-  auto* stack = gtk_stack_new();
-  gtk_stack_set_transition_type(GTK_STACK(stack), GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT);
-  gtk_widget_set_vexpand(stack, TRUE);
-  s.onboarding_stack = GTK_STACK(stack);
+  // Reuse the canonical cairo Mubi art (no new character assets).
+  auto* canvas = gtk_drawing_area_new();
+  gtk_widget_set_size_request(canvas, -1, 150);
+  gtk_drawing_area_set_draw_func(
+      GTK_DRAWING_AREA(canvas),
+      +[](GtkDrawingArea*, cairo_t* cr, int width, int, gpointer) {
+        double const scale = 1.0;
+        cairo_save(cr);
+        cairo_translate(cr, (width - 120.0 * scale) / 2.0, 5.0);
+        cairo_scale(cr, scale, scale);
+        mubi::draw_state(cr, 0);
+        cairo_restore(cr);
+      },
+      nullptr, nullptr);
+  box_append(GTK_BOX(root), canvas);
 
-  // Page 0: intro.
-  {
-    auto* page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
-    gtk_widget_set_valign(page, GTK_ALIGN_START);
-    auto* emoji = gtk_label_new("💧");
-    auto* emoji_attrs = pango_attr_list_new();
-    pango_attr_list_insert(emoji_attrs,
-                           pango_attr_size_new_absolute(64 * PANGO_SCALE));
-    gtk_label_set_attributes(GTK_LABEL(emoji), emoji_attrs);
-    pango_attr_list_unref(emoji_attrs);
-    box_append(GTK_BOX(page), emoji);
-    auto* hello = gtk_label_new(l10n::t("ob.hello").c_str());
-    gtk_widget_add_css_class(hello, "ob-hello");
-    box_append(GTK_BOX(page), hello);
-    auto* intro = gtk_label_new(l10n::t("ob.intro").c_str());
-    gtk_widget_add_css_class(intro, "ob-text");
-    gtk_label_set_wrap(GTK_LABEL(intro), TRUE);
-    gtk_label_set_justify(GTK_LABEL(intro), GTK_JUSTIFY_CENTER);
-    box_append(GTK_BOX(page), intro);
-    auto* steps = gtk_label_new(l10n::t("ob.steps").c_str());
-    gtk_widget_add_css_class(steps, "ob-caption");
-    gtk_label_set_wrap(GTK_LABEL(steps), TRUE);
-    gtk_label_set_justify(GTK_LABEL(steps), GTK_JUSTIFY_CENTER);
-    box_append(GTK_BOX(page), steps);
-    gtk_stack_add_named(GTK_STACK(stack), page, "0");
-  }
+  auto* hello = gtk_label_new(l10n::t("ob.hello").c_str());
+  gtk_widget_add_css_class(hello, "ob-hello");
+  gtk_label_set_xalign(GTK_LABEL(hello), 0.5f);
+  gtk_label_set_justify(GTK_LABEL(hello), GTK_JUSTIFY_CENTER);
+  box_append(GTK_BOX(root), hello);
 
-  // Page 1: reminders — water cadence, sit cadence, sound.
-  {
-    auto* page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_set_valign(page, GTK_ALIGN_START);
-    auto* title = gtk_label_new(l10n::t("ob.waterTitle").c_str());
-    gtk_widget_add_css_class(title, "ob-title");
-    gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
-    box_append(GTK_BOX(page), title);
-    auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    for (auto minutes : {30, 45, 60}) {
-      std::string label =
-          l10n::t(minutes == 30 ? "ob.min30" : minutes == 45 ? "ob.min45" : "ob.min60");
-      auto* card = gtk_button_new_with_label(label.c_str());
-      gtk_widget_add_css_class(
-          card, s.onboarding_water == minutes ? "ob-card-selected" : "ob-card");
-      auto* child = gtk_button_get_child(GTK_BUTTON(card));
-      gtk_label_set_xalign(GTK_LABEL(child), 0.5f);
-      g_object_set_data(G_OBJECT(card), "water",
-                        GINT_TO_POINTER(static_cast<gint>(minutes)));
-      g_signal_connect(
-          card, "clicked",
-          G_CALLBACK(+[](GtkButton* button, gpointer) {
-            g_state.onboarding_water = static_cast<std::int64_t>(
-                GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "water")));
-          }),
-          nullptr);
-      box_append(GTK_BOX(row), card);
-    }
-    box_append(GTK_BOX(page), row);
-    auto* sit_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    for (auto minutes : {45, 60, 90}) {
-      std::string label =
-          l10n::t(minutes == 45 ? "ob.sit45" : minutes == 60 ? "ob.sit60" : "ob.sit90");
-      auto* card = gtk_button_new_with_label(label.c_str());
-      gtk_widget_add_css_class(
-          card, s.onboarding_sit == minutes ? "ob-card-selected" : "ob-card");
-      auto* child = gtk_button_get_child(GTK_BUTTON(card));
-      gtk_label_set_xalign(GTK_LABEL(child), 0.5f);
-      g_object_set_data(G_OBJECT(card), "sit",
-                        GINT_TO_POINTER(static_cast<gint>(minutes)));
-      g_signal_connect(
-          card, "clicked",
-          G_CALLBACK(+[](GtkButton* button, gpointer) {
-            g_state.onboarding_sit = static_cast<std::int64_t>(
-                GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "sit")));
-          }),
-          nullptr);
-      box_append(GTK_BOX(sit_row), card);
-    }
-    box_append(GTK_BOX(page), sit_row);
-    auto* sound_title = gtk_label_new(l10n::t("ob.soundTitle").c_str());
-    gtk_widget_add_css_class(sound_title, "ob-strong");
-    gtk_label_set_xalign(GTK_LABEL(sound_title), 0.0f);
-    box_append(GTK_BOX(page), sound_title);
-    auto* sound_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    auto* sound_switch = gtk_switch_new();
-    gtk_switch_set_active(GTK_SWITCH(sound_switch), s.onboarding_sound);
-    g_signal_connect(
-        sound_switch, "state-set",
-        G_CALLBACK(+[](GtkSwitch*, gboolean state, gpointer) -> gboolean {
-          g_state.onboarding_sound = state != FALSE;
-          return FALSE;
-        }),
-        nullptr);
-    box_append(GTK_BOX(sound_row), sound_switch);
-    auto* sound_hint = gtk_label_new(l10n::t("ob.soundHint").c_str());
-    gtk_widget_add_css_class(sound_hint, "ob-text");
-    box_append(GTK_BOX(sound_row), sound_hint);
-    box_append(GTK_BOX(page), sound_row);
-    gtk_stack_add_named(GTK_STACK(stack), page, "1");
-  }
+  auto* line = gtk_label_new(l10n::t("ob.line").c_str());
+  gtk_widget_add_css_class(line, "ob-text");
+  gtk_label_set_wrap(GTK_LABEL(line), TRUE);
+  gtk_label_set_justify(GTK_LABEL(line), GTK_JUSTIFY_CENTER);
+  gtk_label_set_xalign(GTK_LABEL(line), 0.5f);
+  gtk_widget_set_margin_top(line, 4);
+  box_append(GTK_BOX(root), line);
 
-  // Page 2: contract summary.
-  {
-    auto* page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
-    gtk_widget_set_valign(page, GTK_ALIGN_START);
-    auto* title = gtk_label_new(l10n::t("ob.pactTitle").c_str());
-    gtk_widget_add_css_class(title, "ob-title");
-    gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
-    box_append(GTK_BOX(page), title);
-    auto* summary_card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_add_css_class(summary_card, "ob-card");
-    auto* summary = gtk_label_new("");
-    gtk_widget_add_css_class(summary, "ob-text");
-    gtk_label_set_xalign(GTK_LABEL(summary), 0.0f);
-    gtk_label_set_wrap(GTK_LABEL(summary), TRUE);
-    box_append(GTK_BOX(summary_card), summary);
-    box_append(GTK_BOX(page), summary_card);
-    s.onboarding_pact_summary = GTK_LABEL(summary);
-    auto* outro = gtk_label_new(l10n::t("ob.pactOutro").c_str());
-    gtk_widget_add_css_class(outro, "ob-caption");
-    gtk_label_set_wrap(GTK_LABEL(outro), TRUE);
-    gtk_label_set_xalign(GTK_LABEL(outro), 0.0f);
-    box_append(GTK_BOX(page), outro);
-    gtk_stack_add_named(GTK_STACK(stack), page, "2");
-  }
+  auto* spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_vexpand(spacer, TRUE);
+  box_append(GTK_BOX(root), spacer);
 
-  auto* dots = gtk_label_new("●○○");
-  gtk_widget_add_css_class(dots, "dot-active");
-  s.onboarding_dots = GTK_LABEL(dots);
+  auto* privacy = gtk_label_new(l10n::t("ob.privacy").c_str());
+  gtk_widget_add_css_class(privacy, "ob-caption");
+  gtk_label_set_wrap(GTK_LABEL(privacy), TRUE);
+  gtk_label_set_justify(GTK_LABEL(privacy), GTK_JUSTIFY_CENTER);
+  gtk_label_set_xalign(GTK_LABEL(privacy), 0.5f);
+  box_append(GTK_BOX(root), privacy);
 
-  auto* controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  auto* skip = gtk_button_new_with_label(l10n::t("ob.skip").c_str());
-  gtk_widget_add_css_class(skip, "flat");
+  auto* start = gtk_button_new_with_label(l10n::t("ob.start").c_str());
+  gtk_widget_add_css_class(start, "ob-primary");
+  gtk_widget_set_hexpand(start, TRUE);
+  gtk_widget_set_margin_top(start, 12);
+  g_object_set_data(G_OBJECT(start), "app", app);
   g_signal_connect(
-      skip, "clicked",
-      G_CALLBACK(+[](GtkButton*, gpointer user_data) {
-        g_state.onboarding_water = 30;
-        g_state.onboarding_sit = 45;
-        g_state.onboarding_sound = true;
-        onboarding_finish(GTK_APPLICATION(user_data));
-      }),
-      app);
-  auto* next = gtk_button_new_with_label(l10n::t("ob.start").c_str());
-  gtk_widget_add_css_class(next, "ob-primary");
-  g_object_set_data(G_OBJECT(next), "app", app);
-  g_signal_connect(
-      next, "clicked",
+      start, "clicked",
       G_CALLBACK(+[](GtkButton* button, gpointer) {
-        auto* app = GTK_APPLICATION(g_object_get_data(G_OBJECT(button), "app"));
-        constexpr int kLastPage = 2;
-        if (g_state.onboarding_page >= kLastPage) {
-          onboarding_finish(app);
-          return;
-        }
-        g_state.onboarding_page += 1;
-        if (g_state.onboarding_page == kLastPage) {
-          // Build the contract summary for the current selections.
-          std::string text;
-          text += l10n::t("ob.summaryToast", {l10n::A(g_state.onboarding_sit)});
-          text += "\n";
-          text += l10n::t("ob.summaryWater", {l10n::A(g_state.onboarding_water)});
-          text += "\n";
-          text += l10n::t("ob.summaryAway", {l10n::A(g_state.model.config.away_reset_minutes)});
-          text += "\n";
-          text += l10n::t("ob.summarySound",
-                          {l10n::A(g_state.onboarding_sound ? l10n::t("ob.on")
-                                                            : l10n::t("ob.off"))});
-          gtk_label_set_text(g_state.onboarding_pact_summary, text.c_str());
-        }
-        gtk_stack_set_visible_child_name(
-            g_state.onboarding_stack,
-            std::to_string(g_state.onboarding_page).c_str());
-        std::string dots;
-        for (int i = 0; i <= kLastPage; ++i) {
-          dots += i == g_state.onboarding_page ? "●" : "○";
-        }
-        gtk_label_set_text(g_state.onboarding_dots, dots.c_str());
-        gtk_button_set_label(
-            button,
-            l10n::t(g_state.onboarding_page == kLastPage ? "ob.launch" : "ob.next")
-                .c_str());
-        gtk_widget_set_visible(GTK_WIDGET(g_state.onboarding_skip),
-                               g_state.onboarding_page < kLastPage);
+        auto* app =
+            GTK_APPLICATION(g_object_get_data(G_OBJECT(button), "app"));
+        onboarding_finish(app);
       }),
       nullptr);
-  box_append(GTK_BOX(controls), skip);
-  auto* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-  gtk_widget_set_hexpand(spacer, TRUE);
-  box_append(GTK_BOX(controls), spacer);
-  box_append(GTK_BOX(controls), next);
-  g_state.onboarding_skip = GTK_BUTTON(skip);
-  g_state.onboarding_next = GTK_BUTTON(next);
+  box_append(GTK_BOX(root), start);
 
-  box_append(GTK_BOX(root), stack);
-  box_append(GTK_BOX(root), dots);
-  box_append(GTK_BOX(root), controls);
+  auto* start_hint = gtk_label_new(l10n::t("ob.startHint").c_str());
+  gtk_widget_add_css_class(start_hint, "ob-caption");
+  gtk_label_set_wrap(GTK_LABEL(start_hint), TRUE);
+  gtk_label_set_justify(GTK_LABEL(start_hint), GTK_JUSTIFY_CENTER);
+  gtk_label_set_xalign(GTK_LABEL(start_hint), 0.5f);
+  gtk_widget_set_margin_top(start_hint, 4);
+  box_append(GTK_BOX(root), start_hint);
+
   gtk_window_set_child(GTK_WINDOW(window), root);
   gtk_window_present(GTK_WINDOW(window));
 }
@@ -3532,6 +3764,7 @@ void bootstrap(GtkApplication* app) {
   refresh_header_buttons();
   build_main_content();
   reload_history();
+  reload_outcomes();
   reload_autostart();
   reload_data_dir();
   reflect_pending_update();

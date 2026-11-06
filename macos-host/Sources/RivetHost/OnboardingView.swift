@@ -1,214 +1,74 @@
 import SwiftUI
 import AppKit
 
-/// Shared wizard state owned by the AppDelegate so closing the window midway
-/// (any path) persists the current selections and marks onboarding as seen.
+/// First-run state. The v1 reboot's "less is more" rule (#90): one screen,
+/// the real character, one sentence, one Start button — no wizard, no cadence
+/// questions, no license promotion, nothing to configure before using the app.
 @MainActor
 final class OnboardingState: ObservableObject {
-    @Published var page = 0
-    @Published var water: Int64 = 30
-    @Published var sit: Int64 = 45
-    @Published var sound = true
     var finished = false
 
-    /// One set-config call writes the whole first-run choice. There is no
-    /// strictness pact in v1: one gentle, non-blocking reminder experience.
+    /// The only first-run write is the "seen" marker: the shipped balanced
+    /// rhythm and silent-by-default sound need no confirmation.
     func persist(model: MoveBitModel, welcomeShown: Bool) {
-        model.saveConfig(model.config.with(
-            sit_reminder_minutes: sit,
-            water_reminder_minutes: water,
-            sound_enabled: sound,
-            welcome_shown: welcomeShown))
+        model.saveConfig(model.config.with(welcome_shown: welcomeShown))
     }
 }
 
-/// Three-step first-run flow: meet MoveBit -> reminders (water cadence +
-/// sound) -> contract summary. Kept deliberately small (plain page switching).
+/// One screen, under 30 seconds: meet Mubi, read one sentence, press Start.
 struct OnboardingView: View {
     @ObservedObject var state: OnboardingState
     @ObservedObject var model: MoveBitModel
 
-    private let lastPage = 2
-
     var body: some View {
         VStack(spacing: 0) {
-            Group {
-                switch state.page {
-                case 0: introPage
-                case 1: remindersPage
-                default: pactPage
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            controls
-        }
-        .padding(32)
-        .background(Palette.appBg)
-        .frame(width: 500, height: 640)
-    }
+            Spacer(minLength: 12)
+            MubiView(state: .idle, message: "", bodySize: 104,
+                     motion: "still", labelsAlways: false)
+                .frame(height: 150)
+                .accessibilityHidden(true)
 
-    // MARK: pages
-
-    private var introPage: some View {
-        VStack(spacing: 14) {
-            Text("💧")
-                .font(.system(size: 72))
-                .padding(.top, 24)
-                .padding(.bottom, 8)
             Text(L10n.t("ob.hello"))
                 .font(.system(size: 26, weight: .bold))
                 .foregroundColor(Palette.inkPrimary)
-            Text(L10n.t("ob.intro"))
+                .padding(.top, 10)
+
+            Text(L10n.t("ob.line"))
                 .font(.system(size: 14.5))
                 .foregroundColor(Palette.inkSecondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
-            Text(L10n.t("ob.steps"))
-                .font(.system(size: 13))
-                .foregroundColor(Palette.inkMuted)
-                .padding(.top, 6)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var remindersPage: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.t("ob.waterTitle"))
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(Palette.inkPrimary)
-            HStack(spacing: 10) {
-                waterCard(30, label: "ob.min30")
-                waterCard(45, label: "ob.min45")
-                waterCard(60, label: "ob.min60")
-            }
-            HStack(spacing: 10) {
-                sitCard(45, label: "ob.sit45")
-                sitCard(60, label: "ob.sit60")
-                sitCard(90, label: "ob.sit90")
-            }
-            Text(L10n.t("ob.soundTitle"))
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(Palette.inkPrimary)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
-            HStack {
-                Toggle("", isOn: Binding(
-                    get: { state.sound },
-                    set: { state.sound = $0 }))
-                    .labelsHidden()
-                Text(L10n.t("ob.soundHint"))
-                    .font(.system(size: 12))
-                    .foregroundColor(Palette.inkSecondary)
-            }
-        }
-    }
+                .padding(.horizontal, 12)
 
-    private var pactPage: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(L10n.t("ob.pactTitle"))
-                .font(.system(size: 22, weight: .bold))
-                .foregroundColor(Palette.inkPrimary)
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(summaryLines, id: \.self) { line in
-                    Text(line)
-                        .font(.system(size: 13.5))
-                        .foregroundColor(Palette.inkSecondary)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Palette.cardBg))
-            .overlay(RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Palette.cardBorder, lineWidth: 1))
-            Text(L10n.t("ob.pactOutro"))
-                .font(.system(size: 13))
+            Spacer(minLength: 14)
+
+            Text(L10n.t("ob.privacy"))
+                .font(.system(size: 11.5))
                 .foregroundColor(Palette.inkMuted)
-        }
-        .padding(.top, 12)
-    }
 
-    private var summaryLines: [String] {
-        [
-            L10n.t("ob.summaryToast", "\(state.sit)"),
-            L10n.t("ob.summaryWater", "\(state.water)"),
-            L10n.t("ob.summaryAway", "\(model.config.away_reset_minutes)"),
-            L10n.t("ob.summarySound", L10n.t(state.sound ? "ob.on" : "ob.off")),
-        ]
-    }
-
-    // MARK: pieces
-
-    private func waterCard(_ minutes: Int64, label: String) -> some View {
-        choiceCard(selected: state.water == minutes, label: L10n.t(label)) {
-            state.water = minutes
-        }
-    }
-
-    private func sitCard(_ minutes: Int64, label: String) -> some View {
-        choiceCard(selected: state.sit == minutes, label: L10n.t(label)) {
-            state.sit = minutes
-        }
-    }
-
-    private func choiceCard(selected: Bool, label: String, pick: @escaping () -> Void) -> some View {
-        Text(label)
-            .font(.system(size: 14, weight: selected ? .semibold : .regular))
-            .foregroundColor(selected ? Palette.accent : Palette.inkPrimary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(RoundedRectangle(cornerRadius: 12)
-                .fill(selected ? Palette.accentSoft : Palette.cardBg))
-            .overlay(RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(selected ? Palette.accent : Palette.cardBorder, lineWidth: 1))
-            .contentShape(Rectangle())
-            .onTapGesture(perform: pick)
-    }
-
-    // MARK: controls
-
-    private var controls: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 8) {
-                ForEach(0...lastPage, id: \.self) { index in
-                    Circle()
-                        .fill(index == state.page ? Palette.accent : Palette.trackBg)
-                        .frame(width: 8, height: 8)
-                }
+            Button {
+                finish()
+            } label: {
+                Text(L10n.t("ob.start"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
             }
-            HStack {
-                if state.page < lastPage {
-                    Button(L10n.t("ob.skip")) { skipToDefaults() }
-                        .buttonStyle(.plain)
-                        .foregroundColor(Palette.inkMuted)
-                }
-                Spacer()
-                Button(nextLabel) { next() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accent)
-            }
+            .buttonStyle(.borderedProminent)
+            .tint(Palette.accent)
+            .keyboardShortcut(.defaultAction)
+            .padding(.top, 12)
+
+            Text(L10n.t("ob.startHint"))
+                .font(.system(size: 11))
+                .foregroundColor(Palette.inkMuted)
+                .padding(.top, 8)
         }
-        .padding(.top, 12)
-    }
-
-    private var nextLabel: String {
-        state.page == 0 ? L10n.t("ob.start")
-            : state.page == lastPage ? L10n.t("ob.launch")
-            : L10n.t("ob.next")
-    }
-
-    private func next() {
-        if state.page >= lastPage {
-            finish()
-        } else {
-            state.page += 1
-        }
-    }
-
-    /// Skip = the shipped defaults, as if the user opted out of choices.
-    private func skipToDefaults() {
-        state.water = 30
-        state.sit = 45
-        state.sound = true
-        finish()
+        .padding(28)
+        .frame(width: 460, height: 520)
+        .background(Palette.appBg)
     }
 
     private func finish() {

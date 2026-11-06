@@ -61,6 +61,33 @@ struct MainWindow : MainWindowT<MainWindow> {
       Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args);
   void Sound_Toggled(winrt::Windows::Foundation::IInspectable const& sender,
                      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void PresetBalanced_Click(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void PresetGentle_Click(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void PresetActive_Click(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void Customize_Click(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void SitEnabled_Toggled(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void WaterEnabled_Toggled(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void QuietHours_Toggled(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void QuietStart_ValueChanged(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
+  void QuietEnd_ValueChanged(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
   void Autostart_Toggled(
       winrt::Windows::Foundation::IInspectable const& sender,
       Microsoft::UI::Xaml::RoutedEventArgs const& args);
@@ -98,6 +125,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void RefreshTrayState();
   void ApplyConfig(rivet_app::ReminderConfig const& changed, bool announce);
   void RefreshStatesAfterTick();
+  void ReloadOutcomes();
   void ReloadHistory();
   void ReloadAutostart();
   void ReloadDataDir();
