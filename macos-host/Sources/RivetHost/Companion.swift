@@ -441,6 +441,14 @@ struct MubiView: View {
     }
 }
 
+/// Hosting view that can opt into AppKit's background-drag behaviour only
+/// while the explicit placement mode is active. Outside it the panel stays
+/// fully pointer-through (issue #54).
+private final class CompanionHostingView: NSHostingView<AnyView> {
+    var allowsWindowDrag = false
+    override var mouseDownCanMoveWindow: Bool { allowsWindowDrag }
+}
+
 // MARK: - controller
 
 @MainActor
@@ -689,14 +697,15 @@ final class CompanionController: NSObject {
         let character = MubiView(state: state, message: message,
                                  bodySize: bodySize, motion: motion,
                                  labelsAlways: labelsAlways)
-        panel.contentView = NSHostingView(
-            rootView: placing
-                ? AnyView(character.overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(Color.accentColor,
-                                      style: StrokeStyle(lineWidth: 2,
-                                                         dash: [5, 4]))))
-                : AnyView(character))
+        let root = placing
+            ? AnyView(character.overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.accentColor,
+                                  style: StrokeStyle(lineWidth: 2, dash: [5, 4]))))
+            : AnyView(character)
+        let host = CompanionHostingView(rootView: root)
+        host.allowsWindowDrag = placing
+        panel.contentView = host
         relayout()
         // NSPanel never becomes key or main; the whole window ignores mouse
         // events (#54 pointer-through fallback).
