@@ -3054,6 +3054,10 @@ void on_mubi_hide(GtkButton*, gpointer) {
 // dbusmenu over the session bus; on GNOME that surfaces through the
 // AppIndicator extension, and TrayIcon::available() is false without a
 // watcher, in which case the header buttons stay the only controls.
+void micro_show(std::int64_t duration_seconds, std::string const& title,
+                std::string const& hint_text, std::int64_t cue_id,
+                GtkApplication* app);
+
 namespace tray {
 
 std::unique_ptr<rivet::system::TrayIcon> g_icon;
@@ -3073,10 +3077,6 @@ std::string cue_done_label(rivet_app::HealthCue const& cue) {
                                                           : "notif.sitTitle";
   return l10n::t("tray.cueDone") + " · " + l10n::t(advice);
 }
-
-void micro_show(std::int64_t duration_seconds, std::string const& title,
-                std::string const& hint_text, std::int64_t cue_id,
-                GtkApplication* app);
 
 void show_guided(std::int64_t duration_seconds, std::string const& title,
                  std::string const& hint) {
