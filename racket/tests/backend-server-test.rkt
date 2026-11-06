@@ -297,7 +297,8 @@
 (define-values (cfg-result cfg-events)
   (call "set-config"
         (list 5 999 0 999 #f 99 99 #t #t #t #f "klingon"
-              "huge" "fast" "center" "sometimes")))
+              "huge" "fast" "center" "sometimes"
+              "balanced" #f #f #f 1320 420)))
 (check-true (void? cfg-result))
 (define config-event
   (for/first ([e (in-list cfg-events)] #:when (string=? (car e) "config-changed"))
@@ -307,9 +308,31 @@
 (check-equal? (list-ref saved-config 0) 10)    ; sit clamped
 (check-equal? (list-ref saved-config 1) 180)   ; water clamped
 (check-equal? (list-ref saved-config 11) "auto") ; language normalized
+(check-equal? (list-ref saved-config 16) "custom") ; label matches clamped values
+(check-false (list-ref saved-config 17))           ; sit switch preserved
 ;; the published config state carries the same v1 shape
 (define cfg-state (get-state "active-config"))
 (check-equal? (list-ref cfg-state 1) 180)
+
+;; Quiet hours (#87) pause the live scheduler on the next config write and
+;; resume when the user turns them off — the setting must not wait for a
+;; restart or for the original window boundary.
+(define-values (quiet-hours-on-result _quiet-on-ev)
+  (call "set-config"
+        (list 50 60 5 10 #t 20 20 #t #f #f #f "en"
+              "M" "subtle" "bottom-right" "cue"
+              "balanced" #t #t #t 0 1380)))
+(check-true (void? quiet-hours-on-result))
+(define quiet-paused (get-state "paused"))
+(check-true (list-ref quiet-paused 0))
+(define-values (quiet-hours-off-result _quiet-off-ev)
+  (call "set-config"
+        (list 50 60 5 10 #t 20 20 #t #f #f #f "en"
+              "M" "subtle" "bottom-right" "cue"
+              "balanced" #t #t #f 0 1380)))
+(check-true (void? quiet-hours-off-result))
+(define quiet-resumed (get-state "paused"))
+(check-false (list-ref quiet-resumed 0))
 
 ;; --- 5. get-history zero-fills gaps -----------------------------------------
 
@@ -343,7 +366,7 @@
    (check-true
     (file-exists?
      (build-path autostart-sandbox "Library" "LaunchAgents"
-                 "com.turinglambdaai.movebit.plist")))])
+                 "com.turlamai.movebit.plist")))])
 (define-values (unset-autostart-result asunset-ev) (call "set-autostart" #f))
 (check-true (void? unset-autostart-result))
 (define-values (autostart-off asoff-ev) (call "get-autostart"))
@@ -380,8 +403,8 @@
 ;; auto-save on set-config). The v0.x PascalCase fields are gone.
 (define persisted-config
   (call-with-input-file (build-path tmp-dir "config.json") read-json))
-(check-equal? (hash-ref persisted-config 'SchemaVersion) 2)
-(check-equal? (hash-ref persisted-config 'WaterReminderMinutes) 180)
+(check-equal? (hash-ref persisted-config 'SchemaVersion) config-schema-version)
+(check-equal? (hash-ref persisted-config 'WaterReminderMinutes) 60) ; last write was the quiet-hours config
 (check-false (hash-has-key? persisted-config 'ForceBreakEnabled))
 
 ;; --- diagnostics: JSONL into the data dir --------------------------------------

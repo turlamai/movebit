@@ -11,6 +11,7 @@
          racket/string
          json
          "../movebit/history.rkt"
+         "../movebit/paths.rkt"
          "../movebit/timeutil.rkt")
 
 (define (make-temp-dir prefix)
@@ -281,3 +282,30 @@
   (for ([f (in-list (directory-list (build-path dir "history" today-key)))])
     (check-false (string-suffix? (path->string f) ".tmp")))
   (delete-directory/files dir))
+
+
+;; A machine's device id must survive restarts: ensure-device-id is the key
+;; that names every history shard. Regression: the bounded-repetition POSIX
+;; regexp never matched, so a fresh id was generated on every launch and the
+;; previous shards became unreadable to this device.
+(let ([dir (make-temp-dir "device-id")])
+  (define old-bootstrap (getenv "MOVEBIT_BOOTSTRAP_DIR"))
+  (putenv "MOVEBIT_BOOTSTRAP_DIR" (path->string dir))
+  (dynamic-wind
+    void
+    (lambda ()
+      (define first (ensure-device-id))
+      (check-regexp-match #px"^[0-9a-f]{8}$" first)
+      (check-equal? (ensure-device-id) first)
+      ;; A corrupt/foreign id is replaced with a fresh stable one.
+      (call-with-output-file (bootstrap-path)
+        (lambda (out) (write-json (hasheq 'device-id "NOT-HEX!") out))
+        #:exists 'replace)
+      (define repaired (ensure-device-id))
+      (check-regexp-match #px"^[0-9a-f]{8}$" repaired)
+      (check-equal? (ensure-device-id) repaired))
+    (lambda ()
+      (if old-bootstrap
+          (putenv "MOVEBIT_BOOTSTRAP_DIR" old-bootstrap)
+          (putenv "MOVEBIT_BOOTSTRAP_DIR" ""))
+      (delete-directory/files dir #:must-exist? #f))))

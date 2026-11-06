@@ -48,9 +48,9 @@
 ;; copy.<pool>.<i>, and the milestone policy lives in the backend, not here.
 (define ui-keys (filter (lambda (k) (not (string-prefix? k "copy."))) zh-keys))
 (define copy-keys (filter (lambda (k) (string-prefix? k "copy.")) zh-keys))
-(unless (= (length ui-keys) 177)
+(unless (= (length ui-keys) 211)
   (set! failed? #t)
-  (eprintf "expected 177 UI keys, got ~a~n" (length ui-keys)))
+  (eprintf "expected 211 UI keys, got ~a~n" (length ui-keys)))
 
 (define (pool doc name expected)
   (define prefix (string-append "copy." (symbol->string name) "."))
@@ -76,5 +76,5 @@
 (pool zh 'lateNightMicroPool 3)
 
 (when failed? (exit 1))
-(printf "i18n OK: flat table, 177 UI keys, pools verbatim, zh/en parity~n")
+(printf "i18n OK: flat table, 211 UI keys, pools verbatim, zh/en parity~n")
 (when failed? (exit 1))

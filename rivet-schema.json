@@ -88,6 +88,60 @@
     {
       "fields": [
         {
+          "name": "kind",
+          "type": {
+            "kind": "record",
+            "name": "ReminderKind"
+          }
+        },
+        {
+          "name": "presented",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "self-reported-done",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "snoozed",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "dismissed",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "expired",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "not-delivered",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        }
+      ],
+      "name": "CueOutcomeTotals"
+    },
+    {
+      "fields": [
+        {
           "name": "date",
           "type": {
             "kind": "scalar",
@@ -352,6 +406,48 @@
           "type": {
             "kind": "scalar",
             "name": "String"
+          }
+        },
+        {
+          "name": "preset",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "sit-enabled",
+          "type": {
+            "kind": "scalar",
+            "name": "Bool"
+          }
+        },
+        {
+          "name": "water-enabled",
+          "type": {
+            "kind": "scalar",
+            "name": "Bool"
+          }
+        },
+        {
+          "name": "quiet-hours-enabled",
+          "type": {
+            "kind": "scalar",
+            "name": "Bool"
+          }
+        },
+        {
+          "name": "quiet-hours-start-minutes",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "quiet-hours-end-minutes",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
           }
         }
       ],
@@ -749,6 +845,22 @@
     {
       "arguments": [
         {
+          "name": "name",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "set-rhythm-preset",
+      "result": {
+        "kind": "scalar",
+        "name": "Void"
+      }
+    },
+    {
+      "arguments": [
+        {
           "name": "id",
           "type": {
             "kind": "scalar",
@@ -778,6 +890,16 @@
       "type": {
         "kind": "record",
         "name": "ReminderConfig"
+      }
+    },
+    {
+      "name": "cue-outcomes",
+      "type": {
+        "element": {
+          "kind": "record",
+          "name": "CueOutcomeTotals"
+        },
+        "kind": "list"
       }
     },
     {

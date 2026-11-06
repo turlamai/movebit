@@ -323,6 +323,7 @@ void MainWindow::Bootstrap() {
                                                   w->model_.config
                                                       .companion_labels);
                                               w->companion_.ShowIdle();
+                                              w->ReloadOutcomes();
                                               w->ReloadHistory();
                                               w->ReloadAutostart();
                                               w->ReloadDataDir();
@@ -580,6 +581,7 @@ void MainWindow::RefreshStatesAfterTick() {
       });
     }
   });
+  ReloadOutcomes();
 }
 
 
@@ -1081,6 +1083,22 @@ void MainWindow::ApplyTexts() {
   InsightBusiestLabel().Text(winrt::to_hstring(l10n::t("insight.busiest")));
   SettingsTitle().Text(winrt::to_hstring(l10n::t("set.title")));
   SettingsIntro().Text(winrt::to_hstring(l10n::t("set.intro")));
+  SetRhythmLabel().Text(winrt::to_hstring(l10n::t("set.rhythm")));
+  SetRhythmHint().Text(winrt::to_hstring(l10n::t("set.rhythmHint")));
+  BalancedPresetButton().Content(
+      winrt::box_value(winrt::to_hstring(l10n::t("preset.balanced"))));
+  GentlePresetButton().Content(
+      winrt::box_value(winrt::to_hstring(l10n::t("preset.gentle"))));
+  ActivePresetButton().Content(
+      winrt::box_value(winrt::to_hstring(l10n::t("preset.active"))));
+  SetSoundHint().Text(winrt::to_hstring(l10n::t("set.soundHint")));
+  SetKindsLabel().Text(winrt::to_hstring(l10n::t("set.kinds")));
+  SetSitEnabledLabel().Text(winrt::to_hstring(l10n::t("set.sitEnabled")));
+  SetWaterEnabledLabel().Text(winrt::to_hstring(l10n::t("set.waterEnabled")));
+  SetQuietHoursLabel().Text(winrt::to_hstring(l10n::t("set.quietHours")));
+  SetQuietHoursHint().Text(winrt::to_hstring(l10n::t("set.quietHoursHint")));
+  SetQuietStartLabel().Text(winrt::to_hstring(l10n::t("set.quietStart")));
+  SetQuietEndLabel().Text(winrt::to_hstring(l10n::t("set.quietEnd")));
   SetSitLabel().Text(winrt::to_hstring(l10n::t("set.sitInterval")));
   SetWaterLabel().Text(winrt::to_hstring(l10n::t("set.waterInterval")));
   SetAwayLabel().Text(winrt::to_hstring(l10n::t("set.awayReset")));
@@ -1090,8 +1108,8 @@ void MainWindow::ApplyTexts() {
   SetMubiLabelsLabel().Text(winrt::to_hstring(l10n::t("set.mubiLabels")));
   SetMotionLabel().Text(winrt::to_hstring(l10n::t("set.motion")));
   SetSnoozeLabel().Text(winrt::to_hstring(l10n::t("set.snooze")));
-  SetMicroLabel().Text(winrt::to_hstring(l10n::t("set.microToggle")));
-  SetMicroParamsLabel().Text(winrt::to_hstring(l10n::t("set.microParams")));
+  SetMicroLabel().Text(winrt::to_hstring(l10n::t("set.eyesToggle")));
+  SetMicroParamsLabel().Text(winrt::to_hstring(l10n::t("set.eyesParams")));
   SetSoundLabel().Text(winrt::to_hstring(l10n::t("set.sound")));
   SetAutostartLabel().Text(winrt::to_hstring(l10n::t("set.autostart")));
   SetLanguageLabel().Text(winrt::to_hstring(l10n::t("set.language")));
@@ -1173,6 +1191,46 @@ void MainWindow::RefreshTodayCard() {
   TodaySit().Text(winrt::to_hstring(m.today.sit_breaks));
   TodayWater().Text(winrt::to_hstring(m.today.water_reminders));
   TodayMicro().Text(winrt::to_hstring(m.today.micro_breaks));
+
+  // Issue #88: delivery and the user's own "Done" are separate numbers. A
+  // kind with no recorded outcome stays blank instead of showing a fake zero.
+  auto done_text = [&](rivet_app::ReminderKind kind) {
+    auto const totals = m.outcome(kind);
+    if (!totals.has_value()) return std::string();
+    return l10n::t("today.done", {l10n::A(totals->self_reported_done)});
+  };
+  DoneSit().Text(winrt::to_hstring(done_text(rivet_app::ReminderKind::sit)));
+  DoneWater().Text(winrt::to_hstring(done_text(rivet_app::ReminderKind::water)));
+  DoneMicro().Text(winrt::to_hstring(done_text(rivet_app::ReminderKind::micro)));
+  TodayCountsNote().Text(winrt::to_hstring(l10n::t("today.outcomeLegend")));
+
+  if (m.is_paused()) {
+    TodayNextCue().Text(L"");
+  } else if (auto const next = m.next_cue()) {
+    TodayNextCue().Text(winrt::to_hstring(l10n::t(
+        "today.nextCue", {l10n::A(next->second)})));
+  } else {
+    TodayNextCue().Text(winrt::to_hstring(l10n::t("set.nextCueOff")));
+  }
+}
+
+void MainWindow::ReloadOutcomes() {
+  if (api_ == nullptr) return;
+  auto const weak = get_weak();
+  (void)api_->get_cue_outcomes_async(
+      [weak](rivet_app::Result<std::vector<rivet_app::CueOutcomeTotals>> r) {
+        if (auto self = weak.get()) {
+          self->dispatcher_.TryEnqueue([weak, r] {
+            if (auto w = weak.get()) {
+              try {
+                w->model_.outcomes = r.get();
+                w->RefreshTodayCard();
+              } catch (std::exception const&) {
+              }
+            }
+          });
+        }
+      });
 }
 
 void MainWindow::RefreshHistoryCard() {
@@ -1326,7 +1384,38 @@ void MainWindow::RefreshSettingsWidgets() {
       : c.companion_dock == "top-left" ? 3 : 0);
   MubiLabelsCombo().SelectedIndex(c.companion_labels == "always" ? 1 : 0);
   MicroSwitch().IsOn(c.micro_break_enabled);
+  SitEnabledSwitch().IsOn(c.sit_enabled);
+  WaterEnabledSwitch().IsOn(c.water_enabled);
+  QuietHoursSwitch().IsOn(c.quiet_hours_enabled);
+  QuietHoursPanel().Visibility(c.quiet_hours_enabled
+                                   ? Microsoft::UI::Xaml::Visibility::Visible
+                                   : Microsoft::UI::Xaml::Visibility::Collapsed);
+  QuietStartBox().Value(
+      static_cast<double>(c.quiet_hours_start_minutes / 60));
+  QuietEndBox().Value(static_cast<double>(c.quiet_hours_end_minutes / 60));
   SoundSwitch().IsOn(c.sound_enabled);
+  bool const custom = c.preset == "custom";
+  BalancedPresetButton().IsChecked(!custom && c.preset == "balanced");
+  GentlePresetButton().IsChecked(!custom && c.preset == "gentle");
+  ActivePresetButton().IsChecked(!custom && c.preset == "active");
+  PresetDetail().Text(winrt::to_hstring(l10n::t(
+      "preset.detail", {l10n::A(c.sit_reminder_minutes),
+                        l10n::A(c.water_reminder_minutes),
+                        l10n::A(c.micro_break_interval_minutes),
+                        l10n::A(c.micro_break_duration_seconds)})));
+  if (model_.is_paused()) {
+    NextCueText().Text(L"");
+  } else if (auto const next = model_.next_cue()) {
+    NextCueText().Text(winrt::to_hstring(
+        l10n::t("set.nextCue", {l10n::A(next->second)})));
+  } else {
+    NextCueText().Text(winrt::to_hstring(l10n::t("set.nextCueOff")));
+  }
+  bool const advanced =
+      AdvancedSettings().Visibility() ==
+      Microsoft::UI::Xaml::Visibility::Visible;
+  CustomizeButton().Content(winrt::box_value(winrt::to_hstring(
+      l10n::t(advanced ? "set.collapse" : "set.customize"))));
   UpdatesSwitch().IsOn(c.auto_check_updates);
   AutostartSwitch().IsOn(model_.autostart);
   LanguageDrop().SelectedIndex(c.language == "zh" ? 1
@@ -1413,13 +1502,11 @@ void MainWindow::ReloadDataDir() {
 
 void MainWindow::ShowOnboarding() {
   auto const weak = get_weak();
-  onboarding_.on_finish = [weak](std::int64_t sit, std::int64_t water,
-                                 bool sound) {
+  onboarding_.on_finish = [weak] {
     if (auto self = weak.get()) {
+      // One screen, one write: the shipped balanced rhythm and silent sound
+      // are already the defaults, so only the "seen" marker changes.
       self->MutateConfig([&](rivet_app::ReminderConfig& d) {
-        d.sit_reminder_minutes = sit;
-        d.water_reminder_minutes = water;
-        d.sound_enabled = sound;
         d.welcome_shown = true;
       });
       self->toast_.Show(l10n::t("ob.settled"), {l10n::t("ob.settledBody")},
@@ -1678,6 +1765,94 @@ void MainWindow::Sound_Toggled(
   if (updating_settings_) return;
   auto const on = SoundSwitch().IsOn();
   MutateConfig([&](rivet_app::ReminderConfig& d) { d.sound_enabled = on; });
+}
+
+namespace {
+// One click on a named rhythm: the backend owns the exact cadence values.
+void apply_rhythm(rivet_app::API* api, char const* name) {
+  if (api == nullptr) return;
+  (void)api->set_rhythm_preset_async(
+      std::string(name), [](rivet_app::Result<void>) {});
+}
+}  // namespace
+
+void MainWindow::PresetBalanced_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  apply_rhythm(api_, "balanced");
+}
+
+void MainWindow::PresetGentle_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  apply_rhythm(api_, "gentle");
+}
+
+void MainWindow::PresetActive_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  apply_rhythm(api_, "active");
+}
+
+void MainWindow::Customize_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  bool const advanced =
+      AdvancedSettings().Visibility() ==
+      Microsoft::UI::Xaml::Visibility::Visible;
+  AdvancedSettings().Visibility(advanced
+                                    ? Microsoft::UI::Xaml::Visibility::Collapsed
+                                    : Microsoft::UI::Xaml::Visibility::Visible);
+  CustomizeButton().Content(winrt::box_value(winrt::to_hstring(
+      l10n::t(advanced ? "set.customize" : "set.collapse"))));
+}
+
+void MainWindow::SitEnabled_Toggled(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (updating_settings_) return;
+  auto const on = SitEnabledSwitch().IsOn();
+  MutateConfig([&](rivet_app::ReminderConfig& d) { d.sit_enabled = on; });
+}
+
+void MainWindow::WaterEnabled_Toggled(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (updating_settings_) return;
+  auto const on = WaterEnabledSwitch().IsOn();
+  MutateConfig([&](rivet_app::ReminderConfig& d) { d.water_enabled = on; });
+}
+
+void MainWindow::QuietHours_Toggled(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (updating_settings_) return;
+  auto const on = QuietHoursSwitch().IsOn();
+  QuietHoursPanel().Visibility(on
+                                   ? Microsoft::UI::Xaml::Visibility::Visible
+                                   : Microsoft::UI::Xaml::Visibility::Collapsed);
+  MutateConfig(
+      [&](rivet_app::ReminderConfig& d) { d.quiet_hours_enabled = on; });
+}
+
+void MainWindow::QuietStart_ValueChanged(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const&) {
+  if (updating_settings_) return;
+  auto const hour = static_cast<std::int64_t>(QuietStartBox().Value());
+  MutateConfig([&](rivet_app::ReminderConfig& d) {
+    d.quiet_hours_start_minutes = hour * 60;
+  });
+}
+
+void MainWindow::QuietEnd_ValueChanged(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const&) {
+  if (updating_settings_) return;
+  auto const hour = static_cast<std::int64_t>(QuietEndBox().Value());
+  MutateConfig([&](rivet_app::ReminderConfig& d) {
+    d.quiet_hours_end_minutes = hour * 60;
+  });
 }
 
 void MainWindow::Autostart_Toggled(

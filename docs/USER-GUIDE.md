@@ -16,7 +16,7 @@ Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / 
 
 ## Your first session
 
-1. Install and launch. The compact first-run flow asks for a water interval (30/45/60 min), a sit interval (45/60/90 min) and whether cues make a sound — or press Skip for the defaults.
+1. Install and launch. The one-screen welcome shows Mubi, one sentence and a **Start** button — no cadence questions. The shipped rhythm is Balanced and silent; change it whenever you like in settings.
 2. Meet Mubi. When a cycle is due, the character appears at the screen edge with a clear health suggestion and an actionable label. The card rests after a few seconds; Done / Later / Hide sit right on it.
 3. Respond your way: **Done** (a self-report — never a measurement), **Later** (defers by the snooze interval), **Hide** (puts it away; the next cycle arrives on schedule). All three sit on the reminder card itself — the tray menu (Windows / macOS) reaches them too — and the character and its text stay pointer-through; only the action row accepts clicks.
 4. Enable login startup only if you want background reminders. Treat the history charts as usage estimates, not health measurements.
@@ -29,9 +29,24 @@ Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / 
 - Personalize Mubi in settings: size S/M/L (body heights 60/78/104), motion (still/subtle/lively), dock position, label visibility. Reduce Motion (or motion "still") renders everything static.
 - There is no fullscreen forced break anywhere in v0.0.1, and no way to opt back into one — that contract was removed on purpose.
 
+## Reminder rhythm, quiet hours and honesty
+
+MoveBit offers three named rhythms. They are product defaults, not medical advice — adjust them to your day:
+
+| Preset | Stand up | Water | Eye rest |
+| --- | --- | --- | --- |
+| **Balanced** (default) | every 50 active min, suggest 5 min away | every 60 active min | every 20 active min, look away 20 s |
+| **Gentle** | every 75 active min | every 90 active min | every 30 active min, look away 20 s |
+| **Frequent** | every 30 active min | every 45 active min | every 15 active min, look away 20 s |
+
+- Countdowns use **active time** at the desk, not wall-clock time: idle past the away threshold (5 minutes by default) counts as a real break and resets the cycles.
+- **Customize** exposes per-kind switches, custom intervals, the snooze length, the away threshold, quiet hours, the character size/motion/dock and the language. Editing a cadence turns the rhythm label into Custom; the app never silently swaps your numbers for a preset.
+- **Quiet hours** pause all reminders inside a local-time window (for example 22:00 to 07:00, wrapping midnight) and resume at the end; setting the same start and end means off. **Focus** remains the immediate meeting/presentation action.
+- The main window shows the nearest next reminder and, per kind, how many invitations were actually **presented** next to how many you marked **Done**. Done is your own report: it never claims you drank water, stood up or rested your eyes.
+
 ## Work history
 
-Today's active minutes, reminder counts and the 7/30-day charts live in the main window; history is retained for 370 days. Activity time counts only real keyboard/mouse presence — idle time past the away threshold (5 minutes by default) is treated as a real break and resets the cycles.
+Today's active minutes, presented invitations and self-reported Done counts, plus the 7/30-day charts, live in the main window; history is retained for 370 days. A day or kind with no recorded evidence is shown as unknown, never as a completed action. Activity time counts only real keyboard/mouse presence — idle time past the away threshold (5 minutes by default) is treated as a real break and resets the cycles.
 
 ## Data, backup and recovery
 
