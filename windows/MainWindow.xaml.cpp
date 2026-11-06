@@ -1552,7 +1552,7 @@ void MainWindow::InitTray() {
   };
   micro_.on_hide = [this](std::int64_t id) {
     if (api_ != nullptr) {
-      (void)api_->dismiss_cue_async(id, [](rivet_app::Result<void>) {});
+      (void)api_->abandon_cue_async(id, [](rivet_app::Result<void>) {});
     }
   };
   // Opt-in guided sessions (#94): sleep/rest cards only on explicit request.

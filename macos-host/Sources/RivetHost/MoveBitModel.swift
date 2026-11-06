@@ -403,6 +403,15 @@ final class MoveBitModel: ObservableObject {
         }
     }
 
+    /// Stop a guided session: a deliberate abandonment, distinct from Hide.
+    func abandonCue(_ id: Int64) {
+        guard let api = api() else { return }
+        Task {
+            try? await api.abandon_cue(id: id)
+            if let q = try? await api.get_pending_cues() { pendingCues = q }
+        }
+    }
+
     /// Hide — removes the cue without claiming completion and without
     /// deferring; the next reminder arrives on its normal schedule.
     func dismissCue(_ id: Int64) {

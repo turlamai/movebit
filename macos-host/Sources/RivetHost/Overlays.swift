@@ -202,7 +202,9 @@ final class MicroPanelController: ObservableObject {
 
     func show(durationSeconds: Int64, title: String, hint: String,
               cueId: Int64) {
-        dismissInteractive()
+        // Replacing a session (a newer cue, or the menu reopened) must not
+        // record the previous cue as abandoned; only an explicit Hide does.
+        closePanel()
         generation += 1
         let generation = generation
         progress = 1

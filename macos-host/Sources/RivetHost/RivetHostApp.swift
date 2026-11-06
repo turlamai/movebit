@@ -561,7 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         microController = MicroPanelController()
         microController?.onDone = { [weak self] id in self?.model?.acknowledgeCue(id) }
-        microController?.onHide = { [weak self] id in self?.model?.dismissCue(id) }
+        microController?.onHide = { [weak self] id in self?.model?.abandonCue(id) }
     }
 
     // MARK: onboarding
