@@ -222,6 +222,8 @@ struct AppState {
   std::int64_t micro_cue_id = 0;
   GtkProgressBar* micro_bar{nullptr};
   GtkLabel* micro_hint{nullptr};
+  GtkButton* micro_start_button{nullptr};
+  bool micro_started = false;
 
   // Mubi（沐比）companion (issue #56): X11-only presentation. On Wayland
   // the compositor owns placement, so the companion stays OFF there and
@@ -3263,6 +3265,8 @@ void micro_close() {
     g_state.micro_window = nullptr;
     g_state.micro_bar = nullptr;
     g_state.micro_hint = nullptr;
+    g_state.micro_start_button = nullptr;
+    g_state.micro_started = false;
   }
   g_state.micro_cue_id = 0;
 }
@@ -3284,6 +3288,49 @@ void micro_dismiss() {
   if (g_state.api != nullptr && cue_id != 0) {
     (void)g_state.api->dismiss_cue_async(cue_id, [](rivet_app::Result<void>) {});
   }
+}
+
+// Explicit opt-in (#94): the countdown starts only when the user asks.
+void micro_start() {
+  if (g_state.micro_started || g_state.micro_window == nullptr) return;
+  g_state.micro_started = true;
+  if (g_state.micro_start_button != nullptr) {
+    gtk_widget_set_visible(GTK_WIDGET(g_state.micro_start_button), FALSE);
+  }
+  g_state.micro_progress = 1.0;
+  if (g_state.micro_bar != nullptr) {
+    gtk_progress_bar_set_fraction(g_state.micro_bar, 1.0);
+  }
+  g_state.micro_timeout_id = g_timeout_add(
+      250,
+      +[](gpointer) -> int {
+        g_state.micro_progress =
+            std::max(0.0, g_state.micro_progress - 250.0 /
+                                                     g_state.micro_total_ms);
+        if (g_state.micro_bar != nullptr) {
+          gtk_progress_bar_set_fraction(g_state.micro_bar, g_state.micro_progress);
+        }
+        if (g_state.micro_progress <= 0.0) {
+          // Timer completion is not a self-report; Done is explicit.
+          if (g_state.micro_hint != nullptr) {
+            gtk_label_set_text(g_state.micro_hint,
+                               l10n::t("micro.finishedHint").c_str());
+          }
+          // Hide the finished card later without claiming completion; the
+          // cue stays open for the tray's explicit Done.
+          g_state.micro_timeout_id = g_timeout_add_seconds(
+              60,
+              +[](gpointer) -> int {
+                g_state.micro_timeout_id = 0;
+                micro_dismiss();
+                return G_SOURCE_REMOVE;
+              },
+              nullptr);
+          return G_SOURCE_REMOVE;
+        }
+        return G_SOURCE_CONTINUE;
+      },
+      nullptr);
 }
 
 void micro_show(std::int64_t duration_seconds, std::string const& title,
@@ -3314,10 +3361,18 @@ void micro_show(std::int64_t duration_seconds, std::string const& title,
   box_append(GTK_BOX(body), hint);
   g_state.micro_hint = GTK_LABEL(hint);
   auto* bar = gtk_progress_bar_new();
-  gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(bar), 1.0);
+  gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(bar), 0.0);
   gtk_widget_add_css_class(bar, "micro-bar");
   box_append(GTK_BOX(body), bar);
   g_state.micro_bar = GTK_PROGRESS_BAR(bar);
+  auto* start = gtk_button_new_with_label(l10n::t("micro.start").c_str());
+  gtk_widget_add_css_class(start, "micro-start");
+  gtk_widget_set_halign(start, GTK_ALIGN_START);
+  g_signal_connect(
+      start, "clicked",
+      G_CALLBACK(+[](GtkButton*, gpointer) { micro_start(); }), nullptr);
+  box_append(GTK_BOX(body), start);
+  g_state.micro_start_button = GTK_BUTTON(start);
   auto* done = gtk_button_new_with_label(l10n::t("micro.done").c_str());
   gtk_widget_add_css_class(done, "micro-done");
   gtk_widget_set_halign(done, GTK_ALIGN_START);
@@ -3351,38 +3406,9 @@ void micro_show(std::int64_t duration_seconds, std::string const& title,
       nullptr);
   gtk_widget_add_controller(GTK_WIDGET(window), key);
 
-  g_state.micro_progress = 1.0;
+  g_state.micro_progress = 0.0;
+  g_state.micro_started = false;
   g_state.micro_total_ms = std::max<std::int64_t>(1, duration_seconds) * 1000;
-  g_state.micro_timeout_id = g_timeout_add(
-      250,
-      +[](gpointer) -> int {
-        g_state.micro_progress =
-            std::max(0.0, g_state.micro_progress - 250.0 /
-                                                     g_state.micro_total_ms);
-        if (g_state.micro_bar != nullptr) {
-          gtk_progress_bar_set_fraction(g_state.micro_bar, g_state.micro_progress);
-        }
-        if (g_state.micro_progress <= 0.0) {
-          // Timer completion is not a self-report; Done lives in the tray.
-          if (g_state.micro_hint != nullptr) {
-            gtk_label_set_text(g_state.micro_hint,
-                               l10n::t("micro.finishedHint").c_str());
-          }
-          // Hide the finished card later without claiming completion; the
-          // cue stays open for the tray's explicit Done.
-          g_state.micro_timeout_id = g_timeout_add_seconds(
-              60,
-              +[](gpointer) -> int {
-                g_state.micro_timeout_id = 0;
-                micro_dismiss();
-                return G_SOURCE_REMOVE;
-              },
-              nullptr);
-          return G_SOURCE_REMOVE;
-        }
-        return G_SOURCE_CONTINUE;
-      },
-      nullptr);
   gtk_window_present(GTK_WINDOW(window));
 }
 
