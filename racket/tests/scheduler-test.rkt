@@ -152,3 +152,34 @@
   (scheduler-restore-today! (h-scheduler h) (day-record 120 2 3 4 55 (hasheq)))
   (check-equal? (h-active-ms h) (* 120 minute-ms))
   (check-equal? (day-stats-sit-reminders (h-stats h)) 2))
+
+;; --- issue #87: per-kind enable switches --------------------------------
+
+;; A disabled stand-up kind neither accumulates nor fires, and re-enabling it
+;; starts a fresh interval instead of dumping a stale reminder.
+(let ([h (make-harness #:sit 20 #:water 300)])
+  (h-patch-config! h #:sit-enabled #f)
+  (h-step-minutes! h 60)
+  (check-equal? (h-fired h) '())
+  (check-equal? (h-sit-cycle-ms h) 0)
+  (check-equal? (day-stats-sit-reminders (h-stats h)) 0)
+  (h-patch-config! h #:sit-enabled #t)
+  (h-step-minutes! h 19)
+  (check-equal? (h-fired h) '())
+  (h-step-minutes! h 2)
+  (check-equal? (h-fired-kinds h) '(sit)))
+
+;; Disabling water leaves the stand-up cycle untouched.
+(let ([h (make-harness #:sit 30 #:water 20)])
+  (h-patch-config! h #:water-enabled #f)
+  (h-step-minutes! h 35)
+  (check-equal? (h-fired-kinds h) '(sit))
+  (check-equal? (day-stats-water-reminders (h-stats h)) 0))
+
+;; Disabled kinds keep their loop preview empty (void due time) — the host
+;; shows "off", never a countdown that will not fire.
+(let ([h (make-harness #:sit 20 #:water 20)])
+  (h-patch-config! h #:sit-enabled #f #:water-enabled #f)
+  (h-step-minutes! h 25)
+  (check-equal? (h-fired h) '())
+  (check-equal? (h-sit-cycle-ms h) 0))

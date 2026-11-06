@@ -215,30 +215,40 @@
   (void))
 
 (define (accumulate! s delta)
-  (set-movebit-scheduler-sit-accum-ms! s (+ (movebit-scheduler-sit-accum-ms s) delta))
-  (set-movebit-scheduler-water-accum-ms! s (+ (movebit-scheduler-water-accum-ms s) delta))
-  (set-movebit-scheduler-micro-accum-ms! s (+ (movebit-scheduler-micro-accum-ms s) delta))
+  (define c (scheduler-config s))
+  (define sit-on? (reminder-config-sit-enabled c))
+  (define water-on? (reminder-config-water-enabled c))
+  (define micro-on? (reminder-config-micro-break-enabled c))
+  ;; A disabled kind neither advances nor fires: its cycle simply stays at
+  ;; zero, so re-enabling it starts a fresh interval instead of dumping a
+  ;; stale reminder.
+  (when sit-on?
+    (set-movebit-scheduler-sit-accum-ms! s (+ (movebit-scheduler-sit-accum-ms s) delta)))
+  (when water-on?
+    (set-movebit-scheduler-water-accum-ms! s (+ (movebit-scheduler-water-accum-ms s) delta)))
+  (when micro-on?
+    (set-movebit-scheduler-micro-accum-ms! s (+ (movebit-scheduler-micro-accum-ms s) delta)))
   (set-movebit-scheduler-session-accum-ms! s (+ (movebit-scheduler-session-accum-ms s) delta))
 
   (let* ([stats (stats-add-active (movebit-scheduler-stats s) delta)]
          [stats (stats-with-longest stats (movebit-scheduler-session-accum-ms s))])
     (set-movebit-scheduler-stats! s stats))
 
-  (when (>= (movebit-scheduler-sit-accum-ms s) (sit-interval s))
+  (when (and sit-on? (>= (movebit-scheduler-sit-accum-ms s) (sit-interval s)))
     (set-movebit-scheduler-sit-accum-ms! s 0)
     (set-movebit-scheduler-stats! s (stats-count+ (movebit-scheduler-stats s) 'sit))
     (fire-reminder! s 'sit
                     (stats-count (movebit-scheduler-stats s) 'sit)
                     (day-stats-active-ms (movebit-scheduler-stats s))))
 
-  (when (>= (movebit-scheduler-water-accum-ms s) (water-interval s))
+  (when (and water-on? (>= (movebit-scheduler-water-accum-ms s) (water-interval s)))
     (set-movebit-scheduler-water-accum-ms! s 0)
     (set-movebit-scheduler-stats! s (stats-count+ (movebit-scheduler-stats s) 'water))
     (fire-reminder! s 'water
                     (stats-count (movebit-scheduler-stats s) 'water)
                     (day-stats-active-ms (movebit-scheduler-stats s))))
 
-  (when (and (reminder-config-micro-break-enabled (scheduler-config s))
+  (when (and micro-on?
              (>= (movebit-scheduler-micro-accum-ms s) (micro-interval s)))
     (set-movebit-scheduler-micro-accum-ms! s 0)
     (set-movebit-scheduler-stats! s (stats-count+ (movebit-scheduler-stats s) 'micro))

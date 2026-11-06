@@ -50,8 +50,14 @@
   (define fired-box (box '()))
   (define day-completed-box (box '()))
   ;; Tests opt in to micro breaks explicitly; disabled keeps legacy cases clean.
-  (define config (reminder-config sit water away snooze #f 30 20 #t #t #t #f "auto"
-                                  "M" "subtle" "bottom-right" "cue"))
+  (define config (struct-copy reminder-config (default-config)
+                                       [sit-reminder-minutes sit]
+                                       [water-reminder-minutes water]
+                                       [away-reset-minutes away]
+                                       [snooze-minutes snooze]
+                                       [micro-break-enabled #f] ; tests opt in
+                                       [micro-break-interval-minutes 30]
+                                       [preset "custom"]))
   (define s
     (make-scheduler config
                     (lambda () (unbox clock))
@@ -104,30 +110,24 @@
 (define (h-config h) (scheduler-config (harness-scheduler h)))
 
 ;; Live-mutate one config field.
-(define (h-patch-config! h #:sit [sit #f]
-                             #:water [water #f]
-                             #:micro-enabled [micro-enabled #f]
-                             #:micro-interval [micro-interval #f])
+(define (h-patch-config! h #:sit [sit 'unset]
+                             #:water [water 'unset]
+                             #:micro-enabled [micro-enabled 'unset]
+                             #:micro-interval [micro-interval 'unset]
+                             #:sit-enabled [sit-enabled 'unset]
+                             #:water-enabled [water-enabled 'unset])
   (define base (scheduler-config (harness-scheduler h)))
+  (define (pick value fallback) (if (eq? value 'unset) fallback value))
   (set-scheduler-config!
    (harness-scheduler h)
-   (reminder-config
-    (if sit sit (reminder-config-sit-reminder-minutes base))
-    (if water water (reminder-config-water-reminder-minutes base))
-    (reminder-config-away-reset-minutes base)
-    (reminder-config-snooze-minutes base)
-    (if micro-enabled micro-enabled (reminder-config-micro-break-enabled base))
-    (if micro-interval micro-interval (reminder-config-micro-break-interval-minutes base))
-    (reminder-config-micro-break-duration-seconds base)
-    (reminder-config-motion-enabled base)
-    (reminder-config-sound-enabled base)
-    (reminder-config-auto-check-updates base)
-    (reminder-config-welcome-shown base)
-    (reminder-config-language base)
-    (reminder-config-companion-size base)
-    (reminder-config-companion-motion base)
-    (reminder-config-companion-dock base)
-    (reminder-config-companion-labels base))))
+   (struct-copy reminder-config base
+                [sit-reminder-minutes (pick sit (reminder-config-sit-reminder-minutes base))]
+                [water-reminder-minutes (pick water (reminder-config-water-reminder-minutes base))]
+                [micro-break-enabled (pick micro-enabled (reminder-config-micro-break-enabled base))]
+                [micro-break-interval-minutes (pick micro-interval (reminder-config-micro-break-interval-minutes base))]
+                [sit-enabled (pick sit-enabled (reminder-config-sit-enabled base))]
+                [water-enabled (pick water-enabled (reminder-config-water-enabled base))]
+                [preset "custom"])))
 
 (define (h-scheduler h) (harness-scheduler h))
 (define (h-sit-cycle-ms h) (scheduler-sit-cycle-elapsed-ms (harness-scheduler h)))

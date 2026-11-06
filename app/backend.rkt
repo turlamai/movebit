@@ -143,7 +143,15 @@
    [companion-size : String]
    [companion-motion : String]
    [companion-dock : String]
-   [companion-labels : String]))
+   [companion-labels : String]
+   ;; Issue #87: named rhythm preset (the label always matches the values),
+   ;; per-kind switches and a local quiet-hours window.
+   [preset : String]
+   [sit-enabled : Bool]
+   [water-enabled : Bool]
+   [quiet-hours-enabled : Bool]
+   [quiet-hours-start-minutes : Int64]
+   [quiet-hours-end-minutes : Int64]))
 
 (define-record DayStats
   ([date : String]
@@ -204,8 +212,9 @@
 ;; --- Runtime wiring -------------------------------------------------------
 
 (struct runtime (scheduler orchestrator history data-dir device-id idle-provider
-                           outcomes-today)
-  #:transparent)
+                           outcomes-today quiet-hours-paused?)
+  #:transparent
+  #:mutable)
 
 ;; (box (or/c #f runtime?))
 (define runtime-box (box #f))
@@ -240,7 +249,13 @@
    (reminder-config-companion-size c)
    (reminder-config-companion-motion c)
    (reminder-config-companion-dock c)
-   (reminder-config-companion-labels c)))
+   (reminder-config-companion-labels c)
+   (reminder-config-preset c)
+   (reminder-config-sit-enabled c)
+   (reminder-config-water-enabled c)
+   (reminder-config-quiet-hours-enabled c)
+   (reminder-config-quiet-hours-start-minutes c)
+   (reminder-config-quiet-hours-end-minutes c)))
 
 (define (dto->config dto)
   (clamp-config
@@ -260,7 +275,13 @@
     (record-ref dto 'companion-size)
     (record-ref dto 'companion-motion)
     (record-ref dto 'companion-dock)
-    (record-ref dto 'companion-labels))))
+    (record-ref dto 'companion-labels)
+    (record-ref dto 'preset)
+    (record-ref dto 'sit-enabled)
+    (record-ref dto 'water-enabled)
+    (record-ref dto 'quiet-hours-enabled)
+    (record-ref dto 'quiet-hours-start-minutes)
+    (record-ref dto 'quiet-hours-end-minutes))))
 
 (define (stats->dto stats)
   (DayStats (day-stats-date-key stats)
@@ -367,11 +388,11 @@
    (loop-dto 'sit
              (movebit-scheduler-sit-accum-ms scheduler)
              (reminder-config-sit-reminder-minutes c)
-             #t)
+             (reminder-config-sit-enabled c))
    (loop-dto 'water
              (movebit-scheduler-water-accum-ms scheduler)
              (reminder-config-water-reminder-minutes c)
-             #t)
+             (reminder-config-water-enabled c))
    (loop-dto 'micro
              (movebit-scheduler-micro-accum-ms scheduler)
              (reminder-config-micro-break-interval-minutes c)
@@ -419,6 +440,32 @@
                    (day-record-longest-session-minutes local))
               (cue-outcomes-sum (day-record-cue-outcomes base)
                                 (day-record-cue-outcomes local))))
+
+;; Quiet hours (issue #87) ride the scheduler's pause primitive: during the
+;; local window nothing accumulates and nothing fires, and the pause expires
+;; exactly on the window boundary. The flag distinguishes a quiet-hours pause
+;; from the user's own "pause 1h" so we never resume a manual pause.
+(define (apply-quiet-hours! rt)
+  (define scheduler (runtime-scheduler rt))
+  (define c (scheduler-config scheduler))
+  (define now ((current-now-ms)))
+  (cond
+    [(quiet-hours-active? c now)
+     (unless (or (runtime-quiet-hours-paused? rt)
+                 (scheduler-paused? scheduler))
+       (scheduler-pause-for! scheduler
+                             (* 1000 (max 1 (quiet-hours-seconds-remaining c now))))
+       (set-runtime-quiet-hours-paused?! rt #t)
+       (publish-paused! rt))]
+    [(runtime-quiet-hours-paused? rt)
+     ;; Either the window ended (the pause expired on its own) or the user
+     ;; just turned quiet hours off. Clear the marker so the next window can
+     ;; pause again, and end a still-running quiet-hours pause immediately so
+     ;; disabling the setting takes effect now rather than at the old boundary.
+     (set-runtime-quiet-hours-paused?! rt #f)
+     (when (scheduler-paused? scheduler)
+       (scheduler-resume! scheduler))
+     (publish-paused! rt)]))
 
 (define (publish-paused! rt)
   (define until (scheduler-paused-until-ms (runtime-scheduler rt)))
@@ -503,7 +550,7 @@
                                       (hash-update (hash-ref h kind (hasheq))
                                                    status add1 0))
                            (publish-outcomes! rt))))
-    (define rt (runtime scheduler o history data-dir device-id idle (make-hash)))
+    (define rt (runtime scheduler o history data-dir device-id idle (make-hash) #f))
     (set-box! runtime-box rt)
     ;; A mid-day restart keeps the morning's activity: seed the persisted
     ;; same-day record into the fresh session before any flush can clobber
@@ -523,6 +570,7 @@
     (state-set! active-config (config->dto loaded-config))
     (publish-stats! rt)
     (publish-paused! rt)
+    (apply-quiet-hours! rt)
     (publish-pending-cues! rt)
     (unless (unbox tick-thread-box)
       (set-box! tick-thread-box
@@ -540,6 +588,7 @@
     ;; reminder thread — the tray app keeps working.
         (with-handlers ([exn:fail? (lambda (e)
                                  (log-error 'movebit "tick failed: ~a" e))])
+      (apply-quiet-hours! rt)
       (orchestrator-tick! (runtime-orchestrator rt))
       (publish-stats! rt)
       (publish-paused! rt)
@@ -620,8 +669,26 @@
   (save-config (runtime-data-dir rt) clamped)
   (set-scheduler-config! (runtime-scheduler rt) clamped)
   (state-set! active-config (config->dto clamped))
+  (apply-quiet-hours! rt)
   (state-set! loops (loops->dto rt))
   (config-changed (config->dto clamped))
+  (void))
+
+;; Rhythm presets live in the shared config module, so every host sends only
+;; the preset NAME and the exact cadence values stay a single Racket source of
+;; truth (issue #87).
+(define-rpc (set-rhythm-preset [name : String] : Void)
+  (define rt (require-runtime))
+  (define which (string->symbol name))
+  (unless (memq which '(balanced gentle active))
+    (error 'set-rhythm-preset "unknown rhythm preset: ~a" name))
+  (define applied (apply-preset (scheduler-config (runtime-scheduler rt)) which))
+  (save-config (runtime-data-dir rt) applied)
+  (set-scheduler-config! (runtime-scheduler rt) applied)
+  (state-set! active-config (config->dto applied))
+  (apply-quiet-hours! rt)
+  (state-set! loops (loops->dto rt))
+  (config-changed (config->dto applied))
   (void))
 
 ;; --- History --------------------------------------------------------------
