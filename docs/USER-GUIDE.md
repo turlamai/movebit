@@ -27,7 +27,7 @@ Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / 
 - **Focus mode** (the tray toggle on Windows / macOS, a header button on Linux) queues cues silently during presentations and delivers ONE bounded summary when it ends — never a pile-up. Cues that were already on screen are not re-emitted.
 - Unanswered cues expire after ten minutes and the next reminder arrives on its normal schedule. Silence never counts as completion, and nothing is lost.
 - Personalize Mubi in settings: size S/M/L (body heights 60/78/104), motion (still/subtle/lively), dock position, label visibility. Reduce Motion (or motion "still") renders everything static.
-- **Place Mubi…** in the menu (macOS and Windows tray, Linux X11 tray or header) turns the character into a draggable surface for up to 30 seconds; choose **Done placing** (or wait) and the position is remembered per display, scaled and clamped on monitor/DPI changes. A position saved by a synced profile is honored on every desktop; Wayland keeps the notification fallback.
+- **Place Mubi…** in the menu (macOS and the Windows tray) turns the character into a draggable surface for up to 30 seconds; choose **Done placing** (or wait) and the position is remembered per display, scaled and clamped on monitor/DPI changes. Linux X11 keeps the named dock positions but honors a position arriving through a synced profile; Wayland keeps the notification fallback.
 - There is no fullscreen forced break anywhere in v0.0.1, and no way to opt back into one — that contract was removed on purpose.
 
 ## Reminder rhythm, quiet hours and honesty
