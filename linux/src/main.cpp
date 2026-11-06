@@ -3054,6 +3054,10 @@ void on_mubi_hide(GtkButton*, gpointer) {
 // dbusmenu over the session bus; on GNOME that surfaces through the
 // AppIndicator extension, and TrayIcon::available() is false without a
 // watcher, in which case the header buttons stay the only controls.
+void micro_show(std::int64_t duration_seconds, std::string const& title,
+                std::string const& hint_text, std::int64_t cue_id,
+                GtkApplication* app);
+
 namespace tray {
 
 std::unique_ptr<rivet::system::TrayIcon> g_icon;
@@ -3072,6 +3076,13 @@ std::string cue_done_label(rivet_app::HealthCue const& cue) {
           : cue.action == rivet_app::CueAction::rest_eyes ? "micro.hint"
                                                           : "notif.sitTitle";
   return l10n::t("tray.cueDone") + " · " + l10n::t(advice);
+}
+
+void show_guided(std::int64_t duration_seconds, std::string const& title,
+                 std::string const& hint) {
+  if (g_state.app == nullptr || g_state.model.pending_cues.empty()) return;
+  micro_show(duration_seconds, title, hint,
+             g_state.model.pending_cues.back().id, g_state.app);
 }
 
 std::vector<rivet::system::TrayMenuItem> build_menu() {
@@ -3096,6 +3107,24 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
     items.push_back(menu_item(l10n::t("tray.cueHide"), [] {
       on_mubi_hide(nullptr, nullptr);
     }));
+    // Opt-in guided sessions (#94), only while a real cue is open.
+    bool has_sit = false;
+    bool has_micro = false;
+    for (auto const& kind : g_state.model.pending_cues.back().kinds) {
+      has_sit = has_sit || kind == rivet_app::ReminderKind::sit;
+      has_micro = has_micro || kind == rivet_app::ReminderKind::micro;
+    }
+    if (has_micro) {
+      items.push_back(menu_item(l10n::t("tray.eyeRest"), [] {
+        show_guided(g_state.model.config.micro_break_duration_seconds,
+                    l10n::t("tray.eyeRest"), l10n::t("micro.hint"));
+      }));
+    }
+    if (has_sit) {
+      items.push_back(menu_item(l10n::t("tray.stretch"), [] {
+        show_guided(120, l10n::t("stretch.title"), l10n::t("stretch.hint"));
+      }));
+    }
   }
   items.push_back(TrayMenuItem(TrayMenuItem::Type::separator));
   if (g_state.mubi_x11) {
@@ -3334,7 +3363,8 @@ void micro_start() {
 }
 
 void micro_show(std::int64_t duration_seconds, std::string const& title,
-                std::int64_t cue_id, GtkApplication* app) {
+                std::string const& hint_text, std::int64_t cue_id,
+                GtkApplication* app) {
   micro_dismiss();
   g_state.micro_cue_id = cue_id;
   auto* window = gtk_application_window_new(app);
@@ -3355,7 +3385,7 @@ void micro_show(std::int64_t duration_seconds, std::string const& title,
   gtk_label_set_xalign(GTK_LABEL(title_label), 0.0f);
   box_append(GTK_BOX(head), title_label);
   box_append(GTK_BOX(body), head);
-  auto* hint = gtk_label_new(l10n::t("micro.hint").c_str());
+  auto* hint = gtk_label_new(hint_text.c_str());
   gtk_widget_add_css_class(hint, "micro-hint");
   gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
   box_append(GTK_BOX(body), hint);
@@ -3380,17 +3410,14 @@ void micro_show(std::int64_t duration_seconds, std::string const& title,
       done, "clicked",
       G_CALLBACK(+[](GtkButton*, gpointer) { micro_finish(); }), nullptr);
   box_append(GTK_BOX(body), done);
-  gtk_window_set_child(GTK_WINDOW(window), body);
-
-  // Click anywhere dismisses.
-  auto* click = gtk_gesture_click_new();
+  auto* hide = gtk_button_new_with_label(l10n::t("notif.hide").c_str());
+  gtk_widget_add_css_class(hide, "micro-hide");
+  gtk_widget_set_halign(hide, GTK_ALIGN_START);
   g_signal_connect(
-      click, "released",
-      G_CALLBACK(+[](GtkGestureClick*, gint, gdouble, gdouble, gpointer) {
-        micro_dismiss();
-      }),
-      nullptr);
-  gtk_widget_add_controller(GTK_WIDGET(window), GTK_EVENT_CONTROLLER(click));
+      hide, "clicked",
+      G_CALLBACK(+[](GtkButton*, gpointer) { micro_dismiss(); }), nullptr);
+  box_append(GTK_BOX(body), hide);
+  gtk_window_set_child(GTK_WINDOW(window), body);
   // Escape dismisses too.
   auto* key = gtk_event_controller_key_new();
   g_signal_connect(
@@ -3463,7 +3490,7 @@ void handle_health_cue(rivet_app::HealthCue const& cue, GtkApplication* app) {
   }
   if (kinds.size() == 1 && kinds[0] == rivet_app::ReminderKind::micro) {
     micro_show(model.config.micro_break_duration_seconds, pick_micro(),
-               cue.id, app);
+               l10n::t("micro.hint"), cue.id, app);
     cue_displayed(cue.id);
     return;
   }

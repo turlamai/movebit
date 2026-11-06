@@ -455,19 +455,8 @@ void MainWindow::HandleHealthCue(rivet_app::HealthCue const& cue) {
   }
   auto const& kinds = cue.kinds;
   if (kinds.size() == 1 && kinds[0] == rivet_app::ReminderKind::micro) {
-    micro_.on_done = [weak](std::int64_t id) {
-      if (auto self = weak.get()) {
-        (void)self->api_->acknowledge_cue_async(id,
-                                                [](rivet_app::Result<void>) {});
-      }
-    };
-    micro_.on_hide = [weak](std::int64_t id) {
-      if (auto self = weak.get()) {
-        (void)self->api_->dismiss_cue_async(id, [](rivet_app::Result<void>) {});
-      }
-    };
     micro_.Show(model_.config.micro_break_duration_seconds,
-                movebit::pick_micro(), cue.id);
+                movebit::pick_micro(), l10n::t("micro.hint"), cue.id);
     CueDisplayed(cue.id);
     return;
   }
@@ -1556,6 +1545,28 @@ void MainWindow::InitTray() {
   tray_.on_open = [this]() { BringToForeground(); };
   tray_.on_pause_toggle = [this]() { TogglePause(); };
   tray_.on_mubi_move_aside = [this]() { companion_.MoveAside(); };
+  micro_.on_done = [this](std::int64_t id) {
+    if (api_ != nullptr) {
+      (void)api_->acknowledge_cue_async(id, [](rivet_app::Result<void>) {});
+    }
+  };
+  micro_.on_hide = [this](std::int64_t id) {
+    if (api_ != nullptr) {
+      (void)api_->dismiss_cue_async(id, [](rivet_app::Result<void>) {});
+    }
+  };
+  // Opt-in guided sessions (#94): sleep/rest cards only on explicit request.
+  tray_.on_eye_rest = [this]() {
+    if (model_.pending_cues.empty()) return;
+    micro_.Show(model_.config.micro_break_duration_seconds,
+                l10n::t("tray.eyeRest"), l10n::t("micro.hint"),
+                model_.pending_cues.back().id);
+  };
+  tray_.on_stretch = [this]() {
+    if (model_.pending_cues.empty()) return;
+    micro_.Show(120, l10n::t("stretch.title"), l10n::t("stretch.hint"),
+                model_.pending_cues.back().id);
+  };
   // Issue #104: temporary placement mode. Persisting the normalized position
   // goes through the same config RPC; the mode itself ends on Done, a 30 s
   // timer, Focus/Hide or a due cue and restores pointer-through.
@@ -1618,7 +1629,16 @@ void MainWindow::InitTray() {
 }
 
 void MainWindow::RefreshTrayState() {
-  tray_.RefreshCueState(!model_.pending_cues.empty(), model_.quiet);
+  bool has_sit = false;
+  bool has_micro = false;
+  if (!model_.pending_cues.empty()) {
+    for (auto const& kind : model_.pending_cues.back().kinds) {
+      has_sit = has_sit || kind == rivet_app::ReminderKind::sit;
+      has_micro = has_micro || kind == rivet_app::ReminderKind::micro;
+    }
+  }
+  tray_.RefreshCueState(!model_.pending_cues.empty(), model_.quiet, has_sit,
+                        has_micro);
 }
 
 void MainWindow::HideToTray() {
