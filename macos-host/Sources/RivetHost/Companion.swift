@@ -745,10 +745,13 @@ final class CompanionController: NSObject {
             // display/DPI changes: the travel range excludes its own size.
             let travelW = max(0, safe.width - size.width - 2 * clearance)
             let travelH = max(0, safe.height - size.height - 2 * clearance)
+            // Stored coordinates are fractions from the TOP-LEFT of the
+            // usable work area so a synced profile means the same place on
+            // Windows/Linux; AppKit's origin is bottom-left.
             x = safe.minX + clearance
                 + travelW * CGFloat(freeX) / 1000
-            y = safe.minY + clearance
-                + travelH * CGFloat(freeY) / 1000
+            y = safe.maxY - size.height - clearance
+                - travelH * CGFloat(freeY) / 1000
             panel.setFrameOrigin(NSPoint(x: x, y: y))
             return
         }
@@ -779,7 +782,8 @@ final class CompanionController: NSObject {
         let travelW = max(1, safe.width - size.width - 2 * clearance)
         let travelH = max(1, safe.height - size.height - 2 * clearance)
         let fractionX = (panel.frame.minX - safe.minX - clearance) / travelW
-        let fractionY = (panel.frame.minY - safe.minY - clearance) / travelH
+        let fractionY = (safe.maxY - size.height - clearance
+                         - panel.frame.minY) / travelH
         let nx = Int64((min(1, max(0, fractionX)) * 1000).rounded())
         let ny = Int64((min(1, max(0, fractionY)) * 1000).rounded())
         guard nx != freeX || ny != freeY else { return }

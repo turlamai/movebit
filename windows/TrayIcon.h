@@ -40,6 +40,7 @@ struct TrayUi {
   std::function<void()> on_cue_hide;
   std::function<void()> on_focus_toggle;
   std::function<void()> on_mubi_move_aside;
+  std::function<void()> on_mubi_place;
   bool cue_open = false;
   bool quiet = false;
 
@@ -58,6 +59,12 @@ struct TrayUi {
   void SetPaused(bool paused) {
     if (paused_ == paused) return;
     paused_ = paused;
+    if (controller_) controller_->SetMenu(BuildMenu());
+  }
+
+  void SetPlacing(bool placing) {
+    if (placing_ == placing) return;
+    placing_ = placing;
     if (controller_) controller_->SetMenu(BuildMenu());
   }
 
@@ -88,12 +95,14 @@ struct TrayUi {
     kMenuCueLater = 6,
     kMenuCueHide = 7,
     kMenuFocusToggle = 8,
-    kMenuMubiMoveAside = 9
+    kMenuMubiMoveAside = 9,
+    kMenuMubiPlace = 10
   };
 
   bool paused_ = false;
   bool cue_open_ = false;
   bool quiet_ = false;
+  bool placing_ = false;
   std::unique_ptr<rivet::system::TrayController> controller_;
 
   static HICON LoadAppIcon() {
@@ -133,6 +142,10 @@ struct TrayUi {
     items.push_back(TrayMenuItem(
         kMenuMubiMoveAside, tray_wide(l10n::t("tray.moveAside")),
         bind(on_mubi_move_aside)));
+    items.push_back(TrayMenuItem(
+        kMenuMubiPlace,
+        tray_wide(l10n::t(placing_ ? "tray.placeMubiDone" : "tray.placeMubi")),
+        bind(on_mubi_place)));
     items.push_back(TrayMenuItem(
         kMenuPauseToggle,
         tray_wide(l10n::t(paused_ ? "tray.resume" : "tray.pause")),

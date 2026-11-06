@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <cmath>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -244,6 +245,13 @@ struct AppState {
   // host honors a persisted position; direct manipulation is macOS-first.
   std::int64_t mubi_free_x = -1;
   std::int64_t mubi_free_y = -1;
+  // Temporary direct-placement mode (issue #104). Input is only captured
+  // while this is true; every exit restores the empty X11 input region.
+  bool mubi_placing = false;
+  guint mubi_place_timer = 0;
+  int mubi_drag_origin_x = 0;
+  int mubi_drag_origin_y = 0;
+  GtkButton* place_button{nullptr};
   bool mubi_labels_always = false;
   bool mubi_quiet = false;
   bool mubi_x11 = false;
@@ -998,6 +1006,15 @@ void refresh_header_buttons() {
     gtk_button_set_label(g_state.move_button, l10n::t("tray.moveAside").c_str());
     gtk_widget_set_sensitive(GTK_WIDGET(g_state.move_button), g_state.mubi_x11);
   }
+  if (g_state.place_button != nullptr) {
+    gtk_button_set_label(
+        g_state.place_button,
+        l10n::t(g_state.mubi_placing ? "tray.placeMubiDone"
+                                     : "tray.placeMubi")
+            .c_str());
+    gtk_widget_set_sensitive(GTK_WIDGET(g_state.place_button),
+                             g_state.mubi_x11);
+  }
   refresh_quit_button();
 }
 
@@ -1252,6 +1269,15 @@ void reload_history();
 namespace mubi {
 void set_quiet(bool enabled);
 void move_aside();
+void toggle_placement();
+}
+
+void show_toast_plain(std::string const& title,
+                      std::vector<std::string> const& lines,
+                      rivet_app::ReminderKind accent, GtkApplication* app);
+
+namespace tray {
+void sync();
 }
 
 void on_pause_clicked(GtkButton*, gpointer) {
@@ -1278,6 +1304,10 @@ void on_quit_clicked(GtkButton*, gpointer) {
 // update is local so the toggle works even while the backend is down (#54).
 void on_move_clicked(GtkButton*, gpointer) {
   if (g_state.mubi_x11) mubi::move_aside();
+}
+
+void on_place_clicked(GtkButton*, gpointer) {
+  if (g_state.mubi_x11) mubi::toggle_placement();
 }
 
 void on_focus_clicked(GtkButton*, gpointer) {
@@ -2488,6 +2518,11 @@ void eye(cairo_t* cr, double cx, double cy) {
   cairo_fill(cr);
 }
 
+void on_drag_begin(GtkGestureDrag*, double, double, gpointer);
+void on_drag_update(GtkGestureDrag*, double, double, gpointer);
+void on_drag_end(GtkGestureDrag*, double, double, gpointer);
+void save_placement();
+
 void draw_state(cairo_t* cr, int state) {
   double const p = g_state.mubi_anim_progress;
   // Stand: body lengthens upward, anchored at the docked bottom (y=124).
@@ -2699,8 +2734,15 @@ void start_anim(int state) {
       nullptr);
 }
 
+void begin_placement();
+void end_placement();
+void toggle_placement();
+void save_placement();
+void set_interactive(bool interactive);
+
 void present(int state, std::string const& message, GtkApplication* app,
              std::int64_t cue_id = 0) {
+  if (g_state.mubi_placing) end_placement();
   if (!g_state.mubi_x11) return;  // Wayland: notification fallback only
   if (g_state.acceptance) return;  // headless probe sees the main window only
   if (app == nullptr) app = g_state.app;
@@ -2793,6 +2835,13 @@ void present(int state, std::string const& message, GtkApplication* app,
                                 static_cast<int>(120 * scale),
                                 static_cast<int>(140 * scale));
     gtk_drawing_area_set_draw_func(canvas, draw, nullptr, nullptr);
+    // Temporary placement mode: a drag gesture that only acts while the
+    // explicit mode is on (the surface is otherwise input-empty).
+    auto* drag = gtk_gesture_drag_new();
+    g_signal_connect(drag, "drag-begin", G_CALLBACK(on_drag_begin), nullptr);
+    g_signal_connect(drag, "drag-update", G_CALLBACK(on_drag_update), nullptr);
+    g_signal_connect(drag, "drag-end", G_CALLBACK(on_drag_end), nullptr);
+    gtk_widget_add_controller(GTK_WIDGET(canvas), GTK_EVENT_CONTROLLER(drag));
     box_append(GTK_BOX(body_box), GTK_WIDGET(canvas));
     s.mubi_canvas = canvas;
 
@@ -2898,6 +2947,177 @@ void present(int state, std::string const& message, GtkApplication* app,
 }
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
+
+// Toggle the X11 input region: empty = fully pointer-through (the shipped
+// safety contract); unset = the whole character surface is sensitive, used
+// only during the explicit placement mode.
+void set_interactive(bool interactive) {
+  if (g_state.mubi_window == nullptr) return;
+  gtk_widget_set_can_target(GTK_WIDGET(g_state.mubi_window), interactive);
+  if (g_state.mubi_canvas != nullptr) {
+    gtk_widget_set_can_target(GTK_WIDGET(g_state.mubi_canvas), interactive);
+  }
+#ifdef GDK_WINDOWING_X11
+  auto* surface = gtk_native_get_surface(GTK_NATIVE(g_state.mubi_window));
+  if (surface == nullptr) return;
+  if (interactive) {
+    gdk_surface_set_input_region(surface, nullptr);
+  } else {
+    cairo_region_t* empty = cairo_region_create();
+    gdk_surface_set_input_region(surface, empty);
+    cairo_region_destroy(empty);
+  }
+#endif
+}
+
+void begin_placement() {
+  if (!g_state.mubi_x11 || g_state.mubi_quiet) return;
+  show_idle();
+  if (g_state.mubi_window == nullptr) return;
+  g_state.mubi_placing = true;
+  set_interactive(true);
+  if (g_state.mubi_place_timer != 0) g_source_remove(g_state.mubi_place_timer);
+  g_state.mubi_place_timer = g_timeout_add_seconds(
+      30,
+      +[](gpointer) -> int {
+        g_state.mubi_place_timer = 0;
+        end_placement();
+        return G_SOURCE_REMOVE;
+      },
+      nullptr);
+  if (g_state.app != nullptr) {
+    show_toast_plain(l10n::t("tray.placeMubi"),
+                     {l10n::t("tray.placeHint")},
+                     rivet_app::ReminderKind::water, g_state.app);
+  }
+  tray::sync();
+  refresh_header_buttons();
+}
+
+void end_placement() {
+  if (!g_state.mubi_placing) return;
+  g_state.mubi_placing = false;
+  if (g_state.mubi_place_timer != 0) {
+    g_source_remove(g_state.mubi_place_timer);
+    g_state.mubi_place_timer = 0;
+  }
+  save_placement();
+  set_interactive(false);
+  tray::sync();
+  refresh_header_buttons();
+}
+
+void toggle_placement() {
+  if (g_state.mubi_placing) {
+    end_placement();
+  } else {
+    begin_placement();
+  }
+}
+
+void save_placement() {
+  if (g_state.mubi_window == nullptr) return;
+#ifdef GDK_WINDOWING_X11
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  auto* surface = gtk_native_get_surface(GTK_NATIVE(g_state.mubi_window));
+  if (surface == nullptr || !GDK_IS_X11_SURFACE(surface)) return;
+  auto* display = gdk_surface_get_display(surface);
+  Display* xdisplay = gdk_x11_display_get_xdisplay(display);
+  Window xid = gdk_x11_surface_get_xid(GDK_X11_SURFACE(surface));
+  Window root{};
+  int x = 0;
+  int y = 0;
+  unsigned width = 0;
+  unsigned height = 0;
+  unsigned border = 0;
+  unsigned depth = 0;
+  if (!XGetGeometry(xdisplay, xid, &root, &x, &y, &width, &height, &border,
+                    &depth)) {
+    return;
+  }
+  auto* monitor = gdk_display_get_monitor_at_surface(display, surface);
+  if (monitor == nullptr) return;
+  GdkRectangle work{};
+  gdk_x11_monitor_get_workarea(monitor, &work);
+  double const xs = gdk_surface_get_scale(surface);
+  int const px_clear = static_cast<int>(16 * xs);
+  int const work_x = static_cast<int>(work.x * xs);
+  int const work_y = static_cast<int>(work.y * xs);
+  int const work_w = static_cast<int>(work.width * xs);
+  int const work_h = static_cast<int>(work.height * xs);
+  int const travel_w =
+      std::max(1, work_w - static_cast<int>(width) - 2 * px_clear);
+  int const travel_h =
+      std::max(1, work_h - static_cast<int>(height) - 2 * px_clear);
+  auto permille = [](int value, int travel) {
+    double const f = static_cast<double>(value) / static_cast<double>(travel);
+    return static_cast<std::int64_t>(std::llround(std::clamp(f, 0.0, 1.0) * 1000));
+  };
+  std::int64_t const nx = permille(x - work_x - px_clear, travel_w);
+  std::int64_t const ny = permille(y - work_y - px_clear, travel_h);
+  if (nx == g_state.mubi_free_x && ny == g_state.mubi_free_y) return;
+  g_state.mubi_free_x = nx;
+  g_state.mubi_free_y = ny;
+  mutate_config([&](auto& cfg) {
+    cfg.companion_free_x = nx;
+    cfg.companion_free_y = ny;
+  });
+#pragma GCC diagnostic pop
+#endif
+}
+
+void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
+  if (!g_state.mubi_placing || g_state.mubi_window == nullptr) return;
+#ifdef GDK_WINDOWING_X11
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  auto* surface = gtk_native_get_surface(GTK_NATIVE(g_state.mubi_window));
+  if (surface == nullptr || !GDK_IS_X11_SURFACE(surface)) return;
+  Display* xdisplay =
+      gdk_x11_display_get_xdisplay(gdk_surface_get_display(surface));
+  Window xid = gdk_x11_surface_get_xid(GDK_X11_SURFACE(surface));
+  Window root{};
+  int x = 0;
+  int y = 0;
+  unsigned width = 0;
+  unsigned height = 0;
+  unsigned border = 0;
+  unsigned depth = 0;
+  if (XGetGeometry(xdisplay, xid, &root, &x, &y, &width, &height, &border,
+                   &depth)) {
+    g_state.mubi_drag_origin_x = x;
+    g_state.mubi_drag_origin_y = y;
+  }
+#pragma GCC diagnostic pop
+#endif
+}
+
+void on_drag_update(GtkGestureDrag*, double offset_x, double offset_y,
+                    gpointer) {
+  if (!g_state.mubi_placing || g_state.mubi_window == nullptr) return;
+#ifdef GDK_WINDOWING_X11
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  auto* surface = gtk_native_get_surface(GTK_NATIVE(g_state.mubi_window));
+  if (surface == nullptr || !GDK_IS_X11_SURFACE(surface)) return;
+  double const xs = gdk_surface_get_scale(surface);
+  Display* xdisplay =
+      gdk_x11_display_get_xdisplay(gdk_surface_get_display(surface));
+  Window xid = gdk_x11_surface_get_xid(GDK_X11_SURFACE(surface));
+  XMoveWindow(xdisplay, xid,
+              g_state.mubi_drag_origin_x +
+                  static_cast<int>(std::llround(offset_x * xs)),
+              g_state.mubi_drag_origin_y +
+                  static_cast<int>(std::llround(offset_y * xs)));
+  XFlush(xdisplay);
+#pragma GCC diagnostic pop
+#endif
+}
+
+void on_drag_end(GtkGestureDrag*, double, double, gpointer) {
+  if (g_state.mubi_placing) save_placement();
+}
 
 // Cycle a local, temporary corner to get out of the user's way.
 // Do not update persisted settings or the Racket reminder ledger.
@@ -3098,6 +3318,10 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
   if (g_state.mubi_x11) {
     items.push_back(menu_item(l10n::t("tray.moveAside"),
                               [] { mubi::move_aside(); }));
+    items.push_back(menu_item(
+        l10n::t(g_state.mubi_placing ? "tray.placeMubiDone"
+                                     : "tray.placeMubi"),
+        [] { mubi::toggle_placement(); }));
   }
   items.push_back(menu_item(l10n::t(g_state.model.is_paused() ? "tray.resume"
                                                               : "tray.pause"),
@@ -4018,6 +4242,11 @@ void on_activate(GtkApplication* app, gpointer) {
     g_signal_connect(move, "clicked", G_CALLBACK(on_move_clicked), nullptr);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), move);
     g_state.move_button = GTK_BUTTON(move);
+    auto* place = gtk_button_new_with_label(l10n::t("tray.placeMubi").c_str());
+    gtk_widget_set_sensitive(place, FALSE);
+    g_signal_connect(place, "clicked", G_CALLBACK(on_place_clicked), nullptr);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), place);
+    g_state.place_button = GTK_BUTTON(place);
     auto* quit = gtk_button_new_with_label(l10n::t("tray.exit").c_str());
     g_signal_connect(quit, "clicked", G_CALLBACK(on_quit_clicked), nullptr);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), quit);

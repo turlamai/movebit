@@ -173,10 +173,16 @@ struct MubiCompanion {
   std::string dock = "bottom-right";
   bool labels_always = false;
   bool quiet = false;
-  // Issue #104: normalized directly placed home (-1 = named dock). Rendering
-  // honors it; the direct-manipulation mode itself is macOS-first for now.
+  // Issue #104: normalized directly placed home (-1 = named dock) and the
+  // temporary drag surface. The mode never persists: a 30 s timer, Done,
+  // Focus, Hide or a due cue restores full pointer-through.
   std::int64_t free_x = -1;
   std::int64_t free_y = -1;
+  bool placing = false;
+  std::function<void(std::int64_t, std::int64_t)> on_placement_changed;
+  std::function<void()> on_placement_ended;
+
+  bool IsPlacing() const { return placing; }
 
   HWND hwnd = nullptr;
   Microsoft::UI::Dispatching::DispatcherQueueTimer anim_timer{nullptr};
@@ -220,6 +226,7 @@ struct MubiCompanion {
   // This changes only the local visual dock, not the Racket user settings
   // or any still-pending reminder's completion state.
   void MoveAside() {
+    EndPlacement();
     free_x = -1;
     free_y = -1;
     if (dock == "bottom-right") dock = "bottom-left";
@@ -232,12 +239,14 @@ struct MubiCompanion {
   }
 
   void SetQuiet(bool enabled) {
+    EndPlacement();
     quiet = enabled;
     if (acceptance_mode()) return;
     Show(quiet ? MubiState::Focus : MubiState::Idle, L"");
   }
 
   void Show(MubiState state, std::wstring const& message) {
+    if (placing) EndPlacement();
     if (acceptance_mode()) return;
     mubi_trace("show:enter");
     try {
@@ -271,7 +280,33 @@ struct MubiCompanion {
     Show(MubiState::Ack, L"");
   }
 
+  /// Temporary explicit placement mode (issue #104). Only while active does
+  /// the layered window drop WS_EX_TRANSPARENT; opaque Mubi pixels then act
+  /// as the drag handle (HTCAPTION) and everything else stays click-through.
+  void BeginPlacement() {
+    if (quiet) return;
+    ShowIdle();
+    if (hwnd == nullptr || placing) return;
+    placing = true;
+    StopVisit();
+    ::SetTimer(hwnd, kPlacementTimerId, 30000, nullptr);
+    ApplyPlacementStyle(true);
+  }
+
+  void EndPlacement() {
+    if (!placing) return;
+    placing = false;
+    if (hwnd != nullptr) {
+      ::KillTimer(hwnd, kPlacementTimerId);
+      SavePlacement();
+      ApplyPlacementStyle(false);
+      Render(anim_state, current_message);
+    }
+    if (on_placement_ended) on_placement_ended();
+  }
+
   void Dismiss() {
+    EndPlacement();
     mubi_trace("dismiss:enter");
     StopVisit();
     if (hwnd != nullptr) {
@@ -283,7 +318,73 @@ struct MubiCompanion {
   }
 
  private:
+  static constexpr UINT_PTR kPlacementTimerId = 2;
   std::wstring current_message;
+
+  static LRESULT CALLBACK PlacementWindowProc(HWND h, UINT msg, WPARAM w,
+                                              LPARAM l) {
+    auto* self = reinterpret_cast<MubiCompanion*>(
+        ::GetWindowLongPtrW(h, GWLP_USERDATA));
+    if (self != nullptr && self->placing) {
+      if (msg == WM_NCHITTEST) return HTCAPTION;
+      if (msg == WM_EXITSIZEMOVE) {
+        self->SavePlacement();
+        return 0;
+      }
+      if (msg == WM_TIMER && w == kPlacementTimerId) {
+        self->EndPlacement();
+        return 0;
+      }
+    }
+    return ::DefWindowProcW(h, msg, w, l);
+  }
+
+  void ApplyPlacementStyle(bool draggable) {
+    if (hwnd == nullptr) return;
+    LONG_PTR ex = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if (draggable) {
+      ex &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
+    } else {
+      ex |= static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
+    }
+    ::SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
+    ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                       SWP_FRAMECHANGED);
+  }
+
+  void SavePlacement() {
+    if (hwnd == nullptr) return;
+    RECT rect{};
+    if (!::GetWindowRect(hwnd, &rect)) return;
+    HMONITOR monitor =
+        ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{sizeof(MONITORINFO)};
+    if (!::GetMonitorInfoW(monitor, &info)) return;
+    RECT const wa = info.rcWork;
+    LONG const clearance = 16;
+    LONG const width = rect.right - rect.left;
+    LONG const height = rect.bottom - rect.top;
+    LONG const travel_w =
+        std::max<LONG>(1, (wa.right - wa.left) - width - 2 * clearance);
+    LONG const travel_h =
+        std::max<LONG>(1, (wa.bottom - wa.top) - height - 2 * clearance);
+    double const fx = static_cast<double>(rect.left - wa.left - clearance) /
+                      static_cast<double>(travel_w);
+    double const fy = static_cast<double>(rect.top - wa.top - clearance) /
+                      static_cast<double>(travel_h);
+    auto clamp_permille = [](double f) {
+      f = std::clamp(f, 0.0, 1.0);
+      return static_cast<std::int64_t>(std::lround(f * 1000.0));
+    };
+    std::int64_t const nx = clamp_permille(fx);
+    std::int64_t const ny = clamp_permille(fy);
+    if (nx == free_x && ny == free_y) return;
+    free_x = nx;
+    free_y = ny;
+    if (on_placement_changed) on_placement_changed(nx, ny);
+  }
+
 
   // Only genuine health cues get the wider readable card.
   bool IsReadableHealthCue() const {
@@ -308,7 +409,7 @@ struct MubiCompanion {
     mubi_detail::gdiplus_token();
     if (hwnd != nullptr) return;
     WNDCLASSW wc{};
-    wc.lpfnWndProc = ::DefWindowProcW;
+    wc.lpfnWndProc = &MubiCompanion::PlacementWindowProc;
     wc.hInstance = ::GetModuleHandleW(nullptr);
     wc.lpszClassName = L"MoveBitMubi";
     ::RegisterClassW(&wc);
@@ -320,6 +421,8 @@ struct MubiCompanion {
     if (hwnd == nullptr) {
       throw std::runtime_error("mubi window creation failed");
     }
+    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA,
+                        reinterpret_cast<LONG_PTR>(this));
     // Float above normal windows without stealing focus; never in the
     // taskbar (the TOOLWINDOW ex-style already keeps it out).
     // UpdateLayeredWindow does not set the visible bit on its own —

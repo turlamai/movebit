@@ -1556,6 +1556,28 @@ void MainWindow::InitTray() {
   tray_.on_open = [this]() { BringToForeground(); };
   tray_.on_pause_toggle = [this]() { TogglePause(); };
   tray_.on_mubi_move_aside = [this]() { companion_.MoveAside(); };
+  // Issue #104: temporary placement mode. Persisting the normalized position
+  // goes through the same config RPC; the mode itself ends on Done, a 30 s
+  // timer, Focus/Hide or a due cue and restores pointer-through.
+  companion_.on_placement_changed = [this](std::int64_t x, std::int64_t y) {
+    MutateConfig([&](rivet_app::ReminderConfig& d) {
+      d.companion_free_x = x;
+      d.companion_free_y = y;
+    });
+  };
+  companion_.on_placement_ended = [this]() { tray_.SetPlacing(false); };
+  tray_.on_mubi_place = [this]() {
+    if (companion_.IsPlacing()) {
+      companion_.EndPlacement();
+      return;
+    }
+    companion_.BeginPlacement();
+    if (companion_.IsPlacing()) {
+      tray_.SetPlacing(true);
+      tray_.ShowInfo(l10n::t("tray.placeMubi"),
+                     l10n::t("tray.placeHint"));
+    }
+  };
   tray_.on_check_updates = [this]() {
     ::ShellExecuteW(nullptr, L"open",
                     L"https://github.com/turlamai/movebit/releases/latest",
