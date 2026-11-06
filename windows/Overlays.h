@@ -286,6 +286,7 @@ struct ToastCard {
   void Dismiss() {
     cue_id = 0;
     if (timer) timer.Stop();
+    if (hide_timer) hide_timer.Stop();
     if (window) {
       window.Close();
       window = {nullptr};
@@ -297,18 +298,21 @@ struct ToastCard {
 
 // ---- micro eye-rest card -------------------------------------------------------
 // Small top-center card with a shrinking progress bar: rest your eyes while
-// it runs. Letting it finish acknowledges the cue; clicking ends it early as
-// a Hide. Never locks, never steals focus, silent by design.
+// it runs. Finishing the timer is NOT an acknowledgment (the user may have
+// ignored it): Done is a tray action. Clicking ends it early as a Hide.
+// Never locks, never steals focus, silent by design.
 
 struct MicroCard {
   Window window{nullptr};
   Controls::ProgressBar bar{nullptr};
+  Controls::TextBlock hint{nullptr};
   double progress = 1.0;
   std::int64_t total_ms = 1000;
   std::int64_t cue_id = 0;
   std::function<void(std::int64_t)> on_done;
   std::function<void(std::int64_t)> on_hide;
   Microsoft::UI::Dispatching::DispatcherQueueTimer timer{nullptr};
+  Microsoft::UI::Dispatching::DispatcherQueueTimer hide_timer{nullptr};
 
   void Show(std::int64_t duration_seconds, std::string const& title,
             std::int64_t id) {
@@ -338,14 +342,23 @@ struct MicroCard {
     head.Children().Append(title_block);
     body.Children().Append(head);
 
-    auto hint = make_text(winrt::to_hstring(l10n::t("micro.hint")), 11.5,
-                          false, "#A39B8D");
+    hint = make_text(winrt::to_hstring(l10n::t("micro.hint")), 11.5,
+                     false, "#A39B8D");
     hint.HorizontalAlignment(HorizontalAlignment::Left);
     body.Children().Append(hint);
 
     bar = make_progress("#C25E3E");
     bar.Value(1.0);
     body.Children().Append(bar);
+
+    auto done = make_button(winrt::to_hstring(l10n::t("micro.done")),
+                            "#F3EEE3", "#26241F", false);
+    done.HorizontalAlignment(HorizontalAlignment::Left);
+    done.Margin(Thickness{0, 6, 0, 0});
+    done.Click([this](IInspectable const&, RoutedEventArgs const&) {
+      DoneTapped();
+    });
+    body.Children().Append(done);
     root.Children().Append(body);
     window.Content(root);
 
@@ -363,7 +376,16 @@ struct MicroCard {
     timer = make_timer(std::chrono::milliseconds(250), true, [this] {
       progress = std::max(0.0, progress - 250.0 / total_ms);
       if (bar) bar.Value(progress);
-      if (progress <= 0.0) DoneTapped();
+      if (progress <= 0.0) {
+        timer.Stop();
+        if (hint) hint.Text(winrt::to_hstring(l10n::t("micro.finishedHint")));
+        // Hide the finished card later without claiming completion; the cue
+        // stays open for the tray's explicit Done.
+        hide_timer = make_timer(std::chrono::seconds(60), false, [this] {
+          HideTapped();
+        });
+        hide_timer.Start();
+      }
     });
     timer.Start();
   }
@@ -383,10 +405,12 @@ struct MicroCard {
   void Dismiss() {
     cue_id = 0;
     if (timer) timer.Stop();
+    if (hide_timer) hide_timer.Stop();
     if (window) {
       window.Close();
       window = {nullptr};
       bar = {nullptr};
+      hint = {nullptr};
     }
   }
 };

@@ -78,6 +78,8 @@
   "menu.undo": "撤销",
   "menu.window": "窗口",
   "micro.defaultTitle": "站 20 秒，看看远处",
+  "micro.done": "做好了",
+  "micro.finishedHint": "时间到了。休息好了就点托盘里的「做到了」；不点不会自动算完成。",
   "micro.hint": "微休息不打断久坐计时 · 点一下或按 Esc 收起",
   "micro.windowTitle": "微休息",
   "mubi.dockBottomLeft": "左下",

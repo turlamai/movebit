@@ -78,6 +78,8 @@
   "menu.undo": "Undo",
   "menu.window": "Window",
   "micro.defaultTitle": "Stand 20 seconds, look far away",
+  "micro.done": "Done",
+  "micro.finishedHint": "Time's up. Mark Done in the tray if you rested — finishing the timer does not claim it.",
   "micro.hint": "Micro breaks don't touch the sit timer · click or press Esc to dismiss",
   "micro.windowTitle": "Micro break",
   "mubi.dockBottomLeft": "Bottom left",

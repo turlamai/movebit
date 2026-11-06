@@ -85,6 +85,8 @@ enum GeneratedI18n {
         "menu.undo": ["zh": "撤销", "en": "Undo"],
         "menu.window": ["zh": "窗口", "en": "Window"],
         "micro.defaultTitle": ["zh": "站 20 秒，看看远处", "en": "Stand 20 seconds, look far away"],
+        "micro.done": ["zh": "做好了", "en": "Done"],
+        "micro.finishedHint": ["zh": "时间到了。休息好了就点托盘里的「做到了」；不点不会自动算完成。", "en": "Time's up. Mark Done in the tray if you rested — finishing the timer does not claim it."],
         "micro.hint": ["zh": "微休息不打断久坐计时 · 点一下或按 Esc 收起", "en": "Micro breaks don't touch the sit timer · click or press Esc to dismiss"],
         "micro.windowTitle": ["zh": "微休息", "en": "Micro break"],
         "mubi.dockBottomLeft": ["zh": "左下", "en": "Bottom left"],

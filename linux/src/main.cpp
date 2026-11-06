@@ -221,6 +221,7 @@ struct AppState {
   std::int64_t micro_total_ms = 1000;
   std::int64_t micro_cue_id = 0;
   GtkProgressBar* micro_bar{nullptr};
+  GtkLabel* micro_hint{nullptr};
 
   // Mubi（沐比）companion (issue #56): X11-only presentation. On Wayland
   // the compositor owns placement, so the companion stays OFF there and
@@ -3261,6 +3262,7 @@ void micro_close() {
     gtk_window_destroy(g_state.micro_window);
     g_state.micro_window = nullptr;
     g_state.micro_bar = nullptr;
+    g_state.micro_hint = nullptr;
   }
   g_state.micro_cue_id = 0;
 }
@@ -3310,11 +3312,19 @@ void micro_show(std::int64_t duration_seconds, std::string const& title,
   gtk_widget_add_css_class(hint, "micro-hint");
   gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
   box_append(GTK_BOX(body), hint);
+  g_state.micro_hint = GTK_LABEL(hint);
   auto* bar = gtk_progress_bar_new();
   gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(bar), 1.0);
   gtk_widget_add_css_class(bar, "micro-bar");
   box_append(GTK_BOX(body), bar);
   g_state.micro_bar = GTK_PROGRESS_BAR(bar);
+  auto* done = gtk_button_new_with_label(l10n::t("micro.done").c_str());
+  gtk_widget_add_css_class(done, "micro-done");
+  gtk_widget_set_halign(done, GTK_ALIGN_START);
+  g_signal_connect(
+      done, "clicked",
+      G_CALLBACK(+[](GtkButton*, gpointer) { micro_finish(); }), nullptr);
+  box_append(GTK_BOX(body), done);
   gtk_window_set_child(GTK_WINDOW(window), body);
 
   // Click anywhere dismisses.
@@ -3353,7 +3363,21 @@ void micro_show(std::int64_t duration_seconds, std::string const& title,
           gtk_progress_bar_set_fraction(g_state.micro_bar, g_state.micro_progress);
         }
         if (g_state.micro_progress <= 0.0) {
-          micro_finish();
+          // Timer completion is not a self-report; Done lives in the tray.
+          if (g_state.micro_hint != nullptr) {
+            gtk_label_set_text(g_state.micro_hint,
+                               l10n::t("micro.finishedHint").c_str());
+          }
+          // Hide the finished card later without claiming completion; the
+          // cue stays open for the tray's explicit Done.
+          g_state.micro_timeout_id = g_timeout_add_seconds(
+              60,
+              +[](gpointer) -> int {
+                g_state.micro_timeout_id = 0;
+                micro_dismiss();
+                return G_SOURCE_REMOVE;
+              },
+              nullptr);
           return G_SOURCE_REMOVE;
         }
         return G_SOURCE_CONTINUE;

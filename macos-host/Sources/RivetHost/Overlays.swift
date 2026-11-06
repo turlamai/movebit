@@ -180,6 +180,9 @@ private struct ToastView: View {
 @MainActor
 final class MicroPanelController: ObservableObject {
     @Published var progress = 1.0
+    /// The countdown reached zero. Completion is NOT a self-report: the user
+    /// marks Done in the tray, or clicks the card away as a Hide.
+    @Published var finished = false
 
     var onDone: ((Int64) -> Void)?
     var onHide: ((Int64) -> Void)?
@@ -194,6 +197,7 @@ final class MicroPanelController: ObservableObject {
         generation += 1
         let generation = generation
         progress = 1
+        finished = false
         currentCueId = cueId
 
         let panel = self.panel ?? makePanel()
@@ -215,7 +219,14 @@ final class MicroPanelController: ObservableObject {
                 guard generation == self.generation else { return }
                 self.progress = max(0, self.progress - Double(tick) / Double(totalNanos))
                 if self.progress <= 0 {
-                    self.finish()
+                    self.finished = true
+                    // Leave the card briefly so the finish is visible, then
+                    // hide it without claiming completion. The cue stays
+                    // open in the tray for an explicit Done.
+                    try? await Task.sleep(nanoseconds: 60_000_000_000)
+                    guard generation == self.generation, self.finished else { return }
+                    self.dismissInteractive()
+                    return
                 }
             }
         }
@@ -295,7 +306,7 @@ private struct MicroBreakView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(Palette.inkPrimary)
             }
-            Text(L10n.t("micro.hint"))
+            Text(L10n.t(controller.finished ? "micro.finishedHint" : "micro.hint"))
                 .font(.system(size: 11.5))
                 .foregroundColor(Palette.inkMuted)
             GeometryReader { geo in
@@ -308,6 +319,13 @@ private struct MicroBreakView: View {
             }
             .frame(height: 4)
             .padding(.top, 6)
+            if controller.finished {
+                Button(L10n.t("micro.done")) { controller.finish() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+                    .controlSize(.small)
+                    .padding(.top, 4)
+            }
         }
         .padding(EdgeInsets(top: 18, leading: 26, bottom: 18, trailing: 26))
         .frame(width: 400)
