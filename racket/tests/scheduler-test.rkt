@@ -183,3 +183,12 @@
   (h-step-minutes! h 25)
   (check-equal? (h-fired h) '())
   (check-equal? (h-sit-cycle-ms h) 0))
+
+;; Snoozing a disabled kind leaves no hidden timer behind: re-enabling it
+;; starts a fresh interval instead of firing immediately.
+(let ([h (make-harness #:sit 20 #:water 300)])
+  (h-patch-config! h #:sit-enabled #f)
+  (scheduler-snooze! (h-scheduler h) 'sit)
+  (h-patch-config! h #:sit-enabled #t)
+  (h-step-minutes! h 1)
+  (check-equal? (h-fired h) '()))

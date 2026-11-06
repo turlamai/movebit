@@ -287,11 +287,17 @@
 ;; ACTIVE time. The accumulator may go negative when snooze exceeds the
 ;; interval; accessors clamp it back to zero.
 (define (scheduler-snooze! s kind)
-  (define snooze-ms (interval-ms (reminder-config-snooze-minutes (scheduler-config s))))
+  (define config (scheduler-config s))
+  (define snooze-ms (interval-ms (reminder-config-snooze-minutes config)))
+  ;; A disabled kind has no live cycle to defer; leaving it at zero keeps a
+  ;; later re-enable from firing early.
   (case kind
-    [(sit) (set-movebit-scheduler-sit-accum-ms! s (- (sit-interval s) snooze-ms))]
-    [(water) (set-movebit-scheduler-water-accum-ms! s (- (water-interval s) snooze-ms))]
-    [(micro) (set-movebit-scheduler-micro-accum-ms! s (- (micro-interval s) snooze-ms))]))
+    [(sit) (when (reminder-config-sit-enabled config)
+             (set-movebit-scheduler-sit-accum-ms! s (- (sit-interval s) snooze-ms)))]
+    [(water) (when (reminder-config-water-enabled config)
+               (set-movebit-scheduler-water-accum-ms! s (- (water-interval s) snooze-ms)))]
+    [(micro) (when (reminder-config-micro-break-enabled config)
+               (set-movebit-scheduler-micro-accum-ms! s (- (micro-interval s) snooze-ms)))]))
 
 ;; Carries a persisted same-day record into a fresh session so a mid-day
 ;; restart keeps the morning's activity (a fresh session would otherwise flush
