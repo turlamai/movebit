@@ -286,7 +286,6 @@ struct ToastCard {
   void Dismiss() {
     cue_id = 0;
     if (timer) timer.Stop();
-    if (hide_timer) hide_timer.Stop();
     if (window) {
       window.Close();
       window = {nullptr};
