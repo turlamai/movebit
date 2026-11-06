@@ -62,7 +62,8 @@
    quiet-hours-start-minutes ; 1320 = 22:00 local
    quiet-hours-end-minutes   ; 420  = 07:00 local
    ;; Issue #104: a directly placed home position, normalized to the usable
-   ;; work area (0..1000 per-mille) so it survives monitor/DPI changes.
+   ;; work area (0..1000 per-mille, origin top-left) so it survives
+   ;; monitor/DPI changes and means the same place on every host.
    ;; -1 means "use the named dock".
    companion-free-x
    companion-free-y)
