@@ -45,9 +45,20 @@ if [[ -z "${DISPLAY:-}" ]]; then
   export DISPLAY=:99
   sleep 1
 fi
+stop_app() {
+  [[ -n "${app_pid:-}" ]] || return 0
+  kill -TERM "$app_pid" 2>/dev/null || true
+  for _ in $(seq 1 100); do
+    kill -0 "$app_pid" 2>/dev/null || break
+    sleep .05
+  done
+  kill -KILL "$app_pid" 2>/dev/null || true
+  wait "$app_pid" 2>/dev/null || true
+  app_pid=''
+}
 cleanup() {
   status=$?
-  [[ -n "${app_pid:-}" ]] && kill "$app_pid" 2>/dev/null || true
+  stop_app
   [[ -n "$xvfb_pid" ]] && kill "$xvfb_pid" 2>/dev/null || true
   exit "$status"
 }
@@ -75,7 +86,7 @@ start_app() {
 # 1. Default: pointer-through.
 start_app
 shipped="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
-kill "$app_pid"; wait "$app_pid" 2>/dev/null || true; app_pid=''
+stop_app
 [[ "$shipped" == "0" ]] || { echo "pointer-through broken: $shipped input rectangles" >&2; exit 1; }
 
 # 2. Placement: bounded region, drag, persistence.
