@@ -67,11 +67,13 @@ jobs:
       - uses: actions/checkout@v7
       - uses: Bogdanp/setup-racket@v1.16
         with: {version: '9.3', architecture: x64, distribution: full, variant: CS}
-      - run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config libgtk-4-dev libjson-glib-dev libglib2.0-dev libsecret-1-dev liblz4-dev zlib1g-dev libncurses-dev libx11-dev libxtst-dev weston at-spi2-core python3-pyatspi
+      - run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config libgtk-4-dev libjson-glib-dev libglib2.0-dev libsecret-1-dev liblz4-dev zlib1g-dev libncurses-dev libx11-dev libxtst-dev libxext-dev xvfb xdotool weston at-spi2-core python3-pyatspi
       - run: raco pkg install --auto --no-docs "https://github.com/turlamai/rivet.git#${RIVET_PIN}"
       - run: echo "FULL_RACKET_BIN=$(dirname "$(command -v raco)")" >> "$GITHUB_ENV"
       - uses: turlamai/rivet/.github/actions/setup-embed-racket@8ccc95530af43287d1b7e94e1ae69e10279b4db4
       - run: PATH="$FULL_RACKET_BIN:$PATH" dbus-run-session -- raco rivet acceptance --json
+      - name: X11 placement acceptance (pointer-through, drag, persistence, timeout)
+        run: dbus-run-session -- xvfb-run -a --server-args="-screen 0 1280x900x24" bash scripts/e2e/linux-placement.sh
       - uses: actions/upload-artifact@v7
         if: always()
         with: {name: movebit-acceptance-linux, path: .rivet/acceptance/, if-no-files-found: warn}
