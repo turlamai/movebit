@@ -2741,7 +2741,11 @@ void set_interactive(bool interactive);
 
 void present(int state, std::string const& message, GtkApplication* app,
              std::int64_t cue_id = 0) {
-  if (g_state.mubi_placing) end_placement();
+  // A real presentation (cue, ack, focus) ends placement; idle repaints and
+  // config refreshes must not silently drop the user's drag mode.
+  if (g_state.mubi_placing && (state != 0 || !message.empty())) {
+    end_placement();
+  }
   if (!g_state.mubi_x11) return;  // Wayland: notification fallback only
   if (g_state.acceptance) return;  // headless probe sees the main window only
   if (app == nullptr) app = g_state.app;
