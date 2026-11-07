@@ -95,11 +95,15 @@ active="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
 [[ "$active" -ge 1 && "$active" -le 2 ]] || { echo "unexpected placement region: $active" >&2; exit 1; }
 before="$(xwininfo -id "$win" | awk '/Absolute upper-left X/{x=$4}/Absolute upper-left Y/{y=$4}END{print x","y}')"
 xdotool mousemove --window "$win" 30 40
+sleep .2
 xdotool mousedown 1
-xdotool mousemove_relative --sync -- -60 -40
-xdotool mousemove_relative --sync -- -60 -40
+sleep .2
+xdotool mousemove_relative --sync -- -50 -35
+sleep .2
+xdotool mousemove_relative --sync -- -50 -35
+sleep .2
 xdotool mouseup 1
-sleep .5
+sleep .8
 after="$(xwininfo -id "$win" | awk '/Absolute upper-left X/{x=$4}/Absolute upper-left Y/{y=$4}END{print x","y}')"
 [[ "$before" != "$after" ]] || { echo "drag did not move the window" >&2; exit 1; }
 free_x=-1; free_y=-1
