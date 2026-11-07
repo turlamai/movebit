@@ -512,6 +512,9 @@ final class CompanionController: NSObject {
     /// completion/snooze or asks for screen-wide mouse permissions.
     func moveAside() {
         endPlacement()
+        // An explicit Move Aside during a cue's travel wins: cancel the
+        // in-flight visit so it cannot carry Mubi back to the old home.
+        cancelVisit()
         // A one-click move falls back to the named docks; it must override a
         // previously placed free position for this session.
         freeX = -1
