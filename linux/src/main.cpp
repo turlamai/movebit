@@ -2391,6 +2391,10 @@ void on_mubi_hide(GtkButton*, gpointer);
 // The window is placed via gtk_window_move (honored on X11) and is fully
 // pointer-through via gtk_widget_set_can_target(FALSE) — the #54 fallback.
 
+void show_toast_plain(std::string const& title,
+                      std::vector<std::string> const& lines,
+                      rivet_app::ReminderKind accent, GtkApplication* app);
+
 namespace mubi {
 
 using PathIter = std::string::const_iterator;
@@ -2734,9 +2738,6 @@ void begin_placement();
 void end_placement();
 void save_placement();
 void set_interactive(bool interactive);
-void show_toast_plain(std::string const& title,
-                      std::vector<std::string> const& lines,
-                      rivet_app::ReminderKind accent, GtkApplication* app);
 
 void present(int state, std::string const& message, GtkApplication* app,
              std::int64_t cue_id = 0) {
@@ -2997,9 +2998,9 @@ void begin_placement() {
       },
       nullptr);
   if (g_state.app != nullptr) {
-    show_toast_plain(l10n::t("tray.placeMubi"),
-                     {l10n::t("tray.placeHint")},
-                     rivet_app::ReminderKind::water, g_state.app);
+    ::show_toast_plain(l10n::t("tray.placeMubi"),
+                       {l10n::t("tray.placeHint")},
+                       rivet_app::ReminderKind::water, g_state.app);
   }
   refresh_header_buttons();
 }
