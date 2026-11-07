@@ -3012,8 +3012,13 @@ void begin_placement() {
       },
       nullptr);
   if (g_state.mubi_place_timer != 0) g_source_remove(g_state.mubi_place_timer);
+  int timeout_seconds = 30;
+  if (char const* test_timeout = g_getenv("MOVEBIT_PLACEMENT_TIMEOUT_SECONDS")) {
+    int const parsed = std::atoi(test_timeout);
+    if (parsed > 0) timeout_seconds = parsed;
+  }
   g_state.mubi_place_timer = g_timeout_add_seconds(
-      30,
+      timeout_seconds,
       +[](gpointer) -> int {
         g_state.mubi_place_timer = 0;
         end_placement();

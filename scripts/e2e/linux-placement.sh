@@ -108,8 +108,9 @@ done
 [[ "$free_x" -ge 0 && "$free_x" -le 1000 && "$free_y" -ge 0 && "$free_y" -le 1000 ]] \
   || { echo "free position not persisted: $free_x,$free_y" >&2; exit 1; }
 
-# 3. Timeout restores pointer-through.
-sleep 32
+# 3. Timeout restores pointer-through (the test may shorten it).
+wait_seconds="${MOVEBIT_PLACEMENT_TIMEOUT_SECONDS:-32}"
+sleep "$((wait_seconds > 30 ? 32 : wait_seconds + 2))"
 restored="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
 [[ "$restored" == "0" ]] || { echo "timeout left input captured: $restored" >&2; exit 1; }
 
