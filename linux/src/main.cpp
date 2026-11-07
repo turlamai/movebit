@@ -2964,6 +2964,17 @@ void set_interactive(bool interactive) {
                                    &bounds)) {
       return;
     }
+    // The canvas allocation may not exist yet when placement is entered
+    // (before the first frame). Fall back to the body area instead of
+    // installing a useless 0×0 region.
+    if (bounds.size.width < 1 || bounds.size.height < 1) {
+      bounds.origin.x = 4;
+      bounds.origin.y = 4;
+      bounds.size.width =
+          std::max(1, gtk_widget_get_width(GTK_WIDGET(g_state.mubi_window)) - 8);
+      bounds.size.height =
+          std::max(1, gtk_widget_get_height(GTK_WIDGET(g_state.mubi_window)) - 8);
+    }
     double const scale = gdk_surface_get_scale(surface);
     cairo_rectangle_int_t rect;
     rect.x = static_cast<int>(std::floor(bounds.origin.x * scale)) - 2;
@@ -2988,6 +2999,14 @@ void begin_placement() {
   if (g_state.mubi_window == nullptr) return;
   g_state.mubi_placing = true;
   set_interactive(true);
+  // Recompute once the window has been allocated this frame.
+  g_timeout_add(
+      60,
+      +[](gpointer) -> int {
+        if (g_state.mubi_placing) set_interactive(true);
+        return G_SOURCE_REMOVE;
+      },
+      nullptr);
   if (g_state.mubi_place_timer != 0) g_source_remove(g_state.mubi_place_timer);
   g_state.mubi_place_timer = g_timeout_add_seconds(
       30,
