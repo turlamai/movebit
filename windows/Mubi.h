@@ -227,6 +227,8 @@ struct MubiCompanion {
   // or any still-pending reminder's completion state.
   void MoveAside() {
     EndPlacement();
+    // Cancel an in-flight cue visit; Render below re-homes at the new dock.
+    StopVisit();
     free_x = -1;
     free_y = -1;
     if (dock == "bottom-right") dock = "bottom-left";
