@@ -48,13 +48,20 @@ fi
 stop_app() {
   [[ -n "${app_pid:-}" ]] || return 0
   kill -TERM "$app_pid" 2>/dev/null || true
-  for _ in $(seq 1 100); do
+  for _ in $(seq 1 200); do
     kill -0 "$app_pid" 2>/dev/null || break
     sleep .05
   done
   kill -KILL "$app_pid" 2>/dev/null || true
   wait "$app_pid" 2>/dev/null || true
   app_pid=''
+  # A lingering GApplication would swallow the next launch (single
+  # instance) and make the placement window belong to the old process.
+  for _ in $(seq 1 100); do
+    if ! xdotool search --name '^Mubi$' 2>/dev/null | grep -q .; then return 0; fi
+    sleep .1
+  done
+  return 0
 }
 cleanup() {
   status=$?
@@ -91,8 +98,17 @@ stop_app
 
 # 2. Placement: bounded region, drag, persistence.
 start_app placement
-active="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
-[[ "$active" -ge 1 && "$active" -le 2 ]] || { echo "unexpected placement region: $active" >&2; exit 1; }
+active=0
+for _ in $(seq 1 80); do
+  active="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
+  [[ "$active" -ge 1 ]] && break
+  sleep .05
+done
+[[ "$active" -ge 1 && "$active" -le 2 ]] || {
+  echo "unexpected placement region: $active" >&2
+  tail -20 "$out/application.log" >&2 || true
+  exit 1
+}
 before="$(xwininfo -id "$win" | awk '/Absolute upper-left X/{x=$4}/Absolute upper-left Y/{y=$4}END{print x","y}')"
 xdotool mousemove --window "$win" 30 40
 sleep .2
