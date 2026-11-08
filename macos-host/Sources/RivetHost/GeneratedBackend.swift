@@ -7,8 +7,8 @@ public enum RivetGeneratedConfig {
     public static let moduleName = "backend"
     public static let entryName = "start"
     public static let displayName = "MoveBit"
-    public static let version = "0.0.5"
-    public static let build: Int64 = 2
+    public static let version = "0.0.6"
+    public static let build: Int64 = 3
     public static let identifier = "site.jrtx.movebit"
     public static let releaseChannel = "stable"
 }

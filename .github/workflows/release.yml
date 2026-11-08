@@ -374,8 +374,10 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(printf '%s' "$GITHUB_REF_NAME" | cut -c2-)"
-          awk -v header="## [$VERSION]" '
-            index($0, header) == 1 {on=1; next}
+          # Accept both heading styles used in this repo's history:
+          #   ## 0.0.5 (2026-11-01)      and      ## [0.0.6] (2026-11-08)
+          awk -v version="$VERSION" '
+            $0 ~ ("^## \\[?" version "\\]?( |$)") {on=1; next}
             on && /^## / {exit}
             on {print}
           ' CHANGELOG.md > /tmp/notes.md
