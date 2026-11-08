@@ -51,6 +51,16 @@ jobs:
         run: |
           raco pkg install --auto --no-docs \
             'https://github.com/turlamai/rivet.git#9d766b4acab672844093204cb4845ef4ef933d2c'
+      - name: Cache appimagetool through the authenticated API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in x64) ARCH=x86_64 ;; arm64) ARCH=aarch64 ;; esac
+          mkdir -p .rivet/bin
+          gh release download 1.9.0 -R AppImage/appimagetool \
+            -p "appimagetool-${ARCH}.AppImage" -D .rivet/bin --clobber
+          test -s ".rivet/bin/appimagetool-${ARCH}.AppImage"
       - name: Build actual unsigned Linux release AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
