@@ -359,6 +359,58 @@
         (delete-directory image-dir)
         (stop-server!)))))
 
+;; start-download! must finish cleanly after a successful AppImage swap: the
+;; replaced image path is a string (from $APPIMAGE), not a path object.
+(when (eq? (upd:platform-symbol) 'linux)
+(test-case "AppImage start-download! records the replaced image path"
+  (define arch (upd:architecture-symbol))
+  (define asset (format "movebit-9.9.9-linux-~a.AppImage" arch))
+  (define payload (make-bytes 32768 9))
+  (define digest (bytes->hex-string (sha256-bytes payload)))
+  (define-values (port-number stop-server!)
+    (serve-files! (list (cons (string-append "/valid/" asset) payload))))
+  (define image-dir
+    (make-temporary-file "movebit-appimage-start-~a" 'directory))
+  (define image-path (build-path image-dir "movebit.AppImage"))
+  (define old-appimage (getenv "APPIMAGE"))
+  (define artifact
+    (apply update-artifact 'linux arch
+           (format "http://127.0.0.1:~a/valid/~a" port-number asset)
+           digest (bytes-length payload) 'appimage '() component-tail))
+  (define candidate
+    (update-candidate
+     (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
+                      "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
+                      (list artifact))
+     artifact))
+  (call-with-output-file image-path #:exists 'truncate
+    (lambda (out) (write-bytes (make-bytes 16 3) out)))
+  (putenv "APPIMAGE" (path->string image-path))
+  (dynamic-wind
+    void
+    (lambda ()
+      (upd:reset-update-state!)
+      (upd:set-candidate! candidate)
+      (upd:start-download! image-dir)
+      (define phase
+        (let loop ([n 0])
+          (define p (hash-ref (upd:update-state-snapshot) 'phase))
+          (cond
+            [(member p '("downloaded" "error")) p]
+            [(> n 500) p]
+            [else (sleep 0.02) (loop (add1 n))])))
+      (check-equal? phase "downloaded")
+      (check-true
+       (string? (hash-ref (upd:update-state-snapshot) 'downloadedPath #f)))
+      (check-equal? (sha256-file/hex image-path) digest))
+    (lambda ()
+      (putenv "APPIMAGE" (or old-appimage ""))
+      (when (file-exists? image-path) (delete-file image-path))
+      (define previous (string-append (path->string image-path) ".previous"))
+      (when (file-exists? previous) (delete-file previous))
+      (delete-directory/files image-dir #:must-exist? #f)
+      (stop-server!)))))
+
 ;; ---- persistent silent-check throttle ------------------------------------------
 
 (test-case "the 4-hour throttle stamp is persistent and settled-only"

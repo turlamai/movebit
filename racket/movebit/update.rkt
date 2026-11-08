@@ -542,7 +542,8 @@
             (state-set! 'availableVersion
                         (update-manifest-version
                          (update-candidate-manifest candidate)))
-            (state-set! 'downloadedPath (path->string path))))))
+            (state-set! 'downloadedPath
+                        (if (path? path) (path->string path) path))))))
      (set-box! worker-thread-box worker-thread)
      ;; Watchdog: exits once the worker finishes on its own; otherwise a stall
      ;; (no byte progress) or the total wall-clock limit breaks the worker so
