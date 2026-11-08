@@ -232,6 +232,20 @@ jobs:
       - name: Install pinned Rivet (tag package install)
         shell: bash
         run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
+      # Rivet caches appimagetool in .rivet/bin and verifies its pinned
+      # digest. Fetch it through the authenticated API: the public release
+      # asset URL is currently returning 504 to unauthenticated curl, which
+      # would block the AppImage legs before packaging starts.
+      - name: Cache appimagetool through the authenticated API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in x64) ARCH=x86_64 ;; arm64) ARCH=aarch64 ;; esac
+          mkdir -p .rivet/bin
+          gh release download 1.9.0 -R AppImage/appimagetool \
+            -p "appimagetool-${ARCH}.AppImage" -D .rivet/bin --clobber
+          test -s ".rivet/bin/appimagetool-${ARCH}.AppImage"
       - name: Package (rivet release, development signing)
         shell: bash
         env:
