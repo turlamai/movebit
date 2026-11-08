@@ -1,11 +1,40 @@
 # Changelog
 
-## Unreleased
+## 0.0.6 (2026-11-08)
+
+The trustworthy-companion slice: reminders you can shape, outcomes that never
+pretend to be more than they are, and a Mubi you can place by hand on every
+desktop.
+
+### Added
+
+- **Named reminder rhythms.** Balanced (default), Gentle and Frequent presets with exact, visible values; per-kind on/off switches; a local quiet-hours window that pauses reminders and resumes on its own; and config schema v3 with a one-time migration of 0.0.1 settings plus a `config.json.v2.bak` copy.
+- **Guided micro-breaks, strictly opt-in.** While an eye cue is open you can start a 20-second look-away card; while a stand cue is open, a two-minute, self-paced movement invitation. Nothing counts down until **Start**, Done is an explicit self-report, and stopping records `abandoned` instead of pretending the break happened.
+- **Place Mubi where you want it.** A temporary placement mode (macOS, Windows, and Linux X11) turns the character into a draggable surface for up to 30 seconds, then restores pointer-through. The normalized position is remembered per display, clamped after monitor/DPI changes, and honored on every desktop.
+- **Honest per-kind outcomes.** The Today view shows how many invitations were actually presented next to how many you marked done; days or kinds without evidence stay unknown instead of becoming zero.
+
+### Changed
+
+- **First run is one screen.** The real character, one sentence, and Start — no cadence wizard, no license promotion. Everyday settings are rhythm and sound; per-kind tuning, quiet hours, character size/motion/dock and language sit behind one Customize disclosure.
+- Sound now defaults to off for fresh installs; existing choices are preserved.
+- The eye-rest card no longer starts a countdown automatically, and finishing a timer no longer acknowledges anything.
 
 ### Fixed
 
-- Windows portable updates stop safely after a two-minute old-process exit deadline instead of polling indefinitely. Failure to confirm exit leaves the install unchanged, records the unapplied update and never kills the running application. Native Windows coverage includes a real process surviving the update deadline.
-- Windows portable updates restore and relaunch the old installation when the OS rejects the new executable, instead of deleting the backup after an unchecked `start` command. Copy retries are bounded, failures retain their original exit code, and failed restore operations retain the old directory for recovery. Keep the completed helper beside its trace so CMD can return the correct status; the next update replaces it. Native Windows helper fixtures exercise successful launch, copy failure and rejected executable recovery with disposable data; full GUI health and released-version upgrade qualification remain separate gates.
+- **History continuity.** The device id was validated with a POSIX regexp that never matched, so every launch minted a new id and this device could not read its own previous history shards. Fixed with a pregexp and regression coverage.
+- **Move Aside during a cue visit** now cancels the in-flight travel on macOS and Windows, so the character cannot be carried back to its old home.
+- **Windows portable updates** stop safely after a two-minute old-process exit deadline instead of polling indefinitely. Failure to confirm exit leaves the install unchanged, records the unapplied update and never kills the running application. Native Windows coverage includes a real process surviving the update deadline.
+- **Windows portable updates restore and relaunch** the old installation when the OS rejects the new executable, instead of deleting the backup after an unchecked `start` command. Copy retries are bounded, failures retain their original exit code, and failed restores retain the old directory for recovery. Native Windows helper fixtures exercise successful launch, copy failure and rejected-executable recovery.
+- **launchd label migration.** The retired `com.turinglambdaai.movebit` agent is re-registered as `com.turlamai.movebit` on first launch, preserving autostart, without orphaning existing installs.
+
+### Security
+
+- **Signed Linux AppImage updates.** AppImage installs now verify a first-class, per-architecture artifact from the Ed25519-signed manifest (URL, architecture, size and SHA-256) before the atomic swap; an unsigned sibling sidecar is never trusted, and a feed missing the platform AppImage fails closed.
+
+### Tests and release engineering
+
+- X11 placement acceptance runs in CI: pointer-through by default, a bounded input region while placing, a real drag that moves the window, persisted coordinates, and the timeout restoring the empty region.
+- The release matrix validates the exact 18 desktop assets and refuses to publish when the signed AppImage feed does not match the shipped bytes.
 
 ## 0.0.5 (2026-11-01)
 
