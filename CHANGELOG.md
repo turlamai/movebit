@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.7 (2026-11-08)
+
+Release-qualification build. There are no product behaviour changes since
+0.0.6: this release exists so the fixed signed-AppImage updater can be
+exercised across a real published pair (0.0.6 → 0.0.7) on x64 and arm64,
+including a full GUI relaunch with persisted data and an executed
+rollback/rejected-downgrade pass.
+
+### Fixed
+
+- Linux placement acceptance waits for the previous instance to release the
+  single-instance name before launching the measured one.
+- User-facing checksum instructions point at the published `SHA256SUMS`
+  file used since 0.0.6.
+
 ## 0.0.6 (2026-11-08)
 
 The trustworthy-companion slice: reminders you can shape, outcomes that never
