@@ -232,11 +232,7 @@ jobs:
       - name: Install pinned Rivet (tag package install)
         shell: bash
         run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
-      # Rivet caches appimagetool in .rivet/bin and verifies its pinned
-      # digest. Fetch it through the authenticated API: the public release
-      # asset URL is currently returning 504 to unauthenticated curl, which
-      # would block the AppImage legs before packaging starts.
-      - name: Cache appimagetool through the authenticated API
+      - name: Cache appimagetool and its runtime through the authenticated API
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -245,7 +241,20 @@ jobs:
           mkdir -p .rivet/bin
           gh release download 1.9.0 -R AppImage/appimagetool \
             -p "appimagetool-${ARCH}.AppImage" -D .rivet/bin --clobber
-          test -s ".rivet/bin/appimagetool-${ARCH}.AppImage"
+          gh release download continuous -R AppImage/type2-runtime \
+            -p "runtime-${ARCH}" -D .rivet/bin --clobber
+          # appimagetool otherwise downloads the type2 runtime from the same
+          # currently-504 public asset URL. Wrap it so rivet's invocation gets
+          # the pre-fetched runtime through the documented --runtime-file flag.
+          mv ".rivet/bin/appimagetool-${ARCH}.AppImage" \
+             ".rivet/bin/appimagetool-${ARCH}.AppImage.real"
+          chmod +x ".rivet/bin/appimagetool-${ARCH}.AppImage.real"
+          {
+            echo '#!/bin/sh'
+            echo "exec \"\$(dirname \"\$0\")/appimagetool-${ARCH}.AppImage.real\" --runtime-file \"\$(dirname \"\$0\")/runtime-${ARCH}\" \"\$@\""
+          } > ".rivet/bin/appimagetool-${ARCH}.AppImage"
+          chmod +x ".rivet/bin/appimagetool-${ARCH}.AppImage"
+          test -s ".rivet/bin/runtime-${ARCH}"
       - name: Package (rivet release, development signing)
         shell: bash
         env:

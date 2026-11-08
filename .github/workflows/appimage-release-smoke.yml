@@ -51,7 +51,7 @@ jobs:
         run: |
           raco pkg install --auto --no-docs \
             'https://github.com/turlamai/rivet.git#9d766b4acab672844093204cb4845ef4ef933d2c'
-      - name: Cache appimagetool through the authenticated API
+      - name: Cache appimagetool and its runtime through the authenticated API
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -60,7 +60,17 @@ jobs:
           mkdir -p .rivet/bin
           gh release download 1.9.0 -R AppImage/appimagetool \
             -p "appimagetool-${ARCH}.AppImage" -D .rivet/bin --clobber
-          test -s ".rivet/bin/appimagetool-${ARCH}.AppImage"
+          gh release download continuous -R AppImage/type2-runtime \
+            -p "runtime-${ARCH}" -D .rivet/bin --clobber
+          mv ".rivet/bin/appimagetool-${ARCH}.AppImage" \
+             ".rivet/bin/appimagetool-${ARCH}.AppImage.real"
+          chmod +x ".rivet/bin/appimagetool-${ARCH}.AppImage.real"
+          {
+            echo '#!/bin/sh'
+            echo "exec \"\$(dirname \"\$0\")/appimagetool-${ARCH}.AppImage.real\" --runtime-file \"\$(dirname \"\$0\")/runtime-${ARCH}\" \"\$@\""
+          } > ".rivet/bin/appimagetool-${ARCH}.AppImage"
+          chmod +x ".rivet/bin/appimagetool-${ARCH}.AppImage"
+          test -s ".rivet/bin/runtime-${ARCH}"
       - name: Build actual unsigned Linux release AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
