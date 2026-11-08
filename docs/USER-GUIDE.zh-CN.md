@@ -10,7 +10,7 @@
 
 ## 平台与安装
 
-正式发布覆盖 Windows x64、macOS（Apple silicon 与 Intel）和 Linux x64/arm64。每个平台都有便携压缩包；Windows 另有 MSI，macOS 有 DMG，Linux 有 deb、rpm 与 AppImage。请使用[官方 Releases](https://github.com/turlamai/movebit/releases)，选择明确列出的系统/架构资产并核对 SHA-256 校验文件。预览资产可能缺少签名或公证；不要为安装关闭系统级安全保护。
+正式发布覆盖 Windows x64、macOS（Apple silicon 与 Intel）和 Linux x64/arm64。每个平台都有便携压缩包；Windows 另有 MSI，macOS 有 DMG，Linux 有 deb、rpm 与 AppImage。请使用[官方 Releases](https://github.com/turlamai/movebit/releases)，选择明确列出的系统/架构资产并核对发布页的 `SHA256SUMS` 校验文件。预览资产可能缺少签名或公证；不要为安装关闭系统级安全保护。
 
 平台说明：空闲检测使用系统原生 API（GetLastInputInfo / CoreGraphics / XScreenSaver）。Linux 上沐比角色卡在 X11 会话停靠；Wayland 合成器不允许应用自行放置穿透卡片，提醒改为应用内提醒卡投递（提醒、历史与更新照常工作）。
 

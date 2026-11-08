@@ -65,7 +65,7 @@ Grab your build from [Releases](https://github.com/turlamai/movebit/releases/lat
 | Linux x64 | `movebit-<version>-linux-x64.tar.gz` · `.zip` | `movebit-<version>-linux-x64.deb` · `-x86_64.rpm` · `.AppImage` |
 | Linux arm64 | `movebit-<version>-linux-arm64.tar.gz` · `.zip` | `movebit-<version>-linux-arm64.deb` · `-aarch64.rpm` |
 
-Assets follow one lowercase scheme, `movebit-<version>-<os>-<arch>.<ext>` (for example `movebit-0.0.5-macos-arm64.dmg`). Release downloads include one checked `SHA256SUMS` file covering all versioned packages and the Ed25519-signed `update-manifest.json` for in-app updates. Per-file checksum sidecars and duplicate versionless installers are not published.
+Assets follow one lowercase scheme, `movebit-<version>-<os>-<arch>.<ext>` (for example `movebit-0.0.6-macos-arm64.dmg`). Release downloads include one checked `SHA256SUMS` file covering all versioned packages and the Ed25519-signed `update-manifest.json` for in-app updates. Per-file checksum sidecars and duplicate versionless installers are not published.
 
 Platform notes:
 
