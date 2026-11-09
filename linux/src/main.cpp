@@ -4265,8 +4265,7 @@ void bootstrap(GtkApplication* app) {
   // one real due cue after startup so the X11 e2e can measure approach and
   // return without waiting for a schedule.
   char const* visit_test = g_getenv("MOVEBIT_VISIT_TEST");
-  if (visit_test != nullptr && std::string(visit_test) == "1" &&
-      g_state.mubi_x11) {
+  if (visit_test != nullptr && std::string(visit_test) == "1") {
     g_timeout_add(
         2500,
         +[](gpointer) -> int {
