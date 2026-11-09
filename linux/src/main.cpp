@@ -4261,6 +4261,20 @@ void bootstrap(GtkApplication* app) {
       g_state.mubi_x11) {
     mubi::begin_placement();
   }
+  // Deterministic acceptance hook for the central cue visit (#104): deliver
+  // one real due cue after startup so the X11 e2e can measure approach and
+  // return without waiting for a schedule.
+  char const* visit_test = g_getenv("MOVEBIT_VISIT_TEST");
+  if (visit_test != nullptr && std::string(visit_test) == "1" &&
+      g_state.mubi_x11) {
+    g_timeout_add(
+        2500,
+        +[](gpointer) -> int {
+          mubi::present(1, "Water", nullptr, 4242);
+          return G_SOURCE_REMOVE;
+        },
+        nullptr);
+  }
 }
 
 int on_backend_finished(gpointer user_data) {
