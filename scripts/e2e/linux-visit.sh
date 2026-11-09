@@ -26,7 +26,15 @@ if [[ -z "${DISPLAY:-}" ]]; then
 fi
 cleanup() {
   status=$?
-  [[ -n "${app_pid:-}" ]] && { kill -TERM "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; }
+  if [[ -n "${app_pid:-}" ]]; then
+    kill -TERM "$app_pid" 2>/dev/null || true
+    for _ in $(seq 1 200); do
+      kill -0 "$app_pid" 2>/dev/null || break
+      sleep .05
+    done
+    kill -KILL "$app_pid" 2>/dev/null || true
+    wait "$app_pid" 2>/dev/null || true
+  fi
   [[ -n "$xvfb_pid" ]] && kill "$xvfb_pid" 2>/dev/null || true
   exit "$status"
 }
