@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.9 (2026-11-09)
+
+Release-qualification build. No product behaviour changes since 0.0.8: this
+is the published N+1 target for the real 0.0.8 → 0.0.9 signed AppImage
+update, GUI relaunch with persisted data, and rollback/rejected-downgrade
+qualification tracked in #96.
+
 ## 0.0.8 (2026-11-09)
 
 The AppImage update-fix release, and the clean baseline for the released
