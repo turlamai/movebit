@@ -125,6 +125,12 @@ jobs:
           }
           wait_for_window /tmp/qual/data/movebit.AppImage
           wait_for_window /tmp/qual/data/movebit.AppImage.previous
+          # Executed rollback: put the retained N image back and launch it.
+          cp /tmp/qual/data/movebit.AppImage.previous /tmp/qual/data/movebit.AppImage
+          chmod +x /tmp/qual/data/movebit.AppImage
+          wait_for_window /tmp/qual/data/movebit.AppImage
+          echo "rollback ok"
+          echo true > /tmp/qual/rollback
 
       - name: Write evidence
         if: always()
@@ -138,6 +144,7 @@ jobs:
             echo "  \"to\": \"$TO_VERSION\","
             echo "  \"fromSha256\": \"$EXPECTED_FROM_SHA\","
             echo "  \"toSha256\": \"$EXPECTED_TO_SHA\","
+            echo "  \"rollback\": $( [[ -f /tmp/qual/rollback ]] && echo true || echo false ),"
             echo "  \"upgrade\": $(cat /tmp/qual/upgrade.json 2>/dev/null || echo null)"
             echo "}"
           } > /tmp/qual/evidence.json

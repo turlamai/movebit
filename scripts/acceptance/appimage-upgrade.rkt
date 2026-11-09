@@ -44,7 +44,7 @@
 (putenv "APPIMAGE" from)
 
 (define checked (upd:perform-check! feed))
-(displayln (format "check: ~a" checked))
+(eprintf "check: ~a~n" checked)
 (unless (equal? (hash-ref checked 'status #f) "available")
   (fail "feed did not offer an update: ~a" checked))
 (unless (equal? (hash-ref checked 'availableVersion #f) expected-version)
