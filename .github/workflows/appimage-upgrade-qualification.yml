@@ -93,6 +93,7 @@ jobs:
           EXPECTED_VERSION="$TO_VERSION" \
           EXPECTED_FROM_SHA="$EXPECTED_FROM_SHA" \
           EXPECTED_TO_SHA="$EXPECTED_TO_SHA" \
+          DOWNGRADE_FEED_URL="https://github.com/turlamai/movebit/releases/download/v${FROM_VERSION}" \
           OUTPUT_JSON=/tmp/qual/upgrade.json \
           racket scripts/acceptance/appimage-upgrade.rkt
 

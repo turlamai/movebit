@@ -80,8 +80,21 @@
 (unless (equal? previous-sha expected-from-sha)
   (fail "previous image sha ~a != expected N ~a" previous-sha expected-from-sha))
 
+;; Replay the older signed feed as the already-upgraded version: a real
+;; downgrade must be refused, not offered again.
+(define downgrade-status
+  (let ([feed (getenv "DOWNGRADE_FEED_URL")])
+    (and feed
+         (parameterize ([upd:current-update-version expected-version])
+           (define checked (upd:perform-check! feed))
+           (hash-ref checked 'status #f)))))
+(when (and (getenv "DOWNGRADE_FEED_URL")
+           (not (equal? downgrade-status "up-to-date")))
+  (fail "older signed feed was not refused: ~a" downgrade-status))
+
 (define result
   (hasheq 'phase phase
+          'downgradeStatus downgrade-status
           'availableVersion (hash-ref snapshot 'availableVersion #f)
           'downloadedPath (hash-ref snapshot 'downloadedPath #f)
           'replacedSha256 to-sha
