@@ -1,694 +1,658 @@
-<!doctype html>
-<html lang="zh-CN">
+<!DOCTYPE html>
+<html lang="zh-CN" data-kit-id="movebit">
+
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MoveBit — 一个真正能让你离开椅子的休息提醒</title>
-  <meta name="description" content="MoveBit 是本地优先的跨平台健康提醒工具：统计真实电脑活跃时长，久坐、喝水、护眼提醒由屏幕边缘的小家伙沐比温柔交付，永不锁屏、不打断；Windows、macOS、Linux 均提供安装器与便携压缩包，发布附带 SHA-256 校验。">
-  <meta name="theme-color" content="#faf7f2">
-  <meta name="color-scheme" content="light dark">
-  <link rel="canonical" href="https://movebit.jrtx.site/">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="MoveBit">
-  <meta property="og:title" content="MoveBit — 久坐、喝水、护眼，由沐比温柔提醒">
-  <meta property="og:description" content="统计真实活跃时长。久坐、喝水、护眼，由沐比温柔提醒，永不打断。Windows、macOS、Linux 一次安装即可。">
-  <meta property="og:url" content="https://movebit.jrtx.site/">
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="MoveBit — 久坐、喝水、护眼，由沐比温柔提醒">
-  <meta name="twitter:description" content="统计真实活跃时长，识别离席；喝水、起身、护眼由沐比温柔提醒。">
-  <script>
-    // Anti-flicker: resolve theme (and language) before first paint.
-    (function () {
-      var t;
-      try { t = localStorage.getItem('movebit-theme'); } catch (e) {}
-      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      document.documentElement.dataset.theme = t;
-      var l;
-      try { l = localStorage.getItem('movebit-lang-override-v2'); } catch (e) {}
-      if (l !== 'zh' && l !== 'en') l = (navigator.language || 'zh').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
-      document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
-    })();
-  </script>
-  <link rel="stylesheet" href="styles.css">
-  <script>document.documentElement.classList.add('js');</script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "MoveBit",
-    "applicationCategory": "HealthApplication",
-    "operatingSystem": "Windows, macOS, Linux",
-    "url": "https://movebit.jrtx.site/",
-    "downloadUrl": "https://github.com/turlamai/movebit/releases/latest",
-    "codeRepository": "https://github.com/turlamai/movebit",
-    "license": "https://github.com/turlamai/movebit/blob/main/LICENSE",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
-  }
-  </script>
-<script>
-var _hmt = _hmt || [];
-(function() {
-  var hm = document.createElement("script");
-  hm.src = "https://hm.baidu.com/hm.js?8e2445912635226bcba0c400bfb6079d";
-  var s = document.getElementsByTagName("script")[0];
-  s.parentNode.insertBefore(hm, s);
-})();
-</script>
-<style>
-  #product-support { display:flex; flex-wrap:wrap; justify-content:center; gap:12px 24px; padding:24px; font:inherit; border-top:1px solid var(--border, #a8a29e); }
-  #product-support a:focus-visible { outline:2px solid currentColor; outline-offset:4px; }
-  html:lang(en) #product-support .support-zh, html:lang(zh) #product-support .support-en { display:none; }
-</style>
-<style id="product-start-style">
-.product-availability{font-size:.95rem;line-height:1.65;max-width:72ch;margin:18px 0;opacity:.85} .hero .product-availability{margin-left:auto;margin-right:auto}
-.product-start{max-width:1120px;margin:64px auto;padding:32px 24px;border-top:1px solid var(--border,#aaa);font:inherit;line-height:1.65}
-.product-start h2{font-size:clamp(1.7rem,3vw,2.4rem);letter-spacing:-.025em;margin:0 0 16px}.product-start h3{font-size:1.05rem;margin:0 0 10px}.product-start p{margin:0 0 16px;max-width:74ch}.product-start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;margin:28px 0}.product-start a{text-decoration:underline;text-underline-offset:4px;overflow-wrap:anywhere}.product-start a:focus-visible{outline:2px solid currentColor;outline-offset:5px}.product-start .start-links{display:flex;gap:16px 24px;flex-wrap:wrap}.product-start .start-status{font-weight:600}.product-start .start-limits{font-size:.95em}
-html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}@media(max-width:700px){.product-start{margin:40px auto;padding:24px 20px}.product-start-grid{grid-template-columns:1fr;gap:18px}}
-</style>
-<style>.lang-menu li.lang-choice{padding:0}.lang-menu .lang-choice button{display:block;width:100%;padding:8px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.lang-menu .lang-choice button:focus-visible{outline:2px solid currentColor;outline-offset:-2px;border-radius:4px}</style>
-<style id="visual-showcase-css">
-/* Visual Showcase: process illustration, intentionally not an app screenshot. */
-.vs-showcase{padding:clamp(48px,7vw,88px) 24px;background:var(--bg,var(--surface,#faf7f2));color:var(--text,var(--ink,#24211d))}
-.vs-showcase *{box-sizing:border-box}
-.vs-showcase .vs-wrap{max-width:1080px;margin:0 auto}
-.vs-showcase .vs-intro{text-align:center;max-width:680px;margin:0 auto 28px}
-.vs-showcase .vs-label{text-transform:uppercase;letter-spacing:.14em;font-size:.7rem;font-weight:700;color:var(--accent,#b85d3f)}
-.vs-showcase h2{font:inherit;font-size:clamp(1.65rem,3.3vw,2.5rem);font-weight:700;line-height:1.2;letter-spacing:-.04em;margin:12px 0}
-.vs-showcase .vs-lead,.vs-showcase .vs-caption{color:var(--text-2,var(--muted,#6b6660));line-height:1.7}
-.vs-showcase .vs-frame{padding:clamp(18px,3vw,34px);border:1px solid var(--border,var(--line,#e8e2d9));background:var(--bg-card,var(--surface,#fff));border-radius:24px;box-shadow:0 20px 60px rgba(36,29,18,.07);overflow:hidden}
-.vs-showcase .vs-stage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.vs-showcase .vs-step{position:relative;min-height:170px;padding:22px 18px;border-radius:16px;background:var(--bg,var(--surface,#faf7f2));border:1px solid var(--border,var(--line,#e8e2d9))}
-.vs-showcase .vs-step:not(:last-child):after{content:"→";position:absolute;z-index:1;right:-15px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:var(--bg-card,var(--surface,#fff));color:var(--accent,#b85d3f);border:1px solid var(--border,var(--line,#e8e2d9))}
-.vs-showcase .vs-glyph{font-size:1.75rem;display:block;margin-bottom:24px;color:var(--accent,#b85d3f)}
-.vs-showcase .vs-step b{display:block;font-size:1.03rem;margin-bottom:7px}
-.vs-showcase .vs-step small{display:block;color:var(--text-2,var(--muted,#6b6660));font-size:.84rem;line-height:1.5}
-.vs-showcase .vs-caption{font-size:.79rem;text-align:center;margin:16px 0 0}
-.vs-showcase .vs-art{margin-bottom:22px;background:var(--bg,var(--surface,#f6f3ed));border:1px solid var(--border,var(--line,#e8e2d9));border-radius:18px;padding:22px;overflow:hidden;min-height:185px}
-.vs-showcase .vs-task-art{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
-.vs-showcase .vs-mini-board{background:var(--bg-card,var(--surface,#fff));border-radius:14px;border:1px solid var(--border,var(--line,#e8e2d9));padding:15px;box-shadow:0 6px 24px rgba(10,10,10,.04)}
-.vs-showcase .vs-mini-title{font-size:.76rem;color:var(--text-2,var(--muted,#6b6660));font-weight:700;margin-bottom:12px}
-.vs-showcase .vs-mini-task{display:flex;align-items:center;gap:10px;padding:9px 3px;border-top:1px solid var(--border,var(--line,#e8e2d9));font-size:.9rem}
-.vs-showcase .vs-ring{flex:none;height:17px;width:17px;border:2px solid var(--accent,#b85d3f);border-radius:50%}
-.vs-showcase .vs-ring.done{background:var(--accent,#b85d3f);position:relative}.vs-showcase .vs-ring.done:after{content:"✓";color:#fff;font-size:12px;position:absolute;left:2px;top:-3px}
-.vs-showcase .vs-mini-tag{margin-left:auto;color:var(--accent,#b85d3f);background:var(--accent-soft,#f7e5dd);font-size:.7rem;padding:3px 6px;border-radius:6px}
-.vs-showcase .vs-reader-art{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
-.vs-showcase .vs-paper,.vs-showcase .vs-annotation{border-radius:14px;background:var(--bg-card,var(--surface,#fff));border:1px solid var(--border,var(--line,#e8e2d9));padding:18px}
-.vs-showcase .vs-paper-title{font-size:.75rem;letter-spacing:.1em;color:var(--text-2,var(--muted,#6b6660));margin-bottom:22px}
-.vs-showcase .vs-line{height:9px;background:var(--border,var(--line,#e8e2d9));border-radius:8px;margin:12px 0;max-width:100%}
-.vs-showcase .vs-line.short{width:57%}.vs-showcase .vs-line.mid{width:82%}
-.vs-showcase .vs-highlight{height:15px;border-radius:3px;width:72%;background:color-mix(in srgb,var(--accent,#d97757) 32%,transparent)}
-.vs-showcase .vs-note-label{font-size:.72rem;letter-spacing:.09em;color:var(--accent,#b85d3f);font-weight:800}
-.vs-showcase .vs-note-body{font-size:.93rem;line-height:1.7;margin:18px 0}
-.vs-showcase .vs-note-foot{font-size:.75rem;color:var(--text-2,var(--muted,#6b6660))}
-html:lang(en) .vs-zh,html:lang(zh) .vs-en{display:none!important}
-@media(max-width:700px){.vs-showcase .vs-stage{grid-template-columns:1fr}.vs-showcase .vs-step{min-height:120px}.vs-showcase .vs-step:not(:last-child):after{right:calc(50% - 14px);top:auto;bottom:-15px;transform:rotate(90deg)}.vs-showcase .vs-glyph{margin-bottom:12px}.vs-showcase .vs-reader-art{grid-template-columns:1fr 1fr}.vs-showcase .vs-art{padding:14px}}
-@media(prefers-reduced-motion:reduce){.vs-showcase *, .vs-showcase *:before,.vs-showcase *:after{animation:none!important;transition:none!important}}
-.vs-showcase .vs-wide{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}.vs-showcase .vs-pane{min-width:0;border-radius:14px;border:1px solid var(--border,var(--line,#ddd));background:var(--bg-card,var(--surface,#fff));padding:22px}.vs-showcase .vs-arrow{font-size:2rem;color:var(--accent,#c15f3c)}.vs-showcase .vs-pane-title{font-size:.76rem;letter-spacing:.11em;font-weight:700;color:var(--accent,#c15f3c);margin-bottom:14px}.vs-showcase .vs-pane-content{font-size:1rem;line-height:1.9;overflow-wrap:anywhere}.vs-showcase .vs-code{font-family:ui-monospace,monospace;font-size:.82rem;line-height:2}.vs-showcase .vs-bubbles{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}.vs-showcase .vs-bubble{border:1px solid var(--border,var(--line,#ddd));border-radius:999px;padding:12px 16px;background:var(--bg-card,var(--surface,#fff))}.vs-showcase .vs-symbol{display:grid;place-items:center;height:110px;width:110px;border-radius:40px;margin:20px auto 4px;background:var(--accent-soft,#f7e5dd);color:var(--accent,#c15f3c);font-size:3.2rem}.vs-showcase .vs-waves{display:flex;align-items:center;justify-content:center;gap:6px;height:95px}.vs-showcase .vs-waves span{width:8px;border-radius:8px;background:var(--accent,#c15f3c)}@media(max-width:700px){.vs-showcase .vs-wide{grid-template-columns:1fr}.vs-showcase .vs-arrow{transform:rotate(90deg);text-align:center}}
-</style></head>
-<body>
-  <a class="skip-link" href="#main" data-i18n="a11y.skip">跳到正文</a>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MoveBit — 一个真正能让你离开椅子的休息提醒</title>
+    <meta name="description" content="MoveBit 是本地优先的跨平台健康提醒工具：统计真实电脑活跃时长，久坐、喝水、护眼提醒由屏幕边缘的小家伙沐比温柔交付，永不锁屏、不打断；Windows、macOS、Linux 均提供安装器与便携压缩包，发布附带 SHA-256 校验。">
+    <meta name="color-scheme" content="light dark">
+    <link rel="canonical" href="https://movebit.jrtx.site/">
+    <meta name="theme-color" content="#D97757">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="MoveBit">
+    <meta property="og:title" content="MoveBit — 久坐、喝水、护眼，由沐比温柔提醒">
+    <meta property="og:description" content="统计真实活跃时长。久坐、喝水、护眼，由沐比温柔提醒，永不打断。Windows、macOS、Linux 一次安装即可。">
+    <meta property="og:url" content="https://movebit.jrtx.site/">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="MoveBit — 久坐、喝水、护眼，由沐比温柔提醒">
+    <meta name="twitter:description" content="统计真实活跃时长，识别离席；喝水、起身、护眼由沐比温柔提醒。">
 
-  <header class="nav" id="top">
-    <div class="container nav-inner">
-      <a class="brand" href="#top" aria-label="MoveBit home">
-        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-          <rect width="64" height="64" rx="15" fill="#c15f3c"/>
-          <circle cx="32" cy="23" r="7" fill="white"/>
-          <path d="M32 34v17M32 41l-11 7M32 41l11 7" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
-        </svg>
-        <span>MoveBit</span>
-      </a>
-      <nav class="nav-links" aria-label="Primary navigation">
-        <a class="optional" href="#why"><span data-i18n="nav.why">为什么是 MoveBit</span></a>
-        <a class="optional" href="#updates"><span data-i18n="nav.updates">在线更新</span></a>
-        <a class="optional" href="#privacy"><span data-i18n="nav.privacy">隐私</span></a>
-        <a class="optional" href="manual.html"><span data-i18n="nav.manual">手册</span></a>
-        <a class="download-link" href="#download"><span data-i18n="nav.download">下载</span></a>
-        <div class="lang-dropdown-wrapper">
-            <button class="lang-btn" type="button" onclick="void 0" aria-label="Switch language">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                <span id="current-lang-label">简体中文</span>
-            </button>
-            <ul class="lang-menu">
-                <li class="lang-choice"><button type="button" onclick="setLanguage('en')">English</button></li>
-                <li class="lang-choice"><button type="button" onclick="setLanguage('zh')">简体中文</button></li>
-            </ul>
-        </div>
-        <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle theme">◐</button>
-      </nav>
-    </div>
-  </header>
-
-  <main id="main">
-    <section class="hero">
-      <div class="container">
-        <div class="hero-copy">
-          <div class="eyebrow animate"><span class="eyebrow-dot"></span><span data-i18n="hero.eyebrow">开源 · 本地优先 · 跨平台</span></div>
-          <h1 class="animate">
-            <span data-i18n="hero.h1a">久坐、喝水、护眼——</span><br>
-            <span class="accent" data-i18n="hero.h1b">由小家伙沐比温柔提醒。</span>
-          </h1>
-<p class="reader-en product-availability" lang="en">Current public preview — free under the MIT source licence; paid activation and subscriptions are not enabled.</p><p class="reader-zh product-availability" lang="zh">当前公开预览版——源码采用 MIT 许可，尚未启用付费激活或订阅。</p>
-          <p class="hero-lead animate" data-i18n="hero.lead">MoveBit 统计你真正操作电脑的活跃时长，到点由小家伙沐比在屏幕边缘温柔提醒：喝水、起身、让眼睛休息。它从不锁屏、不抢焦点、不打断输入；你真正离开工位时它也知道。Windows、macOS、Linux 一次安装即可，每个发布都同时提供安装器与便携压缩包。</p>
-          <div class="hero-actions animate">
-            <a class="btn btn-primary" id="hero-download" href="#download"><span data-i18n="hero.download">下载 MoveBit</span><span aria-hidden="true">↓</span></a>
-            <a class="btn btn-secondary" href="manual.html"><span data-i18n="hero.manual">使用手册</span><span aria-hidden="true">→</span></a>
-            <a class="btn btn-secondary" href="https://github.com/turlamai/movebit" target="_blank" rel="noopener"><span data-i18n="hero.source">查看源码</span><span aria-hidden="true">↗</span></a>
-          </div>
-          <div class="trust-row animate" aria-label="Product characteristics">
-            <span class="trust-chip" data-i18n="chip.account">无需账户</span>
-            <span class="trust-chip" data-i18n="chip.local">提醒记录保存在本机</span>
-            <span class="trust-chip" data-i18n="chip.sha">SHA-256 校验发布</span>
-            <span class="trust-chip" data-i18n="chip.mit">MIT 开源许可</span>
-          </div>
-        </div>
-
-        <figure class="shot-frame animate" style="padding:28px;">
-          <h3 data-i18n="shot.alt">三个提醒，一个可核对的流程</h3>
-          <figcaption class="shot-caption" data-i18n="shot.caption">设置喝水、起身和眼睛休息间隔，等待提醒，再选择完成或稍后。预期提醒状态保留在本地历史；演示时可启用专注模式。</figcaption>
-        </figure>
-      </div>
-    </section>
-<!-- Visual Showcase: illustration, not UI screenshot --><section class="vs-showcase" id="visual-showcase" aria-label="Product workflow illustration"><div class="vs-wrap"><div class="vs-intro"><span class="vs-label">PRODUCT IN CONTEXT · 产品如何工作</span><h2><span lang="zh-CN" class="vs-zh">让休息提醒成为一个友好的瞬间。</span><span lang="en" class="vs-en">Make a break cue feel friendly.</span></h2><p class="vs-lead"><span lang="zh-CN" class="vs-zh">用视觉区分喝水、起身和护眼；这不是沐比最终角色造型或未交付的动画。</span><span lang="en" class="vs-en">Visualize water, movement and eye-rest cues—not a final Mubi character or unshipped animation.</span></p></div><div class="vs-frame"><div class="vs-art"><div class="vs-bubbles"><span class="vs-bubble">💧 <span lang="zh-CN" class="vs-zh">喝水</span><span lang="en" class="vs-en">Water</span></span><span class="vs-bubble">🚶 <span lang="zh-CN" class="vs-zh">活动</span><span lang="en" class="vs-en">Move</span></span><span class="vs-bubble">◉ <span lang="zh-CN" class="vs-zh">护眼</span><span lang="en" class="vs-en">Eyes</span></span></div><div class="vs-symbol" aria-hidden="true">☺</div></div><div class="vs-stage"><div class="vs-step"><span class="vs-glyph" aria-hidden="true">◷</span><b><span lang="zh-CN" class="vs-zh">活跃时间</span><span lang="en" class="vs-en">Active time</span></b><small><span lang="zh-CN" class="vs-zh">依据可用的桌面信号安排提醒</span><span lang="en" class="vs-en">Use available desktop activity signals</span></small></div><div class="vs-step"><span class="vs-glyph" aria-hidden="true">✦</span><b><span lang="zh-CN" class="vs-zh">简短提示</span><span lang="en" class="vs-en">Gentle cue</span></b><small><span lang="zh-CN" class="vs-zh">喝水、起身或护眼提醒</span><span lang="en" class="vs-en">Water, movement or eye-rest cue</span></small></div><div class="vs-step"><span class="vs-glyph" aria-hidden="true">✓</span><b><span lang="zh-CN" class="vs-zh">自行决定</span><span lang="en" class="vs-en">Stay in control</span></b><small><span lang="zh-CN" class="vs-zh">完成、稍后或暂时专注</span><span lang="en" class="vs-en">Complete, defer or focus</span></small></div></div><p class="vs-caption"><span lang="zh-CN" class="vs-zh">概念工作流示意，非当前软件截图；以安装版本和用户手册为准。</span><span lang="en" class="vs-en">Conceptual workflow, not a current app screenshot. Refer to the installed version and user guide.</span></p></div></div></section><!-- End Visual Showcase -->
-
-
-    <section class="section section-alt" id="why">
-      <div class="container">
-        <div class="center-head">
-          <div class="section-kicker animate" data-i18n="why.kicker">核心差异</div>
-          <h2 class="section-title animate" data-i18n="why.title">不是又一个被你顺手关掉的计时器。</h2>
-          <p class="section-lead animate" data-i18n="why.lead">MoveBit 围绕三件事设计：只累计真正重要的活跃时间、让提醒以不被忽略又不打断的方式出现、识别你实际离开工位的休息。</p>
-        </div>
-
-        <div class="core-grid">
-          <article class="core-card animate" data-step="01">
-            <div class="core-icon" aria-hidden="true">⌁</div>
-            <h3 data-i18n="why.c1.title">真实活跃时长</h3>
-            <p data-i18n="why.c1.body">提醒时钟参考整个桌面的键鼠空闲时长，而不是机械累计自然时间。</p>
-            <div class="core-meta" data-i18n="why.c1.meta">活跃时间 ≠ 自然时间</div>
-          </article>
-          <article class="core-card animate" data-step="02">
-            <div class="core-icon" aria-hidden="true">▣</div>
-            <h3 data-i18n="why.c2.title">角色交付 · 永不打断</h3>
-            <p data-i18n="why.c2.body">到点时，小家伙沐比在屏幕边缘带着明确的健康建议出现；做到 / 稍后 / 隐藏 / 专注永远触手可及——托盘菜单（Windows / macOS）或应用内控件（全平台）。没有全屏遮罩，没有焦点抢夺。</p>
-            <div class="core-meta" data-i18n="why.c2.meta">提醒为本 · 角色为形</div>
-          </article>
-          <article class="core-card animate" data-step="03">
-            <div class="core-icon" aria-hidden="true">◌</div>
-            <h3 data-i18n="why.c3.title">聪明的离席识别</h3>
-            <p data-i18n="why.c3.body">空闲超过离席阈值后，MoveBit 会把这段时间视为一次真正的休息；回来后提醒周期重新开始。</p>
-            <div class="core-meta" data-i18n="why.c3.meta">离席 → 重置</div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="updates">
-      <div class="container">
-        <div class="center-head">
-          <div class="section-kicker animate" data-i18n="upd.kicker">在线更新</div>
-          <h2 class="section-title animate" data-i18n="upd.title">带签名的更新 feed，明确的更新动作。</h2>
-          <p class="section-lead animate" data-i18n="upd.lead">每个发布都提供各平台的更新包、SHA-256 校验文件，以及 Ed25519 签名的 update-manifest.json。应用内「检查更新」负责发现、下载与校验；换成新版本永远经过你点击的「更新并重启」。</p>
-        </div>
-
-        <div class="core-grid">
-          <article class="core-card animate" data-step="01">
-            <div class="core-icon" aria-hidden="true">↻</div>
-            <h3 data-i18n="upd.c1.title">发现</h3>
-            <p data-i18n="upd.c1.body">启动后检查一次，此后约每 6 小时一次，也可以在托盘随时手动「检查更新」。检查只访问 GitHub Releases——无需账户，无遥测。</p>
-            <div class="core-meta" data-i18n="upd.c1.meta">无需账户</div>
-          </article>
-          <article class="core-card animate" data-step="02">
-            <div class="core-icon" aria-hidden="true">✓</div>
-            <h3 data-i18n="upd.c2.title">校验</h3>
-            <p data-i18n="upd.c2.body">下载完成后校验字节数与 SHA-256，全部对着 Ed25519 签名的 update-manifest.json 核对；任何不一致都会中止更新，不动任何文件。</p>
-            <div class="core-meta">SHA-256 + Ed25519</div>
-          </article>
-          <article class="core-card animate" data-step="03">
-            <div class="core-icon" aria-hidden="true">↑</div>
-            <h3 data-i18n="upd.c3.title">更新并重启</h3>
-            <p data-i18n="upd.c3.body">校验通过后由你点击「更新并重启」：MoveBit 等自己退出后替换文件再启动。绝不静默安装；配置与历史保存在应用目录之外，升级不碰用户数据。</p>
-            <div class="core-meta" data-i18n="upd.c3.meta">绝不静默</div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section section-alt" id="features">
-      <div class="container">
-        <div class="center-head">
-          <div class="section-kicker animate" data-i18n="feat.kicker">有用，但不喧宾夺主</div>
-          <h2 class="section-title animate" data-i18n="feat.title">日常真正需要的细节，也已经补齐。</h2>
-        </div>
-        <div class="feature-grid">
-          <article class="feature animate"><div class="feature-symbol">👀</div><h3 data-i18n="feat.f1.title">护眼提醒</h3><p data-i18n="feat.f1.body">独立的护眼周期：沐比闭上眼睛，提示你看向远处休息片刻。</p></article>
-          <article class="feature animate"><div class="feature-symbol">H₂O</div><h3 data-i18n="feat.f2.title">喝水提醒</h3><p data-i18n="feat.f2.body">独立周期。沐比举起小蓝杯，把「喝点水吧」送到屏幕边缘。</p></article>
-          <article class="feature animate"><div class="feature-symbol">7d</div><h3 data-i18n="feat.f3.title">工作历史</h3><p data-i18n="feat.f3.body">每日活跃分钟数与提醒次数跨重启保存，并保留 370 天。</p></article>
-          <article class="feature animate"><div class="feature-symbol">1h</div><h3 data-i18n="feat.f4.title">一键暂停</h3><p data-i18n="feat.f4.body">会议、演示或共享屏幕时，可从托盘快速暂停提醒一小时。</p></article>
-          <article class="feature animate"><div class="feature-symbol">↻</div><h3 data-i18n="feat.f5.title">随系统启动</h3><p data-i18n="feat.f5.body">一个开关即可让 MoveBit 在 Windows、macOS 与 Linux 登录时启动。</p></article>
-          <article class="feature animate"><div class="feature-symbol">↑</div><h3 data-i18n="feat.f6.title">检查更新</h3><p data-i18n="feat.f6.body">应用内下载、SHA-256 校验、「更新并重启」一步完成，全程对签名 feed 核对。</p></article>
-          <article class="feature animate"><div class="feature-symbol">⊞</div><h3 data-i18n="feat.f7.title">Windows 安装版</h3><p data-i18n="feat.f7.body">运行 MSI 即可作为常规桌面应用安装；也可以把便携 ZIP 解压到任意目录使用。</p></article>
-          <article class="feature animate"><div class="feature-symbol">1×</div><h3 data-i18n="feat.f8.title">单实例</h3><p data-i18n="feat.f8.body">重复启动时会唤起已有实例，不会再创建一套重复的提醒计时器。</p></article>
-          <article class="feature animate"><div class="feature-symbol">cfg</div><h3 data-i18n="feat.f9.title">可配置</h3><p data-i18n="feat.f9.body">三个提醒间隔、沐比的尺寸 S/M/L 与动效、停靠位置、声音与自动检查更新均可调整。</p></article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="privacy">
-      <div class="container">
-        <div class="section-kicker animate" data-i18n="priv.kicker">从设计上建立信任</div>
-        <h2 class="section-title animate" data-i18n="priv.title">它关心的是你多久没动，而不是你在做什么。</h2>
-        <p class="section-lead animate" data-i18n="priv.lead">一个健康工具不应该为了判断你是否坐得太久，就需要读取文档、记录按键内容，或者要求你注册在线账户。</p>
-
-        <div class="privacy-panel">
-          <article class="privacy-main animate">
-            <h3 data-i18n="priv.main.title">默认就是本地优先。</h3>
-            <p data-i18n="priv.main.body">配置与历史记录保存在你的机器上，提醒逻辑无需账户或云服务。更新检查只会访问 GitHub Releases，用于发现和下载公开发布文件。</p>
-          </article>
-          <div class="privacy-list">
-            <div class="privacy-item animate"><span class="check">✓</span><span><strong data-i18n="priv.p1.title">读取空闲时长，而不是按键内容</strong><small data-i18n="priv.p1.body">使用系统原生空闲 API 获取经过的空闲时间。</small></span></div>
-            <div class="privacy-item animate"><span class="check">✓</span><span><strong data-i18n="priv.p2.title">提醒界面不拦截任何输入</strong><small data-i18n="priv.p2.body">沐比的角色与文字保持鼠标穿透，只有提醒卡上的操作按钮可点；没有全屏遮罩或系统级输入钩子。</small></span></div>
-            <div class="privacy-item animate"><span class="check">✓</span><span><strong data-i18n="priv.p3.title">不静默强制安装更新</strong><small data-i18n="priv.p3.body">检查更新在你主动点击或明确允许时发生；替换程序文件只会经过你的确认。</small></span></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section section-alt" id="platforms">
-      <div class="container">
-        <div class="center-head">
-          <div class="section-kicker animate" data-i18n="plat.kicker">平台支持</div>
-          <h2 class="section-title animate" data-i18n="plat.title">跨平台，但把不同平台的差异说清楚。</h2>
-          <p class="section-lead animate" data-i18n="plat.lead">当前正式发布支持 Windows x64（ARM64 Windows 通过模拟运行 x64 构建）、Apple silicon 与 Intel 的 macOS，以及 Linux x64 与 arm64。每个平台都有便携压缩包；Windows 与 macOS 额外提供 MSI/DMG 安装器，Linux 提供 deb、rpm 与 AppImage。Linux X11 下沐比角色卡可停靠显示；Wayland 会话诚实回退为应用内提醒卡。</p>
-        </div>
-
-        <div class="support-wrap animate">
-          <table class="support-table">
-            <thead><tr><th data-i18n="plat.th1">平台</th><th data-i18n="plat.th2">空闲检测</th><th data-i18n="plat.th3">角色交付</th><th data-i18n="plat.th4">分发</th></tr></thead>
-            <tbody>
-              <tr><td><strong>Windows x64</strong></td><td><span class="status">GetLastInputInfo</span></td><td data-i18n="plat.all">角色卡</td><td data-i18n="plat.dist.win">MSI + 便携 ZIP</td></tr>
-              <tr><td><strong>macOS arm64 / x64</strong></td><td><span class="status">CoreGraphics</span></td><td data-i18n="plat.all2">角色卡</td><td data-i18n="plat.dist.mac">DMG + 便携 ZIP</td></tr>
-              <tr><td><strong>Linux x64 / arm64 · X11</strong></td><td><span class="status">XScreenSaver</span></td><td data-i18n="plat.all3">角色卡</td><td data-i18n="plat.dist.linux">tar.gz + deb + rpm + AppImage + ZIP</td></tr>
-              <tr><td><strong>Linux x64 / arm64 · Wayland</strong></td><td><span class="status fallback" data-i18n="plat.fallback">自然时间降级</span></td><td data-i18n="plat.supported">提醒卡回退</td><td data-i18n="plat.dist.linux2">tar.gz + deb + rpm + AppImage + ZIP</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="download">
-      <div class="container">
-        <div class="center-head">
-          <div class="section-kicker animate" data-i18n="dl.kicker">下载</div>
-          <h2 class="section-title animate" data-i18n="dl.title">Windows 推荐安装；需要时，便携版一直都在。</h2>
-          <p class="section-lead animate" data-i18n="dl.lead">Windows 用户通常选择 MSI 安装版；macOS 在 Apple silicon 和 Intel 上都提供 DMG，Linux 提供 deb 与 AppImage。下面的直链永远指向最新发布的文件，你所在平台的卡片会自动高亮；便携压缩包与其余格式都在 Releases 页。</p>
-        </div>
-
-        <div class="download-shell animate">
-          <div class="release-line">
-            <span class="release-badge"><span data-i18n="dl.badge.release">最新版本</span> <strong id="release-version">GitHub Release</strong></span>
-            <span class="release-badge"><span data-i18n="dl.badge.feed">更新 feed</span> <strong>update-manifest.json</strong></span>
-          </div>
-          <div class="dl-grid" id="dl-grid">
-            <div class="dl-card" data-os="windows">
-              <div class="download-head"><span class="head-icon"><svg role="img" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h11.377v11.372H0zm12.623 0H24v11.372H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg></span><strong>Windows x64</strong><span class="download-tag" data-i18n="dl.tag.installer">推荐安装版</span></div>
-              <div class="dl-assets">
-                <a class="format-link" href="https://github.com/turlamai/movebit/releases/latest" data-release-suffix="windows-x64.msi"><span class="format-kind">MSI</span><span class="format-name">Windows x64</span><span class="download-arrow" aria-hidden="true">↓</span></a>
-              </div>
-            </div>
-            <div class="dl-card" data-os="macos">
-              <div class="download-head"><span class="head-icon"><svg role="img" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span><strong>macOS</strong><span class="download-tag" data-i18n="dl.tag.apple">Apple silicon 与 Intel</span></div>
-              <div class="dl-assets">
-                <a class="format-link" href="https://github.com/turlamai/movebit/releases/latest" data-release-suffix="macos-arm64.dmg"><span class="format-kind">DMG</span><span class="format-name">Apple Silicon</span><span class="download-arrow" aria-hidden="true">↓</span></a>
-                <a class="format-link" href="https://github.com/turlamai/movebit/releases/latest" data-release-suffix="macos-x64.dmg"><span class="format-kind">DMG</span><span class="format-name">Intel Mac</span><span class="download-arrow" aria-hidden="true">↓</span></a>
-              </div>
-            </div>
-            <div class="dl-card" data-os="linux">
-              <div class="download-head"><span class="head-icon"><svg role="img" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139z"/></svg></span><strong>Linux</strong><span class="download-tag">x64 &amp; arm64</span></div>
-              <div class="dl-assets">
-                <a class="format-link" href="https://github.com/turlamai/movebit/releases/latest" data-release-suffix="linux-x64.deb"><span class="format-kind">deb</span><span class="format-name">Linux x64</span><span class="download-arrow" aria-hidden="true">↓</span></a>
-                <a class="format-link" href="https://github.com/turlamai/movebit/releases/latest" data-release-suffix="linux-arm64.deb"><span class="format-kind">deb</span><span class="format-name">Linux arm64</span><span class="download-arrow" aria-hidden="true">↓</span></a>
-                <a class="format-link" href="https://github.com/turlamai/movebit/releases/latest" data-release-suffix="linux-x64.AppImage"><span class="format-kind">AppImage</span><span class="format-name">Linux x64</span><span class="download-arrow" aria-hidden="true">↓</span></a>
-              </div>
-            </div>
-          </div>
-          <p class="download-note" data-i18n="dl.note">每个 Release 都提供统一的 SHA256SUMS 校验文件，以及独立签名的 update-manifest.json 更新清单。升级时请遵循当前安装渠道的官方更新步骤，勿直接覆盖仍在运行的软件。</p>
-          <div style="text-align:center;margin-top:14px"><a class="btn btn-quiet" href="https://github.com/turlamai/movebit/releases" target="_blank" rel="noopener"><span data-i18n="dl.notes">全部格式、版本说明与校验值</span><span aria-hidden="true">↗</span></a></div>
-          <div class="warning"><strong data-i18n="dl.warn.strong">未签名构建：</strong><span data-i18n="dl.warn.body">当前 GitHub 二进制文件尚未进行代码签名或 macOS 公证，因此 Windows SmartScreen 或 macOS Gatekeeper 可能提示警告。在签名分发完成前，MoveBit 会明确说明这一点。</span></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section section-alt" id="faq">
-      <div class="container">
-        <div class="center-head">
-          <div class="section-kicker animate">FAQ</div>
-          <h2 class="section-title animate" data-i18n="faq.title">安装之前，值得先说清楚的问题。</h2>
-        </div>
-        <div class="faq">
-          <details class="animate"><summary data-i18n="faq.q1">选安装版还是便携版？</summary><p data-i18n="faq.a1">日常长期使用推荐安装版：Windows MSI 或 macOS DMG。它给 MoveBit 一个稳定的位置、开始菜单/启动台入口和标准卸载。临时使用、U 盘、受管电脑不希望安装，或者你偏爱便携软件时再选便携 ZIP、Linux tar.gz 或 AppImage。</p></details>
-          <details class="animate"><summary data-i18n="faq.q2">MoveBit 支持在线更新吗？</summary><p data-i18n="faq.a2">支持。「检查更新」读取 Ed25519 签名的 update-manifest.json，发现新版本后下载并做 SHA-256 校验，全部通过再由你点击「更新并重启」完成换新。任何一步校验失败都会中止，当前版本原封不动。</p></details>
-          <details class="animate"><summary data-i18n="faq.q3">还有全屏强制休息吗？</summary><p data-i18n="faq.a3">没有。v0.0.1 起全屏强制休息已从产品中移除：提醒由屏幕边缘的沐比角色或应用内提醒卡交付，永远不会遮盖屏幕、抢夺焦点或拦截输入。</p></details>
-          <details class="animate"><summary data-i18n="faq.q4">MoveBit 会记录我输入或点击了什么吗？</summary><p data-i18n="faq.a4">不会。空闲检测模块只向操作系统询问距离上次用户输入过去了多久；提醒逻辑需要空闲时长，而不是按键、文档或点击内容。</p></details>
-          <details class="animate"><summary data-i18n="faq.q5">Linux Wayland 下会怎样？</summary><p data-i18n="faq.a5">提醒与在线更新照常工作。Wayland 合成器不提供可靠的窗口定位与穿透保证，因此沐比角色卡在 X11 会话停靠，Wayland 会话诚实回退为应用内提醒卡。</p></details>
-          <details class="animate"><summary data-i18n="faq.q6">需要另外安装别的运行时吗？</summary><p data-i18n="faq.a6">使用打包 Release 时不需要。MoveBit 自带所需的一切——Linux 上唯一的外部依赖是 GTK 4 及其系统库。</p></details>
-          <details class="animate"><summary data-i18n="faq.q7">为什么 Windows 或 macOS 可能对下载文件发出警告？</summary><p data-i18n="faq.a7">当前社区构建尚未签名。代码签名 / 公证属于额外的发布者身份信号，也是下一项重要的分发体验改进。</p></details>
-        </div>
-      </div>
-    </section>
-
-    <section class="final-cta">
-      <div class="container">
-        <div class="final-card animate">
-          <h2 data-i18n="cta.title">椅子不算健身计划。</h2>
-          <p data-i18n="cta.body">MoveBit 在你工作时保持安静，到点由沐比送上一句明确的健康建议——看一眼就懂，做不做由你；升级与启动的麻烦也从日常里拿掉了。</p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="#download"><span data-i18n="cta.get">获取 MoveBit</span></a>
-            <a class="btn btn-secondary" href="manual.html"><span data-i18n="cta.manual">先看手册</span></a>
-            <a class="btn btn-secondary" href="https://github.com/turlamai/movebit" target="_blank" rel="noopener">GitHub ↗</a>
-          </div>
-        </div>
-      </div>
-    </section>
-  <section id="start-here" class="product-start" aria-label="Get started / 开始使用">
-<h2 class="reader-en " lang="en">Start with one useful session.</h2><h2 class="reader-zh " lang="zh">从一次有效使用开始。</h2><p class="reader-en start-status" lang="en">Current public preview — MIT-licensed source, no paid activation or subscriptions enabled.</p><p class="reader-zh start-status" lang="zh">当前公开预览版——MIT 源码许可，未启用付费激活或订阅。</p><p class="reader-en " lang="en">Desktop reminders for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time, and the Mubi card docks on X11 while Wayland uses in-app reminder cards.</p><p class="reader-zh " lang="zh">提供 macOS、Windows、Linux 桌面提醒。空闲检测依赖桌面会话；不支持的 Wayland 会话回退为经过时间计时，沐比角色卡在 X11 停靠、Wayland 使用应用内提醒卡。</p><div class="product-start-grid"><article><h3 class="reader-en " lang="en">01</h3><h3 class="reader-zh " lang="zh">01</h3><p class="reader-en " lang="en">Install, pick your three intervals in the compact first-run flow, and let Mubi deliver the first cue.</p><p class="reader-zh " lang="zh">安装后在小巧的首启流程里定好三个间隔，让沐比送出第一条提醒。</p></article><article><h3 class="reader-en " lang="en">02</h3><h3 class="reader-zh " lang="zh">02</h3><p class="reader-en " lang="en">Use Done / Later / Hide right on the cue card, and Focus during presentations — reminders queue quietly and return as one bounded summary.</p><p class="reader-zh " lang="zh">在提醒卡上直接使用做到 / 稍后 / 隐藏；演示时开专注——提醒安静排队，结束后合并为一条有界汇总。</p></article><article><h3 class="reader-en " lang="en">03</h3><h3 class="reader-zh " lang="zh">03</h3><p class="reader-en " lang="en">Personalize Mubi's size, motion and dock if you like. History is a usage estimate, not a health measurement.</p><p class="reader-zh " lang="zh">喜欢的话给沐比选尺寸、动效与停靠位。历史数据属于使用估计，不是健康测量。</p></article></div><p class="reader-en start-limits" lang="en">This tool provides reminders, not medical advice or a guaranteed way to prevent injury.</p><p class="reader-zh start-limits" lang="zh">本工具提供提醒，不提供医疗建议或预防损伤保证。</p><div class="start-links"><a class="reader-en" lang="en" href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.md">Installation, privacy &amp; recovery</a><a class="reader-zh" lang="zh" href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.zh-CN.md">安装、隐私与恢复</a><a href="https://github.com/turlamai/movebit/issues"><span class="reader-en " lang="en">Get help</span><span class="reader-zh " lang="zh">反馈与帮助</span></a></div></section>
-</main>
-
-  <footer class="footer">
-    <div class="container footer-inner">
-      <a class="brand" href="#top">
-        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#c15f3c"/><circle cx="32" cy="23" r="7" fill="white"/><path d="M32 34v17M32 41l-11 7M32 41l11 7" stroke="white" stroke-width="5.5" stroke-linecap="round"/></svg>
-        <span>MoveBit</span>
-      </a>
-      <div class="footer-links"><a href="manual.html" data-i18n="footer.manual">手册</a><a href="https://github.com/turlamai/movebit" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/turlamai/movebit/releases" target="_blank" rel="noopener" data-i18n="footer.releases">Releases</a><a href="https://github.com/turlamai/movebit/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></div>
-      <small>© <span id="year">2026</span> turlamai</small>
-    </div>
-  </footer>
-<nav id="product-support" aria-label="Support / 支持"><a href="https://github.com/turlamai/movebit/issues"><span class="support-zh">反馈</span><span class="support-en" lang="en">Feedback</span></a> <a href="https://github.com/turlamai/movebit/releases"><span class="support-zh">发布与更新</span><span class="support-en" lang="en">Releases</span></a> <a href="https://github.com/turlamai/movebit/blob/main/LICENSE"><span class="support-zh">源码许可</span><span class="support-en" lang="en">Source license</span></a> <a class="support-zh" href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.zh-CN.md">使用与帮助</a> <a class="support-en" lang="en" href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.md">Usage & help</a></nav>
-
-  <script>
-    (function () {
-      // ---- i18n dictionaries (family standard: data-i18n + JS dict, zh default) ----
-      var zh = {
-        "a11y.skip": "跳到正文",
-        "nav.why": "为什么是 MoveBit", "nav.updates": "在线更新", "nav.privacy": "隐私",
-        "nav.manual": "手册", "nav.download": "下载",
-        "hero.eyebrow": "开源 · 本地优先 · 跨平台",
-        "hero.h1a": "久坐、喝水、护眼——", "hero.h1b": "由小家伙沐比温柔提醒。",
-        "hero.lead": "MoveBit 统计你真正操作电脑的活跃时长，到点由小家伙沐比在屏幕边缘温柔提醒：喝水、起身、让眼睛休息。它从不锁屏、不抢焦点、不打断输入；你真正离开工位时它也知道。Windows、macOS、Linux 一次安装即可，每个发布都同时提供安装器与便携压缩包。",
-        "hero.download": "下载 MoveBit", "hero.manual": "使用手册", "hero.source": "查看源码",
-        "chip.account": "无需账户", "chip.local": "提醒记录保存在本机", "chip.sha": "SHA-256 校验发布", "chip.mit": "MIT 开源许可",
-        "shot.alt": "三个提醒，一个可核对的流程",
-        "shot.caption": "设置喝水、起身和眼睛休息间隔，等待提醒，再选择完成或稍后。预期提醒状态保留在本地历史；演示时可启用专注模式。",
-        "why.kicker": "核心差异",
-        "why.title": "不是又一个被你顺手关掉的计时器。",
-        "why.lead": "MoveBit 围绕三件事设计：只累计真正重要的活跃时间、让提醒以不被忽略又不打断的方式出现、识别你实际离开工位的休息。",
-        "why.c1.title": "真实活跃时长", "why.c1.body": "提醒时钟参考整个桌面的键鼠空闲时长，而不是机械累计自然时间。", "why.c1.meta": "活跃时间 ≠ 自然时间",
-        "why.c2.title": "角色交付 · 永不打断", "why.c2.body": "到点时，小家伙沐比在屏幕边缘带着明确的健康建议出现；做到 / 稍后 / 隐藏 / 专注永远触手可及——托盘菜单（Windows / macOS）或应用内控件（全平台）。没有全屏遮罩，没有焦点抢夺。", "why.c2.meta": "提醒为本 · 角色为形",
-        "why.c3.title": "聪明的离席识别", "why.c3.body": "空闲超过离席阈值后，MoveBit 会把这段时间视为一次真正的休息；回来后提醒周期重新开始。", "why.c3.meta": "离席 → 重置",
-        "upd.kicker": "在线更新", "upd.title": "带签名的更新 feed，明确的更新动作。",
-        "upd.lead": "每个发布都提供各平台的更新包、SHA-256 校验文件，以及 Ed25519 签名的 update-manifest.json。应用内「检查更新」负责发现、下载与校验；换成新版本永远经过你点击的「更新并重启」。",
-        "upd.c1.title": "发现", "upd.c1.body": "启动后检查一次，此后约每 6 小时一次，也可以在托盘随时手动「检查更新」。检查只访问 GitHub Releases——无需账户，无遥测。", "upd.c1.meta": "无需账户",
-        "upd.c2.title": "校验", "upd.c2.body": "下载完成后校验字节数与 SHA-256，全部对着 Ed25519 签名的 update-manifest.json 核对；任何不一致都会中止更新，不动任何文件。",
-        "upd.c3.title": "更新并重启", "upd.c3.body": "校验通过后由你点击「更新并重启」：MoveBit 等自己退出后替换文件再启动。绝不静默安装；配置与历史保存在应用目录之外，升级不碰用户数据。", "upd.c3.meta": "绝不静默",
-        "feat.kicker": "有用，但不喧宾夺主", "feat.title": "日常真正需要的细节，也已经补齐。",
-        "feat.f1.title": "护眼提醒", "feat.f1.body": "独立的护眼周期：沐比闭上眼睛，提示你看向远处休息片刻。",
-        "feat.f2.title": "喝水提醒", "feat.f2.body": "独立周期。沐比举起小蓝杯，把「喝点水吧」送到屏幕边缘。",
-        "feat.f3.title": "工作历史", "feat.f3.body": "每日活跃分钟数与提醒次数跨重启保存，并保留 370 天。",
-        "feat.f4.title": "一键暂停", "feat.f4.body": "会议、演示或共享屏幕时，可从托盘快速暂停提醒一小时。",
-        "feat.f5.title": "随系统启动", "feat.f5.body": "一个开关即可让 MoveBit 在 Windows、macOS 与 Linux 登录时启动。",
-        "feat.f6.title": "检查更新", "feat.f6.body": "应用内下载、SHA-256 校验、「更新并重启」一步完成，全程对签名 feed 核对。",
-        "feat.f7.title": "Windows 安装版", "feat.f7.body": "运行 MSI 即可作为常规桌面应用安装；也可以把便携 ZIP 解压到任意目录使用。",
-        "feat.f8.title": "单实例", "feat.f8.body": "重复启动时会唤起已有实例，不会再创建一套重复的提醒计时器。",
-        "feat.f9.title": "可配置", "feat.f9.body": "三个提醒间隔、沐比的尺寸 S/M/L 与动效、停靠位置、声音与自动检查更新均可调整。",
-        "priv.kicker": "从设计上建立信任", "priv.title": "它关心的是你多久没动，而不是你在做什么。",
-        "priv.lead": "一个健康工具不应该为了判断你是否坐得太久，就需要读取文档、记录按键内容，或者要求你注册在线账户。",
-        "priv.main.title": "默认就是本地优先。", "priv.main.body": "配置与历史记录保存在你的机器上，提醒逻辑无需账户或云服务。更新检查只会访问 GitHub Releases，用于发现和下载公开发布文件。",
-        "priv.p1.title": "读取空闲时长，而不是按键内容", "priv.p1.body": "使用系统原生空闲 API 获取经过的空闲时间。",
-        "priv.p2.title": "提醒界面不拦截任何输入", "priv.p2.body": "沐比的角色与文字保持鼠标穿透，只有提醒卡上的操作按钮可点；没有全屏遮罩或系统级输入钩子。",
-        "priv.p3.title": "不静默强制安装更新", "priv.p3.body": "检查更新在你主动点击或明确允许时发生；替换程序文件只会经过你的确认。",
-        "plat.kicker": "平台支持", "plat.title": "跨平台，但把不同平台的差异说清楚。",
-        "plat.lead": "当前正式发布支持 Windows x64（ARM64 Windows 通过模拟运行 x64 构建）、Apple silicon 与 Intel 的 macOS，以及 Linux x64 与 arm64。每个平台都有便携压缩包；Windows 与 macOS 额外提供 MSI/DMG 安装器，Linux 提供 deb、rpm 与 AppImage。Linux X11 下沐比角色卡可停靠显示；Wayland 会话诚实回退为应用内提醒卡。",
-        "plat.th1": "平台", "plat.th2": "空闲检测", "plat.th3": "角色交付", "plat.th4": "分发",
-        "plat.all": "角色卡", "plat.all2": "角色卡", "plat.all3": "角色卡",
-        "plat.dist.win": "MSI + 便携 ZIP", "plat.dist.mac": "DMG + 便携 ZIP",
-        "plat.dist.linux": "tar.gz + deb + rpm + AppImage + ZIP", "plat.dist.linux2": "tar.gz + deb + rpm + AppImage + ZIP",
-        "plat.fallback": "自然时间降级", "plat.supported": "提醒卡回退",
-        "dl.kicker": "下载", "dl.title": "Windows 推荐安装；需要时，便携版一直都在。",
-        "dl.lead": "Windows 用户通常选择 MSI 安装版；macOS 在 Apple silicon 和 Intel 上都提供 DMG，Linux 提供 deb 与 AppImage。下面的直链永远指向最新发布的文件，你所在平台的卡片会自动高亮；便携压缩包与其余格式都在 Releases 页。",
-        "dl.badge.release": "最新版本", "dl.badge.feed": "更新 feed",
-        "dl.tag.installer": "推荐安装版", "dl.tag.apple": "Apple silicon 与 Intel", "dl.tag.current": "你的平台",
-        "dl.note": "每个 Release 都提供统一的 SHA256SUMS 校验文件，以及独立签名的 update-manifest.json 更新清单。升级时请遵循当前安装渠道的官方更新步骤，勿直接覆盖仍在运行的软件。",
-        "dl.notes": "全部格式、版本说明与校验值",
-        "dl.warn.strong": "未签名构建：", "dl.warn.body": "当前 GitHub 二进制文件尚未进行代码签名或 macOS 公证，因此 Windows SmartScreen 或 macOS Gatekeeper 可能提示警告。在签名分发完成前，MoveBit 会明确说明这一点。",
-        "faq.title": "安装之前，值得先说清楚的问题。",
-        "faq.q1": "选安装版还是便携版？",
-        "faq.a1": "日常长期使用推荐安装版：Windows MSI 或 macOS DMG。它给 MoveBit 一个稳定的位置、开始菜单/启动台入口和标准卸载。临时使用、U 盘、受管电脑不希望安装，或者你偏爱便携软件时再选便携 ZIP、Linux tar.gz 或 AppImage。",
-        "faq.q2": "MoveBit 支持在线更新吗？",
-        "faq.a2": "支持。「检查更新」读取 Ed25519 签名的 update-manifest.json，发现新版本后下载并做 SHA-256 校验，全部通过再由你点击「更新并重启」完成换新。任何一步校验失败都会中止，当前版本原封不动。",
-        "faq.q3": "还有全屏强制休息吗？",
-        "faq.a3": "没有。v0.0.1 起全屏强制休息已从产品中移除：提醒由屏幕边缘的沐比角色或应用内提醒卡交付，永远不会遮盖屏幕、抢夺焦点或拦截输入。",
-        "faq.q4": "MoveBit 会记录我输入或点击了什么吗？",
-        "faq.a4": "不会。空闲检测模块只向操作系统询问距离上次用户输入过去了多久；提醒逻辑需要空闲时长，而不是按键、文档或点击内容。",
-        "faq.q5": "Linux Wayland 下会怎样？",
-        "faq.a5": "提醒与在线更新照常工作。Wayland 合成器不提供可靠的窗口定位与穿透保证，因此沐比角色卡在 X11 会话停靠，Wayland 会话诚实回退为应用内提醒卡。",
-        "faq.q6": "需要另外安装别的运行时吗？",
-        "faq.a6": "使用打包 Release 时不需要。MoveBit 自带所需的一切——Linux 上唯一的外部依赖是 GTK 4 及其系统库。",
-        "faq.q7": "为什么 Windows 或 macOS 可能对下载文件发出警告？",
-        "faq.a7": "当前社区构建尚未签名。代码签名 / 公证属于额外的发布者身份信号，也是下一项重要的分发体验改进。",
-        "cta.title": "椅子不算健身计划。",
-        "cta.body": "MoveBit 在你工作时保持安静，到点由沐比送上一句明确的健康建议——看一眼就懂，做不做由你；升级与启动的麻烦也从日常里拿掉了。",
-        "cta.get": "获取 MoveBit", "cta.manual": "先看手册",
-        "footer.manual": "手册", "footer.releases": "Releases"
-      };
-      var en = {
-        "a11y.skip": "Skip to content",
-        "nav.why": "Why MoveBit", "nav.updates": "Updates", "nav.privacy": "Privacy",
-        "nav.manual": "Manual", "nav.download": "Download",
-        "hero.eyebrow": "Open source · Local-first · Cross-platform",
-        "hero.h1a": "Drink. Stand up. Rest your eyes.", "hero.h1b": "Mubi delivers it, gently.",
-        "hero.lead": "MoveBit counts the time you actually spend at the computer, and when a cycle is due, Mubi — a small original character — appears at the edge of your screen to suggest water, a stretch, or an eye rest. It never locks the screen, steals focus or blocks your typing, and it notices when you truly step away. Install once on Windows, macOS or Linux — installers and portable archives ship for every release.",
-        "hero.download": "Download MoveBit", "hero.manual": "User manual", "hero.source": "View source",
-        "chip.account": "No account required", "chip.local": "Reminder history stays local", "chip.sha": "SHA-256 verified releases", "chip.mit": "MIT licensed",
-        "shot.alt": "Three reminders, one testable workflow",
-        "shot.caption": "Set water, stand-up and eye-rest intervals, wait for a cue and select Done or Later. Check the local history for the result; use Focus during presentations.",
-        "why.kicker": "The difference",
-        "why.title": "Not another timer you dismiss without moving.",
-        "why.lead": "MoveBit is built around three ideas: count the time that matters, deliver reminders in a way you notice without being interrupted, and recognize real time away from the desk.",
-        "why.c1.title": "Actual work time", "why.c1.body": "The reminder clock follows keyboard and mouse idle time across the desktop instead of blindly counting wall-clock minutes.", "why.c1.meta": "ACTIVE ≠ ELAPSED",
-        "why.c2.title": "Delivered by Mubi · never intrusive", "why.c2.body": "When a cycle is due, Mubi appears at the screen edge with a clear health suggestion; Done / Later / Hide / Focus stay within reach — the tray menu (Windows / macOS) or in-app controls (every platform). No fullscreen cover, no focus theft.", "why.c2.meta": "REMINDERS FIRST",
-        "why.c3.title": "Smart away detection", "why.c3.body": "Stay idle beyond your away threshold and MoveBit treats that as a real break. When you return, reminder cycles restart.", "why.c3.meta": "AWAY → RESET",
-        "upd.kicker": "Online updates", "upd.title": "A signed feed, an explicit update.",
-        "upd.lead": "Every release publishes per-platform update packages with SHA-256 sidecars and an Ed25519-signed update-manifest.json. The in-app check discovers, downloads and verifies; switching to the new version always goes through the “Update & restart” button you click.",
-        "upd.c1.title": "Discover", "upd.c1.body": "Checked at startup, then about every 6 hours, or manually from the tray anytime. Checks only touch GitHub Releases — no account, no telemetry.", "upd.c1.meta": "NO ACCOUNT",
-        "upd.c2.title": "Verify", "upd.c2.body": "After download, size and SHA-256 are checked against the Ed25519-signed update-manifest.json. Any mismatch aborts before a single file is touched.",
-        "upd.c3.title": "Update & restart", "upd.c3.body": "Once verified, you click “Update & restart”: MoveBit waits for itself to exit, swaps the payload and relaunches. Never silent; config and history live outside the app folder and upgrades never touch user data.", "upd.c3.meta": "NEVER SILENT",
-        "feat.kicker": "Useful without becoming noisy", "feat.title": "The everyday details are already there.",
-        "feat.f1.title": "Eye rest", "feat.f1.body": "An independent eye-rest cycle: Mubi closes its eyes and suggests looking away for a moment.",
-        "feat.f2.title": "Water reminders", "feat.f2.body": "An independent cycle. Mubi raises a little blue cup and brings \"drink some water\" to the screen edge.",
-        "feat.f3.title": "Work history", "feat.f3.body": "Daily active minutes and reminder counts survive restarts, with 370-day retention.",
-        "feat.f4.title": "Quick pause", "feat.f4.body": "Pause reminders for an hour during meetings, presentations or screen sharing.",
-        "feat.f5.title": "Autostart", "feat.f5.body": "One setting registers MoveBit with your login on Windows, macOS and Linux.",
-        "feat.f6.title": "Update checks", "feat.f6.body": "In-app download, SHA-256 verification and “Update & restart” in one step, checked against the signed feed.",
-        "feat.f7.title": "Windows installer", "feat.f7.body": "Run the MSI for a normal installed app, or unpack the portable ZIP anywhere you like.",
-        "feat.f8.title": "Single instance", "feat.f8.body": "Launching MoveBit again activates the existing app instead of creating duplicate schedulers.",
-        "feat.f9.title": "Configurable", "feat.f9.body": "The three reminder intervals, Mubi's size (S/M/L) and motion, dock position, sound and automatic update checks are adjustable.",
-        "priv.kicker": "Trust by design", "priv.title": "It watches the clock, not your work.",
-        "priv.lead": "A health utility should not need your documents, keystroke contents or an online account just to know when you've been at the computer too long.",
-        "priv.main.title": "Local-first by default.", "priv.main.body": "Configuration and history stay on your machine. Reminder logic works without an account or cloud service. Update checks contact GitHub Releases only to discover and download public release assets.",
-        "priv.p1.title": "Idle duration, not key contents", "priv.p1.body": "Native platform idle APIs provide elapsed idle time.",
-        "priv.p2.title": "Reminder surfaces never intercept input", "priv.p2.body": "Mubi's character and text stay click-through; only the action buttons on a reminder card accept clicks — no fullscreen cover, no OS input hooks.",
-        "priv.p3.title": "No silent update install", "priv.p3.body": "Update checks happen when you ask or allow; file replacement starts only after your approval.",
-        "plat.kicker": "Platform support", "plat.title": "Cross-platform, with the differences stated plainly.",
-        "plat.lead": "Official releases target Windows x64 (ARM64 Windows runs the x64 build via emulation), macOS on both Apple silicon and Intel, and Linux x64 and arm64. Every platform gets a portable archive; Windows and macOS additionally get an MSI/DMG installer, and Linux gets a deb, rpm and an AppImage. On Linux X11 the Mubi card can dock; Wayland sessions honestly fall back to in-app reminder cards.",
-        "plat.th1": "Platform", "plat.th2": "Idle detection", "plat.th3": "Character delivery", "plat.th4": "Distribution",
-        "plat.all": "Character card", "plat.all2": "Character card", "plat.all3": "Character card",
-        "plat.dist.win": "MSI + portable ZIP", "plat.dist.mac": "DMG + portable ZIP",
-        "plat.dist.linux": "tar.gz + deb + rpm + AppImage + ZIP", "plat.dist.linux2": "tar.gz + deb + rpm + AppImage + ZIP",
-        "plat.fallback": "Elapsed-time fallback", "plat.supported": "Reminder-card fallback",
-        "dl.kicker": "Download", "dl.title": "Install on Windows. Portable when you want it.",
-        "dl.lead": "Windows users normally choose the MSI installer; macOS ships a DMG for Apple silicon and Intel, and Linux gets deb packages and an AppImage. The links below always point at the files of the latest release and the card for your platform is highlighted; portable archives and every other format live on the Releases page.",
-        "dl.badge.release": "Latest release", "dl.badge.feed": "Update feed",
-        "dl.tag.installer": "Installer recommended", "dl.tag.apple": "Apple silicon & Intel", "dl.tag.current": "Your platform",
-        "dl.note": "Every Release includes a verified SHA256SUMS and an independently signed update-manifest.json feed. Follow the supported update procedure for your installation channel; do not overwrite a running app.",
-        "dl.notes": "All formats, release notes & checksums",
-        "dl.warn.strong": "Unsigned builds:", "dl.warn.body": "current GitHub binaries are not code-signed or notarized, so Windows SmartScreen or macOS Gatekeeper may show a warning. MoveBit states this plainly until signed distribution is added.",
-        "faq.title": "The questions worth answering before install.",
-        "faq.q1": "Installer or portable archive?",
-        "faq.a1": "For normal daily use, choose the installer: the Windows MSI or the macOS DMG. It gives MoveBit a stable location, Start-menu/Launchpad launch and normal uninstall support. Choose the portable ZIP, Linux tar.gz, or AppImage for temporary use, USB drives, managed machines where installation is undesirable, or if you simply prefer portable apps.",
-        "faq.q2": "Does MoveBit update itself?",
-        "faq.a2": "Yes. “Check for updates” reads the Ed25519-signed update-manifest.json, downloads the new version and verifies its SHA-256; only then does your click on “Update & restart” swap it in. Any failed check aborts and leaves the current version untouched.",
-        "faq.q3": "Is a forced break the same as locking my computer?",
-        "faq.a3": "No. As of v0.0.1 the fullscreen forced break is removed from the product: reminders arrive through the edge-docked Mubi character or an in-app reminder card, never covering the screen, stealing focus or intercepting input.",
-        "faq.q4": "Does MoveBit record what I type or click?",
-        "faq.a4": "No. Idle providers ask the operating system how long it has been since user input; reminder logic needs elapsed idle duration, not keystroke, document or click contents.",
-        "faq.q5": "What happens on Linux Wayland?",
-        "faq.a5": "Reminders and online updates work as usual. Wayland compositors provide no reliable window-placement or click-through guarantees, so the Mubi card docks on X11 sessions and Wayland sessions honestly fall back to in-app reminder cards.",
-        "faq.q6": "Do I need to install anything else first?",
-        "faq.a6": "No for packaged releases. MoveBit bundles everything it needs — on Linux, GTK 4 and its system libraries are the only external dependency.",
-        "faq.q7": "Why might Windows or macOS warn about the download?",
-        "faq.a7": "The current community builds are unsigned. Signing/notarization is an additional publisher-identity signal and remains the next major distribution improvement.",
-        "cta.title": "Your chair is not a workout plan.",
-        "cta.body": "MoveBit stays quiet while you work and, when a cycle is due, Mubi delivers one clear health suggestion — readable at a glance, yours to act on. Startup and upgrade friction stays out of your way.",
-        "cta.get": "Get MoveBit", "cta.manual": "Read the manual",
-        "footer.manual": "Manual", "footer.releases": "Releases"
-      };
-
-      // language dropdown: unified family policy (explicit choice wins; otherwise browser locale)
-      var LANGUAGE_OVERRIDE_KEY = "movebit-lang-override-v2";
-      var LEGACY_LANGUAGE_KEY = "movebit-lang";
-      var title = document.querySelector('title');
-      var description = document.querySelector('meta[name="description"]');
-      var ogTitle = document.querySelector('meta[property="og:title"]');
-      var ogDescription = document.querySelector('meta[property="og:description"]');
-      var twitterTitle = document.querySelector('meta[name="twitter:title"]');
-      var twitterDescription = document.querySelector('meta[name="twitter:description"]');
-
-      function readLanguageOverride() {
-        try {
-          var v = localStorage.getItem(LANGUAGE_OVERRIDE_KEY);
-          return v === "zh" || v === "en" ? v : null;
-        } catch (e) { return null; }
-      }
-      function detectBrowserLanguage() {
-        var locale = (navigator.languages && navigator.languages[0]) || navigator.language || "";
-        return String(locale).toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
-      }
-      function apply(lang) {
-        var dict = lang === "en" ? en : zh;
-        var isZh = lang === "zh";
-        document.documentElement.lang = isZh ? "zh-CN" : "en";
-        document.documentElement.setAttribute("data-language", lang);
-        var nodes = document.querySelectorAll("[data-i18n]");
-        for (var i = 0; i < nodes.length; i++) {
-          var key = nodes[i].getAttribute("data-i18n");
-          if (dict[key]) nodes[i].textContent = dict[key];
-        }
-        var alts = document.querySelectorAll("[data-i18n-alt]");
-        for (var j = 0; j < alts.length; j++) {
-          var akey = alts[j].getAttribute("data-i18n-alt");
-          if (dict[akey]) alts[j].setAttribute("alt", dict[akey]);
-        }
-        var zhTitle = "MoveBit — 一个真正能让你离开椅子的休息提醒";
-        var zhDescription = "MoveBit 是本地优先的跨平台健康提醒工具：统计真实电脑活跃时长，久坐、喝水、护眼提醒由屏幕边缘的小家伙沐比温柔交付，永不锁屏、不打断；Windows、macOS、Linux 均提供安装器与便携压缩包，发布附带 SHA-256 校验。";
-        var enTitle = "MoveBit — Break reminders you can't ignore";
-        var enDescription = "MoveBit is a local-first cross-platform health reminder: it counts real computer activity, and Mubi — a small character — gently delivers water, stretch and eye-rest cues at the screen edge. Never locks the screen. Installers and portable archives for Windows, macOS and Linux, SHA-256 verified.";
-        var t = isZh ? zhTitle : enTitle, d = isZh ? zhDescription : enDescription;
-        title.textContent = t;
-        description.setAttribute("content", d);
-        if (ogTitle) ogTitle.setAttribute("content", t);
-        if (ogDescription) ogDescription.setAttribute("content", d);
-        if (twitterTitle) twitterTitle.setAttribute("content", t);
-        if (twitterDescription) twitterDescription.setAttribute("content", d);
-        var label = document.getElementById("current-lang-label");
-        if (label) label.textContent = isZh ? "简体中文" : "English";
-      }
-      window.setLanguage = function (lang) {
-        if (lang !== "zh" && lang !== "en") return;
-        try { localStorage.setItem(LANGUAGE_OVERRIDE_KEY, lang); } catch (e) {}
-        apply(lang);
-      };
-      try { localStorage.removeItem(LEGACY_LANGUAGE_KEY); } catch (e) {}
-
-      // ---- highlight the OS; resolve exact versioned release assets ----
-      var RELEASES_PAGE = 'https://github.com/turlamai/movebit/releases/latest';
-      var PRIMARY_SUFFIX = {
-        windows: 'windows-x64.msi',
-        macos: 'macos-arm64.dmg',
-        linux: 'linux-x64.deb'
-      };
-      function detectOS() {
-        var ua = navigator.userAgent || '';
-        if (/Android/i.test(ua)) return null;
-        if (/Mac|iPhone|iPad/i.test(ua)) return 'macos';
-        if (/Win/i.test(ua)) return 'windows';
-        if (/Linux|X11|CrOS/i.test(ua)) return 'linux';
-        return null;
-      }
-      (function () {
-        var os = detectOS();
-        if (os) {
-          var card = document.querySelector('.dl-card[data-os="' + os + '"]');
-          if (card) {
-            card.classList.add('current');
-            var head = card.querySelector('.download-head');
-            if (head) {
-              var chip = document.createElement('span');
-              chip.className = 'download-tag tag-current';
-              chip.setAttribute('data-i18n', 'dl.tag.current');
-              chip.textContent = zh['dl.tag.current'];
-              head.appendChild(chip);
+    <!-- Theme & language pre-paint: no flash before the stylesheet paints. -->
+    <script>
+        (function () {
+            var t;
+            try { t = localStorage.getItem('movebit-theme'); } catch (e) { }
+            if (t !== 'dark' && t !== 'light') {
+                t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
             }
-          }
-          var hero = document.getElementById('hero-download');
-          if (hero) {
-            hero.href = RELEASES_PAGE;
-            hero.dataset.releaseSuffix = PRIMARY_SUFFIX[os];
-          }
+            document.documentElement.dataset.theme = t;
+            var l;
+            try { l = localStorage.getItem('movebit-lang-override-v2'); } catch (e) { }
+            if (l !== 'zh' && l !== 'en') {
+                l = (navigator.language || 'zh').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
+            }
+            document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
+        })();
+    </script>
+
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23D97757'/%3E%3Ccircle cx='32' cy='23' r='7' fill='white'/%3E%3Cpath d='M32 34v17M32 41l-11 7M32 41l11 7' stroke='white' stroke-width='5.5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="family.css">
+    <link rel="stylesheet" href="site.css">
+    <link rel="preload" href="fonts/newsreader-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+    <script src="family.js" defer></script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "MoveBit",
+      "applicationCategory": "HealthApplication",
+      "operatingSystem": "Windows, macOS, Linux",
+      "url": "https://movebit.jrtx.site/",
+      "downloadUrl": "https://github.com/turlamai/movebit/releases/latest",
+      "codeRepository": "https://github.com/turlamai/movebit",
+      "license": "https://github.com/turlamai/movebit/blob/main/LICENSE",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+</head>
+
+<body>
+    <a class="skip-link" href="#main" data-i18n="a11y.skip">跳到正文</a>
+
+    <header class="kit-nav" id="top">
+        <div class="kit-container kit-nav-inner">
+            <a class="kit-brand" href="/">
+                <svg class="kit-brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+                    <rect width="64" height="64" rx="15" fill="#D97757"/>
+                    <circle cx="32" cy="23" r="7" fill="white"/>
+                    <path d="M32 34v17M32 41l-11 7M32 41l11 7" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+                </svg>
+                <span>MoveBit</span>
+            </a>
+            <nav class="kit-nav-links" aria-label="Primary navigation">
+                <a href="#why" data-i18n="nav.why">为什么是 MoveBit</a>
+                <a href="#updates" data-i18n="nav.updates">在线更新</a>
+                <a href="#privacy" data-i18n="nav.privacy">隐私</a>
+                <a href="manual.html" data-i18n="nav.manual">手册</a>
+                <a href="#download" data-i18n="nav.download">下载</a>
+                <a href="https://github.com/turlamai/movebit" data-i18n="nav.github">GitHub</a>
+            </nav>
+            <div class="kit-nav-actions">
+                <div class="kit-lang">
+                    <button class="kit-lang-btn" type="button" aria-haspopup="true" aria-expanded="false">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c-4.6 4-4.6 8.4 0 12.4 4.6-4 4.6-8.4 0-12.4z"/></svg>
+                        <span class="kit-lang-current">简体中文</span>
+                    </button>
+                    <ul class="kit-lang-menu">
+                        <li><button type="button" data-kit-lang="zh">简体中文</button></li>
+                        <li><button type="button" data-kit-lang="en">English</button></li>
+                    </ul>
+                </div>
+                <button class="kit-icon-btn kit-theme-toggle" type="button" aria-pressed="false" aria-label="Theme">
+                    <svg class="kit-icon-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6L16 16M16 4l-1.4 1.4M5.4 14.6L4 16"/></svg>
+                    <svg class="kit-icon-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M16.5 12.2A7 7 0 0 1 7.8 3.5a7 7 0 1 0 8.7 8.7z"/></svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main id="main">
+        <!-- Hero -->
+        <section class="kit-hero">
+            <div class="kit-container">
+                <span class="kit-eyebrow" data-i18n="hero.eyebrow">开源 · 本地优先 · 跨平台</span>
+                <h1><span data-i18n="hero.h1a">久坐、喝水、护眼——</span> <span class="kit-accent-word" data-i18n="hero.h1b">由小家伙沐比温柔提醒。</span></h1>
+                <p class="kit-lead" data-i18n="hero.lead">MoveBit 统计你真正操作电脑的活跃时长，到点由小家伙沐比在屏幕边缘温柔提醒：喝水、起身、让眼睛休息。它从不锁屏、不抢焦点、不打断输入；你真正离开工位时它也知道。Windows、macOS、Linux 一次安装即可，每个发布都同时提供安装器与便携压缩包。</p>
+                <div class="kit-btn-row">
+                    <div class="kit-dl">
+                        <a class="kit-btn kit-btn--primary" data-kit-dl-primary href="https://github.com/turlamai/movebit/releases/latest">
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 2.5v10M6 9l4 4 4-4M3.5 16.5h13"/></svg>
+                            <span class="kit-dl-label" data-i18n="dl.generic">下载 MoveBit</span>
+                        </a>
+                        <button class="kit-dl-caret" type="button" aria-haspopup="true" aria-expanded="false" aria-label="All platforms">
+                            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 5.5L7 9.5l4-4"/></svg>
+                        </button>
+                        <ul class="kit-dl-menu">
+                            <li><a href="https://github.com/turlamai/movebit/releases/latest" data-kit-dl="mac"><span class="kit-dl-os" data-i18n="dl.mac">macOS 版</span><span class="kit-dl-kind">.dmg</span></a></li>
+                            <li><a href="https://github.com/turlamai/movebit/releases/latest" data-kit-dl="win"><span class="kit-dl-os" data-i18n="dl.win">Windows 版</span><span class="kit-dl-kind">.msi</span></a></li>
+                            <li><a href="https://github.com/turlamai/movebit/releases/latest" data-kit-dl="linux"><span class="kit-dl-os" data-i18n="dl.linux">Linux 版</span><span class="kit-dl-kind">.AppImage</span></a></li>
+                            <li class="kit-dl-note kit-hidden" data-kit-dl-note data-i18n="dl.menu-note">移动端与未知平台请前往 Releases 页面选取对应安装包。</li>
+                        </ul>
+                    </div>
+                    <a class="kit-btn kit-btn--secondary" href="manual.html"><span data-i18n="hero.manual">使用手册</span><span aria-hidden="true">→</span></a>
+                    <a class="kit-btn kit-btn--ghost" href="https://github.com/turlamai/movebit" target="_blank" rel="noopener"><span data-i18n="hero.source">查看源码</span><span aria-hidden="true">↗</span></a>
+                </div>
+                <p class="kit-hero-meta trust-row">
+                    <span class="kit-chip" data-i18n="chip.account">无需账户</span>
+                    <span class="kit-chip" data-i18n="chip.local">提醒记录保存在本机</span>
+                    <span class="kit-chip" data-i18n="chip.sha">SHA-256 校验发布</span>
+                    <span class="kit-chip" data-i18n="chip.mit">MIT 开源许可</span>
+                </p>
+                <p class="kit-hero-meta"><span class="kit-badge" data-i18n="hero.badge">当前公开预览版——源码采用 MIT 许可，尚未启用付费激活或订阅。</span></p>
+
+                <div class="hero-visual">
+                    <figure class="shot-frame">
+                        <h3 data-i18n="shot.alt">三个提醒，一个可核对的流程</h3>
+                        <figcaption data-i18n="shot.caption">设置喝水、起身和眼睛休息间隔，等待提醒，再选择完成或稍后。预期提醒状态保留在本地历史；演示时可启用专注模式。</figcaption>
+                    </figure>
+                </div>
+            </div>
+        </section>
+
+        <!-- Visual Showcase: illustration, not UI screenshot -->
+        <section class="kit-section kit-section--alt" id="visual-showcase" aria-label="Product workflow illustration">
+            <div class="kit-container vs-wrap">
+                <div class="vs-intro">
+                    <span class="vs-label">PRODUCT IN CONTEXT · 产品如何工作</span>
+                    <h2 class="kit-h2" data-i18n="vs.title">让休息提醒成为一个友好的瞬间。</h2>
+                    <p class="kit-lead" data-i18n="vs.lead">用视觉区分喝水、起身和护眼；这不是沐比最终角色造型或未交付的动画。</p>
+                </div>
+                <div class="vs-frame">
+                    <div class="vs-art">
+                        <div class="vs-bubbles">
+                            <span class="vs-bubble">💧 <span data-i18n="vs.b1">喝水</span></span>
+                            <span class="vs-bubble">🚶 <span data-i18n="vs.b2">活动</span></span>
+                            <span class="vs-bubble">◉ <span data-i18n="vs.b3">护眼</span></span>
+                        </div>
+                        <div class="vs-symbol" aria-hidden="true">☺</div>
+                    </div>
+                    <div class="vs-stage">
+                        <div class="vs-step"><span class="vs-glyph" aria-hidden="true">◷</span><b data-i18n="vs.s1t">活跃时间</b><small data-i18n="vs.s1b">依据可用的桌面信号安排提醒</small></div>
+                        <div class="vs-step"><span class="vs-glyph" aria-hidden="true">✦</span><b data-i18n="vs.s2t">简短提示</b><small data-i18n="vs.s2b">喝水、起身或护眼提醒</small></div>
+                        <div class="vs-step"><span class="vs-glyph" aria-hidden="true">✓</span><b data-i18n="vs.s3t">自行决定</b><small data-i18n="vs.s3b">完成、稍后或暂时专注</small></div>
+                    </div>
+                    <p class="vs-caption" data-i18n="vs.caption">概念工作流示意，非当前软件截图；以安装版本和用户手册为准。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Why -->
+        <section class="kit-section" id="why">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="why.kicker">核心差异</span>
+                <h2 class="kit-h2" data-i18n="why.title">不是又一个被你顺手关掉的计时器。</h2>
+                <p class="kit-lead" data-i18n="why.lead">MoveBit 围绕三件事设计：只累计真正重要的活跃时间、让提醒以不被忽略又不打断的方式出现、识别你实际离开工位的休息。</p>
+                <div class="kit-grid kit-grid--3" style="margin-top: 44px;">
+                    <article class="kit-card core-card" data-step="01">
+                        <span class="kit-card-icon" aria-hidden="true">⌁</span>
+                        <h3 data-i18n="why.c1.title">真实活跃时长</h3>
+                        <p data-i18n="why.c1.body">提醒时钟参考整个桌面的键鼠空闲时长，而不是机械累计自然时间。</p>
+                        <p class="core-meta" data-i18n="why.c1.meta">活跃时间 ≠ 自然时间</p>
+                    </article>
+                    <article class="kit-card core-card" data-step="02">
+                        <span class="kit-card-icon" aria-hidden="true">▣</span>
+                        <h3 data-i18n="why.c2.title">角色交付 · 永不打断</h3>
+                        <p data-i18n="why.c2.body">到点时，小家伙沐比在屏幕边缘带着明确的健康建议出现；做到 / 稍后 / 隐藏 / 专注永远触手可及——托盘菜单（Windows / macOS）或应用内控件（全平台）。没有全屏遮罩，没有焦点抢夺。</p>
+                        <p class="core-meta" data-i18n="why.c2.meta">提醒为本 · 角色为形</p>
+                    </article>
+                    <article class="kit-card core-card" data-step="03">
+                        <span class="kit-card-icon" aria-hidden="true">◌</span>
+                        <h3 data-i18n="why.c3.title">聪明的离席识别</h3>
+                        <p data-i18n="why.c3.body">空闲超过离席阈值后，MoveBit 会把这段时间视为一次真正的休息；回来后提醒周期重新开始。</p>
+                        <p class="core-meta" data-i18n="why.c3.meta">离席 → 重置</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Online updates -->
+        <section class="kit-section kit-section--alt" id="updates">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="upd.kicker">在线更新</span>
+                <h2 class="kit-h2" data-i18n="upd.title">带签名的更新 feed，明确的更新动作。</h2>
+                <p class="kit-lead" data-i18n="upd.lead">每个发布都提供各平台的更新包、SHA-256 校验文件，以及 Ed25519 签名的 update-manifest.json。应用内「检查更新」负责发现、下载与校验；换成新版本永远经过你点击的「更新并重启」。</p>
+                <div class="kit-grid kit-grid--3" style="margin-top: 44px;">
+                    <article class="kit-card core-card" data-step="01">
+                        <span class="kit-card-icon" aria-hidden="true">↻</span>
+                        <h3 data-i18n="upd.c1.title">发现</h3>
+                        <p data-i18n="upd.c1.body">启动后检查一次，此后约每 6 小时一次，也可以在托盘随时手动「检查更新」。检查只访问 GitHub Releases——无需账户，无遥测。</p>
+                        <p class="core-meta" data-i18n="upd.c1.meta">无需账户</p>
+                    </article>
+                    <article class="kit-card core-card" data-step="02">
+                        <span class="kit-card-icon" aria-hidden="true">✓</span>
+                        <h3 data-i18n="upd.c2.title">校验</h3>
+                        <p data-i18n="upd.c2.body">下载完成后校验字节数与 SHA-256，全部对着 Ed25519 签名的 update-manifest.json 核对；任何不一致都会中止更新，不动任何文件。</p>
+                        <p class="core-meta kit-mono">SHA-256 + Ed25519</p>
+                    </article>
+                    <article class="kit-card core-card" data-step="03">
+                        <span class="kit-card-icon" aria-hidden="true">↑</span>
+                        <h3 data-i18n="upd.c3.title">更新并重启</h3>
+                        <p data-i18n="upd.c3.body">校验通过后由你点击「更新并重启」：MoveBit 等自己退出后替换文件再启动。绝不静默安装；配置与历史保存在应用目录之外，升级不碰用户数据。</p>
+                        <p class="core-meta" data-i18n="upd.c3.meta">绝不静默</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="kit-section" id="features">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="feat.kicker">有用，但不喧宾夺主</span>
+                <h2 class="kit-h2" data-i18n="feat.title">日常真正需要的细节，也已经补齐。</h2>
+                <div class="kit-grid kit-grid--3" style="margin-top: 44px;">
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">👀</span><h3 data-i18n="feat.f1.title">护眼提醒</h3><p data-i18n="feat.f1.body">独立的护眼周期：沐比闭上眼睛，提示你看向远处休息片刻。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">H₂O</span><h3 data-i18n="feat.f2.title">喝水提醒</h3><p data-i18n="feat.f2.body">独立周期。沐比举起小蓝杯，把「喝点水吧」送到屏幕边缘。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">7d</span><h3 data-i18n="feat.f3.title">工作历史</h3><p data-i18n="feat.f3.body">每日活跃分钟数与提醒次数跨重启保存，并保留 370 天。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">1h</span><h3 data-i18n="feat.f4.title">一键暂停</h3><p data-i18n="feat.f4.body">会议、演示或共享屏幕时，可从托盘快速暂停提醒一小时。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">↻</span><h3 data-i18n="feat.f5.title">随系统启动</h3><p data-i18n="feat.f5.body">一个开关即可让 MoveBit 在 Windows、macOS 与 Linux 登录时启动。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">↑</span><h3 data-i18n="feat.f6.title">检查更新</h3><p data-i18n="feat.f6.body">应用内下载、SHA-256 校验、「更新并重启」一步完成，全程对签名 feed 核对。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">⊞</span><h3 data-i18n="feat.f7.title">Windows 安装版</h3><p data-i18n="feat.f7.body">运行 MSI 即可作为常规桌面应用安装；也可以把便携 ZIP 解压到任意目录使用。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">1×</span><h3 data-i18n="feat.f8.title">单实例</h3><p data-i18n="feat.f8.body">重复启动时会唤起已有实例，不会再创建一套重复的提醒计时器。</p></article>
+                    <article class="kit-card"><span class="kit-card-icon" aria-hidden="true">cfg</span><h3 data-i18n="feat.f9.title">可配置</h3><p data-i18n="feat.f9.body">三个提醒间隔、沐比的尺寸 S/M/L 与动效、停靠位置、声音与自动检查更新均可调整。</p></article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Privacy -->
+        <section class="kit-section kit-section--alt" id="privacy">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="priv.kicker">从设计上建立信任</span>
+                <h2 class="kit-h2" data-i18n="priv.title">它关心的是你多久没动，而不是你在做什么。</h2>
+                <p class="kit-lead" data-i18n="priv.lead">一个健康工具不应该为了判断你是否坐得太久，就需要读取文档、记录按键内容，或者要求你注册在线账户。</p>
+
+                <div class="privacy-panel">
+                    <article class="kit-card privacy-main">
+                        <h3 data-i18n="priv.main.title">默认就是本地优先。</h3>
+                        <p data-i18n="priv.main.body">配置与历史记录保存在你的机器上，提醒逻辑无需账户或云服务。更新检查只会访问 GitHub Releases，用于发现和下载公开发布文件。</p>
+                    </article>
+                    <div class="kit-card privacy-list">
+                        <div class="privacy-item"><span class="check" aria-hidden="true">✓</span><span><strong data-i18n="priv.p1.title">读取空闲时长，而不是按键内容</strong><small data-i18n="priv.p1.body">使用系统原生空闲 API 获取经过的空闲时间。</small></span></div>
+                        <div class="privacy-item"><span class="check" aria-hidden="true">✓</span><span><strong data-i18n="priv.p2.title">提醒界面不拦截任何输入</strong><small data-i18n="priv.p2.body">沐比的角色与文字保持鼠标穿透，只有提醒卡上的操作按钮可点；没有全屏遮罩或系统级输入钩子。</small></span></div>
+                        <div class="privacy-item"><span class="check" aria-hidden="true">✓</span><span><strong data-i18n="priv.p3.title">不静默强制安装更新</strong><small data-i18n="priv.p3.body">检查更新在你主动点击或明确允许时发生；替换程序文件只会经过你的确认。</small></span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Platforms -->
+        <section class="kit-section" id="platforms">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="plat.kicker">平台支持</span>
+                <h2 class="kit-h2" data-i18n="plat.title">跨平台，但把不同平台的差异说清楚。</h2>
+                <p class="kit-lead" data-i18n="plat.lead">当前正式发布支持 Windows x64（ARM64 Windows 通过模拟运行 x64 构建）、Apple silicon 与 Intel 的 macOS，以及 Linux x64 与 arm64。每个平台都有便携压缩包；Windows 与 macOS 额外提供 MSI/DMG 安装器，Linux 提供 deb、rpm 与 AppImage。Linux X11 下沐比角色卡可停靠显示；Wayland 会话诚实回退为应用内提醒卡。</p>
+
+                <div class="support-wrap">
+                    <table class="support-table">
+                        <thead><tr><th data-i18n="plat.th1">平台</th><th data-i18n="plat.th2">空闲检测</th><th data-i18n="plat.th3">角色交付</th><th data-i18n="plat.th4">分发</th></tr></thead>
+                        <tbody>
+                            <tr><td><strong>Windows x64</strong></td><td><span class="status kit-mono">GetLastInputInfo</span></td><td data-i18n="plat.all">角色卡</td><td data-i18n="plat.dist.win">MSI + 便携 ZIP</td></tr>
+                            <tr><td><strong>macOS arm64 / x64</strong></td><td><span class="status kit-mono">CoreGraphics</span></td><td data-i18n="plat.all2">角色卡</td><td data-i18n="plat.dist.mac">DMG + 便携 ZIP</td></tr>
+                            <tr><td><strong>Linux x64 / arm64 · X11</strong></td><td><span class="status kit-mono">XScreenSaver</span></td><td data-i18n="plat.all3">角色卡</td><td data-i18n="plat.dist.linux">tar.gz + deb + rpm + AppImage + ZIP</td></tr>
+                            <tr><td><strong>Linux x64 / arm64 · Wayland</strong></td><td><span class="status fallback" data-i18n="plat.fallback">自然时间降级</span></td><td data-i18n="plat.supported">提醒卡回退</td><td data-i18n="plat.dist.linux2">tar.gz + deb + rpm + AppImage + ZIP</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download -->
+        <section class="kit-section kit-section--alt" id="download">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="dl.kicker">下载</span>
+                <h2 class="kit-h2" data-i18n="dl.title">Windows 推荐安装；需要时，便携版一直都在。</h2>
+                <p class="kit-lead" data-i18n="dl.lead">Windows 用户通常选择 MSI 安装版；macOS 在 Apple silicon 和 Intel 上都提供 DMG，Linux 提供 deb 与 AppImage。下面的直链永远指向最新发布的文件，你所在平台的卡片会自动高亮；便携压缩包与其余格式都在 Releases 页。</p>
+
+                <div class="kit-grid kit-grid--3" style="margin-top: 44px;">
+                    <div class="kit-card dl-card" data-os="windows">
+                        <span class="kit-card-icon"><svg role="img" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h11.377v11.372H0zm12.623 0H24v11.372H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg></span>
+                        <h3>Windows x64</h3>
+                        <p class="dl-card-tag"><span class="kit-chip" data-i18n="dl.tag.installer">推荐安装版</span></p>
+                        <p class="dl-card-action"><a class="kit-btn kit-btn--secondary" data-kit-dl="win" href="https://github.com/turlamai/movebit/releases/latest"><span data-i18n="dl.win">Windows 版</span><span class="dl-kind kit-mono">.msi</span></a></p>
+                        <p class="dl-formats kit-mono" data-i18n="plat.dist.win">MSI + 便携 ZIP</p>
+                    </div>
+                    <div class="kit-card dl-card" data-os="macos">
+                        <span class="kit-card-icon"><svg role="img" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span>
+                        <h3>macOS</h3>
+                        <p class="dl-card-tag"><span class="kit-chip" data-i18n="dl.tag.apple">Apple silicon 与 Intel</span></p>
+                        <p class="dl-card-action"><a class="kit-btn kit-btn--secondary" data-kit-dl="mac" href="https://github.com/turlamai/movebit/releases/latest"><span data-i18n="dl.mac">macOS 版</span><span class="dl-kind kit-mono">.dmg</span></a></p>
+                        <p class="dl-formats kit-mono" data-i18n="plat.dist.mac">DMG + 便携 ZIP</p>
+                    </div>
+                    <div class="kit-card dl-card" data-os="linux">
+                        <span class="kit-card-icon"><svg role="img" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139z"/></svg></span>
+                        <h3>Linux</h3>
+                        <p class="dl-card-tag"><span class="kit-chip">x64 &amp; arm64</span></p>
+                        <p class="dl-card-action"><a class="kit-btn kit-btn--secondary" data-kit-dl="linux" href="https://github.com/turlamai/movebit/releases/latest"><span data-i18n="dl.linux">Linux 版</span><span class="dl-kind kit-mono">.AppImage</span></a></p>
+                        <p class="dl-formats kit-mono" data-i18n="plat.dist.linux">tar.gz + deb + rpm + AppImage + ZIP</p>
+                    </div>
+                </div>
+
+                <div class="release-line">
+                    <span class="kit-badge"><span data-i18n="dl.badge.release">最新版本</span> <strong>GitHub Release</strong></span>
+                    <span class="kit-badge"><span data-i18n="dl.badge.feed">更新 feed</span> <strong class="kit-mono">update-manifest.json</strong></span>
+                </div>
+                <p class="dl-note" data-i18n="dl.note">每个 Release 都提供统一的 SHA256SUMS 校验文件，以及独立签名的 update-manifest.json 更新清单。升级时请遵循当前安装渠道的官方更新步骤，勿直接覆盖仍在运行的软件。</p>
+                <p class="dl-all"><a class="kit-btn kit-btn--ghost" href="https://github.com/turlamai/movebit/releases" target="_blank" rel="noopener"><span data-i18n="dl.notes">全部格式、版本说明与校验值</span><span aria-hidden="true">↗</span></a></p>
+                <div class="dl-warning"><strong data-i18n="dl.warn.strong">未签名构建：</strong><span data-i18n="dl.warn.body">当前 GitHub 二进制文件尚未进行代码签名或 macOS 公证，因此 Windows SmartScreen 或 macOS Gatekeeper 可能提示警告。在签名分发完成前，MoveBit 会明确说明这一点。</span></div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="kit-section" id="faq">
+            <div class="kit-container">
+                <span class="kit-kicker">FAQ</span>
+                <h2 class="kit-h2" data-i18n="faq.title">安装之前，值得先说清楚的问题。</h2>
+                <div class="faq">
+                    <details><summary data-i18n="faq.q1">选安装版还是便携版？</summary><p data-i18n="faq.a1">日常长期使用推荐安装版：Windows MSI 或 macOS DMG。它给 MoveBit 一个稳定的位置、开始菜单/启动台入口和标准卸载。临时使用、U 盘、受管电脑不希望安装，或者你偏爱便携软件时再选便携 ZIP、Linux tar.gz 或 AppImage。</p></details>
+                    <details><summary data-i18n="faq.q2">MoveBit 支持在线更新吗？</summary><p data-i18n="faq.a2">支持。「检查更新」读取 Ed25519 签名的 update-manifest.json，发现新版本后下载并做 SHA-256 校验，全部通过再由你点击「更新并重启」完成换新。任何一步校验失败都会中止，当前版本原封不动。</p></details>
+                    <details><summary data-i18n="faq.q3">还有全屏强制休息吗？</summary><p data-i18n="faq.a3">没有。v0.0.1 起全屏强制休息已从产品中移除：提醒由屏幕边缘的沐比角色或应用内提醒卡交付，永远不会遮盖屏幕、抢夺焦点或拦截输入。</p></details>
+                    <details><summary data-i18n="faq.q4">MoveBit 会记录我输入或点击了什么吗？</summary><p data-i18n="faq.a4">不会。空闲检测模块只向操作系统询问距离上次用户输入过去了多久；提醒逻辑需要空闲时长，而不是按键、文档或点击内容。</p></details>
+                    <details><summary data-i18n="faq.q5">Linux Wayland 下会怎样？</summary><p data-i18n="faq.a5">提醒与在线更新照常工作。Wayland 合成器不提供可靠的窗口定位与穿透保证，因此沐比角色卡在 X11 会话停靠，Wayland 会话诚实回退为应用内提醒卡。</p></details>
+                    <details><summary data-i18n="faq.q6">需要另外安装别的运行时吗？</summary><p data-i18n="faq.a6">使用打包 Release 时不需要。MoveBit 自带所需的一切——Linux 上唯一的外部依赖是 GTK 4 及其系统库。</p></details>
+                    <details><summary data-i18n="faq.q7">为什么 Windows 或 macOS 可能对下载文件发出警告？</summary><p data-i18n="faq.a7">当前社区构建尚未签名。代码签名 / 公证属于额外的发布者身份信号，也是下一项重要的分发体验改进。</p></details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final CTA -->
+        <section class="kit-section kit-section--tight" id="final-cta">
+            <div class="kit-container">
+                <div class="final-card">
+                    <h2 data-i18n="cta.title">椅子不算健身计划。</h2>
+                    <p data-i18n="cta.body">MoveBit 在你工作时保持安静，到点由沐比送上一句明确的健康建议——看一眼就懂，做不做由你；升级与启动的麻烦也从日常里拿掉了。</p>
+                    <div class="kit-btn-row final-actions">
+                        <a class="kit-btn kit-btn--primary" href="#download"><span data-i18n="cta.get">获取 MoveBit</span></a>
+                        <a class="kit-btn kit-btn--secondary" href="manual.html"><span data-i18n="cta.manual">先看手册</span></a>
+                        <a class="kit-btn kit-btn--ghost" href="https://github.com/turlamai/movebit" target="_blank" rel="noopener">GitHub ↗</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Get started -->
+        <section class="kit-section" id="start-here">
+            <div class="kit-container">
+                <h2 class="kit-h2" data-i18n="start.title">从一次有效使用开始。</h2>
+                <p class="kit-hero-meta" style="margin-top: 20px;"><span class="kit-badge" data-i18n="start.status">当前公开预览版——MIT 源码许可，未启用付费激活或订阅。</span></p>
+                <p class="kit-lead" data-i18n="start.body">提供 macOS、Windows、Linux 桌面提醒。空闲检测依赖桌面会话；不支持的 Wayland 会话回退为经过时间计时，沐比角色卡在 X11 停靠、Wayland 使用应用内提醒卡。</p>
+                <div class="kit-steps" style="margin-top: 44px;">
+                    <div class="kit-step">
+                        <p data-i18n="start.s1">安装后在小巧的首启流程里定好三个间隔，让沐比送出第一条提醒。</p>
+                    </div>
+                    <div class="kit-step">
+                        <p data-i18n="start.s2">在提醒卡上直接使用做到 / 稍后 / 隐藏；演示时开专注——提醒安静排队，结束后合并为一条有界汇总。</p>
+                    </div>
+                    <div class="kit-step">
+                        <p data-i18n="start.s3">喜欢的话给沐比选尺寸、动效与停靠位。历史数据属于使用估计，不是健康测量。</p>
+                    </div>
+                </div>
+                <p class="start-limits kit-text-2" data-i18n="start.limits">本工具提供提醒，不提供医疗建议或预防损伤保证。</p>
+                <div class="start-links">
+                    <a href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.zh-CN.md" data-en-href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.md" data-i18n="start.guide">安装、隐私与恢复</a>
+                    <a href="https://github.com/turlamai/movebit/issues" data-i18n="start.help">反馈与帮助</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="kit-footer">
+        <div class="kit-container">
+            <div class="kit-footer-grid">
+                <div>
+                    <a class="kit-brand" href="/">
+                        <svg class="kit-brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+                            <rect width="64" height="64" rx="15" fill="#D97757"/>
+                            <circle cx="32" cy="23" r="7" fill="white"/>
+                            <path d="M32 34v17M32 41l-11 7M32 41l11 7" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+                        </svg>
+                        <span>MoveBit</span>
+                    </a>
+                    <p class="kit-footer-tagline" data-i18n="footer.tagline">久坐、喝水、护眼，由沐比温柔提醒。</p>
+                </div>
+                <div>
+                    <h4 data-i18n="footer.product">产品</h4>
+                    <ul>
+                        <li><a href="#why" data-i18n="nav.why">为什么是 MoveBit</a></li>
+                        <li><a href="manual.html" data-i18n="footer.manual">手册</a></li>
+                        <li><a href="https://github.com/turlamai/movebit/releases" data-i18n="footer.releases">Releases</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 data-i18n="footer.family">家族</h4>
+                    <ul>
+                        <li><a href="https://jrtx.site/" data-i18n="footer.portal">全部产品</a></li>
+                        <li><a href="https://rivet.jrtx.site/">Rivet</a></li>
+                        <li><a href="https://glaze.jrtx.site/">Glaze</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 data-i18n="footer.legal">条款</h4>
+                    <ul>
+                        <li><a href="https://github.com/turlamai/movebit" data-i18n="nav.github">GitHub</a></li>
+                        <li><a href="https://github.com/turlamai/movebit/blob/main/LICENSE" data-i18n="footer.license">MIT License</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="kit-footer-bottom">
+                <span>© 2026 TuringLambda AI</span>
+                <span class="kit-mono">site-kit v1.0.2</span>
+            </div>
+        </div>
+    </footer>
+
+    <nav id="product-support" aria-label="Support / 支持">
+        <a href="https://github.com/turlamai/movebit/issues" data-i18n="support.feedback">反馈</a>
+        <a href="https://github.com/turlamai/movebit/releases" data-i18n="support.releases">发布与更新</a>
+        <a href="https://github.com/turlamai/movebit/blob/main/LICENSE" data-i18n="support.license">源码许可</a>
+        <a href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.zh-CN.md" data-en-href="https://github.com/turlamai/movebit/blob/main/docs/USER-GUIDE.md" data-i18n="support.help">使用与帮助</a>
+    </nav>
+
+    <script type="application/json" id="kit-i18n">
+    {
+        "__meta__": {
+            "zh": {
+                "title": "MoveBit — 一个真正能让你离开椅子的休息提醒",
+                "description": "MoveBit 是本地优先的跨平台健康提醒工具：统计真实电脑活跃时长，久坐、喝水、护眼提醒由屏幕边缘的小家伙沐比温柔交付，永不锁屏、不打断；Windows、macOS、Linux 均提供安装器与便携压缩包，发布附带 SHA-256 校验。"
+            },
+            "en": {
+                "title": "MoveBit — Break reminders you can't ignore",
+                "description": "MoveBit is a local-first cross-platform health reminder: it counts real computer activity, and Mubi — a small character — gently delivers water, stretch and eye-rest cues at the screen edge. Never locks the screen. Installers and portable archives for Windows, macOS and Linux, SHA-256 verified."
+            }
+        },
+        "zh": {
+            "a11y.skip": "跳到正文",
+            "nav.why": "为什么是 MoveBit", "nav.updates": "在线更新", "nav.privacy": "隐私",
+            "nav.manual": "手册", "nav.download": "下载", "nav.github": "GitHub",
+            "hero.eyebrow": "开源 · 本地优先 · 跨平台",
+            "hero.h1a": "久坐、喝水、护眼——", "hero.h1b": "由小家伙沐比温柔提醒。",
+            "hero.lead": "MoveBit 统计你真正操作电脑的活跃时长，到点由小家伙沐比在屏幕边缘温柔提醒：喝水、起身、让眼睛休息。它从不锁屏、不抢焦点、不打断输入；你真正离开工位时它也知道。Windows、macOS、Linux 一次安装即可，每个发布都同时提供安装器与便携压缩包。",
+            "hero.badge": "当前公开预览版——源码采用 MIT 许可，尚未启用付费激活或订阅。",
+            "hero.manual": "使用手册", "hero.source": "查看源码",
+            "chip.account": "无需账户", "chip.local": "提醒记录保存在本机", "chip.sha": "SHA-256 校验发布", "chip.mit": "MIT 开源许可",
+            "shot.alt": "三个提醒，一个可核对的流程",
+            "shot.caption": "设置喝水、起身和眼睛休息间隔，等待提醒，再选择完成或稍后。预期提醒状态保留在本地历史；演示时可启用专注模式。",
+            "vs.title": "让休息提醒成为一个友好的瞬间。",
+            "vs.lead": "用视觉区分喝水、起身和护眼；这不是沐比最终角色造型或未交付的动画。",
+            "vs.b1": "喝水", "vs.b2": "活动", "vs.b3": "护眼",
+            "vs.s1t": "活跃时间", "vs.s1b": "依据可用的桌面信号安排提醒",
+            "vs.s2t": "简短提示", "vs.s2b": "喝水、起身或护眼提醒",
+            "vs.s3t": "自行决定", "vs.s3b": "完成、稍后或暂时专注",
+            "vs.caption": "概念工作流示意，非当前软件截图；以安装版本和用户手册为准。",
+            "why.kicker": "核心差异",
+            "why.title": "不是又一个被你顺手关掉的计时器。",
+            "why.lead": "MoveBit 围绕三件事设计：只累计真正重要的活跃时间、让提醒以不被忽略又不打断的方式出现、识别你实际离开工位的休息。",
+            "why.c1.title": "真实活跃时长", "why.c1.body": "提醒时钟参考整个桌面的键鼠空闲时长，而不是机械累计自然时间。", "why.c1.meta": "活跃时间 ≠ 自然时间",
+            "why.c2.title": "角色交付 · 永不打断", "why.c2.body": "到点时，小家伙沐比在屏幕边缘带着明确的健康建议出现；做到 / 稍后 / 隐藏 / 专注永远触手可及——托盘菜单（Windows / macOS）或应用内控件（全平台）。没有全屏遮罩，没有焦点抢夺。", "why.c2.meta": "提醒为本 · 角色为形",
+            "why.c3.title": "聪明的离席识别", "why.c3.body": "空闲超过离席阈值后，MoveBit 会把这段时间视为一次真正的休息；回来后提醒周期重新开始。", "why.c3.meta": "离席 → 重置",
+            "upd.kicker": "在线更新", "upd.title": "带签名的更新 feed，明确的更新动作。",
+            "upd.lead": "每个发布都提供各平台的更新包、SHA-256 校验文件，以及 Ed25519 签名的 update-manifest.json。应用内「检查更新」负责发现、下载与校验；换成新版本永远经过你点击的「更新并重启」。",
+            "upd.c1.title": "发现", "upd.c1.body": "启动后检查一次，此后约每 6 小时一次，也可以在托盘随时手动「检查更新」。检查只访问 GitHub Releases——无需账户，无遥测。", "upd.c1.meta": "无需账户",
+            "upd.c2.title": "校验", "upd.c2.body": "下载完成后校验字节数与 SHA-256，全部对着 Ed25519 签名的 update-manifest.json 核对；任何不一致都会中止更新，不动任何文件。",
+            "upd.c3.title": "更新并重启", "upd.c3.body": "校验通过后由你点击「更新并重启」：MoveBit 等自己退出后替换文件再启动。绝不静默安装；配置与历史保存在应用目录之外，升级不碰用户数据。", "upd.c3.meta": "绝不静默",
+            "feat.kicker": "有用，但不喧宾夺主", "feat.title": "日常真正需要的细节，也已经补齐。",
+            "feat.f1.title": "护眼提醒", "feat.f1.body": "独立的护眼周期：沐比闭上眼睛，提示你看向远处休息片刻。",
+            "feat.f2.title": "喝水提醒", "feat.f2.body": "独立周期。沐比举起小蓝杯，把「喝点水吧」送到屏幕边缘。",
+            "feat.f3.title": "工作历史", "feat.f3.body": "每日活跃分钟数与提醒次数跨重启保存，并保留 370 天。",
+            "feat.f4.title": "一键暂停", "feat.f4.body": "会议、演示或共享屏幕时，可从托盘快速暂停提醒一小时。",
+            "feat.f5.title": "随系统启动", "feat.f5.body": "一个开关即可让 MoveBit 在 Windows、macOS 与 Linux 登录时启动。",
+            "feat.f6.title": "检查更新", "feat.f6.body": "应用内下载、SHA-256 校验、「更新并重启」一步完成，全程对签名 feed 核对。",
+            "feat.f7.title": "Windows 安装版", "feat.f7.body": "运行 MSI 即可作为常规桌面应用安装；也可以把便携 ZIP 解压到任意目录使用。",
+            "feat.f8.title": "单实例", "feat.f8.body": "重复启动时会唤起已有实例，不会再创建一套重复的提醒计时器。",
+            "feat.f9.title": "可配置", "feat.f9.body": "三个提醒间隔、沐比的尺寸 S/M/L 与动效、停靠位置、声音与自动检查更新均可调整。",
+            "priv.kicker": "从设计上建立信任", "priv.title": "它关心的是你多久没动，而不是你在做什么。",
+            "priv.lead": "一个健康工具不应该为了判断你是否坐得太久，就需要读取文档、记录按键内容，或者要求你注册在线账户。",
+            "priv.main.title": "默认就是本地优先。", "priv.main.body": "配置与历史记录保存在你的机器上，提醒逻辑无需账户或云服务。更新检查只会访问 GitHub Releases，用于发现和下载公开发布文件。",
+            "priv.p1.title": "读取空闲时长，而不是按键内容", "priv.p1.body": "使用系统原生空闲 API 获取经过的空闲时间。",
+            "priv.p2.title": "提醒界面不拦截任何输入", "priv.p2.body": "沐比的角色与文字保持鼠标穿透，只有提醒卡上的操作按钮可点；没有全屏遮罩或系统级输入钩子。",
+            "priv.p3.title": "不静默强制安装更新", "priv.p3.body": "检查更新在你主动点击或明确允许时发生；替换程序文件只会经过你的确认。",
+            "plat.kicker": "平台支持", "plat.title": "跨平台，但把不同平台的差异说清楚。",
+            "plat.lead": "当前正式发布支持 Windows x64（ARM64 Windows 通过模拟运行 x64 构建）、Apple silicon 与 Intel 的 macOS，以及 Linux x64 与 arm64。每个平台都有便携压缩包；Windows 与 macOS 额外提供 MSI/DMG 安装器，Linux 提供 deb、rpm 与 AppImage。Linux X11 下沐比角色卡可停靠显示；Wayland 会话诚实回退为应用内提醒卡。",
+            "plat.th1": "平台", "plat.th2": "空闲检测", "plat.th3": "角色交付", "plat.th4": "分发",
+            "plat.all": "角色卡", "plat.all2": "角色卡", "plat.all3": "角色卡",
+            "plat.dist.win": "MSI + 便携 ZIP", "plat.dist.mac": "DMG + 便携 ZIP",
+            "plat.dist.linux": "tar.gz + deb + rpm + AppImage + ZIP", "plat.dist.linux2": "tar.gz + deb + rpm + AppImage + ZIP",
+            "plat.fallback": "自然时间降级", "plat.supported": "提醒卡回退",
+            "dl.kicker": "下载", "dl.title": "Windows 推荐安装；需要时，便携版一直都在。",
+            "dl.lead": "Windows 用户通常选择 MSI 安装版；macOS 在 Apple silicon 和 Intel 上都提供 DMG，Linux 提供 deb 与 AppImage。下面的直链永远指向最新发布的文件，你所在平台的卡片会自动高亮；便携压缩包与其余格式都在 Releases 页。",
+            "dl.badge.release": "最新版本", "dl.badge.feed": "更新 feed",
+            "dl.tag.installer": "推荐安装版", "dl.tag.apple": "Apple silicon 与 Intel",
+            "dl.generic": "下载 MoveBit",
+            "dl.mac": "macOS 版", "dl.win": "Windows 版", "dl.linux": "Linux 版",
+            "dl.menu-note": "移动端与未知平台请前往 Releases 页面选取对应安装包。",
+            "dl.note": "每个 Release 都提供统一的 SHA256SUMS 校验文件，以及独立签名的 update-manifest.json 更新清单。升级时请遵循当前安装渠道的官方更新步骤，勿直接覆盖仍在运行的软件。",
+            "dl.notes": "全部格式、版本说明与校验值",
+            "dl.warn.strong": "未签名构建：", "dl.warn.body": "当前 GitHub 二进制文件尚未进行代码签名或 macOS 公证，因此 Windows SmartScreen 或 macOS Gatekeeper 可能提示警告。在签名分发完成前，MoveBit 会明确说明这一点。",
+            "faq.title": "安装之前，值得先说清楚的问题。",
+            "faq.q1": "选安装版还是便携版？",
+            "faq.a1": "日常长期使用推荐安装版：Windows MSI 或 macOS DMG。它给 MoveBit 一个稳定的位置、开始菜单/启动台入口和标准卸载。临时使用、U 盘、受管电脑不希望安装，或者你偏爱便携软件时再选便携 ZIP、Linux tar.gz 或 AppImage。",
+            "faq.q2": "MoveBit 支持在线更新吗？",
+            "faq.a2": "支持。「检查更新」读取 Ed25519 签名的 update-manifest.json，发现新版本后下载并做 SHA-256 校验，全部通过再由你点击「更新并重启」完成换新。任何一步校验失败都会中止，当前版本原封不动。",
+            "faq.q3": "还有全屏强制休息吗？",
+            "faq.a3": "没有。v0.0.1 起全屏强制休息已从产品中移除：提醒由屏幕边缘的沐比角色或应用内提醒卡交付，永远不会遮盖屏幕、抢夺焦点或拦截输入。",
+            "faq.q4": "MoveBit 会记录我输入或点击了什么吗？",
+            "faq.a4": "不会。空闲检测模块只向操作系统询问距离上次用户输入过去了多久；提醒逻辑需要空闲时长，而不是按键、文档或点击内容。",
+            "faq.q5": "Linux Wayland 下会怎样？",
+            "faq.a5": "提醒与在线更新照常工作。Wayland 合成器不提供可靠的窗口定位与穿透保证，因此沐比角色卡在 X11 会话停靠，Wayland 会话诚实回退为应用内提醒卡。",
+            "faq.q6": "需要另外安装别的运行时吗？",
+            "faq.a6": "使用打包 Release 时不需要。MoveBit 自带所需的一切——Linux 上唯一的外部依赖是 GTK 4 及其系统库。",
+            "faq.q7": "为什么 Windows 或 macOS 可能对下载文件发出警告？",
+            "faq.a7": "当前社区构建尚未签名。代码签名 / 公证属于额外的发布者身份信号，也是下一项重要的分发体验改进。",
+            "cta.title": "椅子不算健身计划。",
+            "cta.body": "MoveBit 在你工作时保持安静，到点由沐比送上一句明确的健康建议——看一眼就懂，做不做由你；升级与启动的麻烦也从日常里拿掉了。",
+            "cta.get": "获取 MoveBit", "cta.manual": "先看手册",
+            "start.title": "从一次有效使用开始。",
+            "start.status": "当前公开预览版——MIT 源码许可，未启用付费激活或订阅。",
+            "start.body": "提供 macOS、Windows、Linux 桌面提醒。空闲检测依赖桌面会话；不支持的 Wayland 会话回退为经过时间计时，沐比角色卡在 X11 停靠、Wayland 使用应用内提醒卡。",
+            "start.s1": "安装后在小巧的首启流程里定好三个间隔，让沐比送出第一条提醒。",
+            "start.s2": "在提醒卡上直接使用做到 / 稍后 / 隐藏；演示时开专注——提醒安静排队，结束后合并为一条有界汇总。",
+            "start.s3": "喜欢的话给沐比选尺寸、动效与停靠位。历史数据属于使用估计，不是健康测量。",
+            "start.limits": "本工具提供提醒，不提供医疗建议或预防损伤保证。",
+            "start.guide": "安装、隐私与恢复", "start.help": "反馈与帮助",
+            "footer.tagline": "久坐、喝水、护眼，由沐比温柔提醒。",
+            "footer.product": "产品", "footer.family": "家族", "footer.legal": "条款",
+            "footer.manual": "手册", "footer.releases": "Releases", "footer.portal": "全部产品", "footer.license": "MIT License",
+            "support.feedback": "反馈", "support.releases": "发布与更新", "support.license": "源码许可", "support.help": "使用与帮助"
+        },
+        "en": {
+            "a11y.skip": "Skip to content",
+            "nav.why": "Why MoveBit", "nav.updates": "Updates", "nav.privacy": "Privacy",
+            "nav.manual": "Manual", "nav.download": "Download", "nav.github": "GitHub",
+            "hero.eyebrow": "Open source · Local-first · Cross-platform",
+            "hero.h1a": "Drink. Stand up. Rest your eyes.", "hero.h1b": "Mubi delivers it, gently.",
+            "hero.lead": "MoveBit counts the time you actually spend at the computer, and when a cycle is due, Mubi — a small original character — appears at the edge of your screen to suggest water, a stretch, or an eye rest. It never locks the screen, steals focus or blocks your typing, and it notices when you truly step away. Install once on Windows, macOS or Linux — installers and portable archives ship for every release.",
+            "hero.badge": "Current public preview — free under the MIT source licence; paid activation and subscriptions are not enabled.",
+            "hero.manual": "User manual", "hero.source": "View source",
+            "chip.account": "No account required", "chip.local": "Reminder history stays local", "chip.sha": "SHA-256 verified releases", "chip.mit": "MIT licensed",
+            "shot.alt": "Three reminders, one testable workflow",
+            "shot.caption": "Set water, stand-up and eye-rest intervals, wait for a cue and select Done or Later. Check the local history for the result; use Focus during presentations.",
+            "vs.title": "Make a break cue feel friendly.",
+            "vs.lead": "Visualize water, movement and eye-rest cues — not a final Mubi character or unshipped animation.",
+            "vs.b1": "Water", "vs.b2": "Move", "vs.b3": "Eyes",
+            "vs.s1t": "Active time", "vs.s1b": "Use available desktop activity signals",
+            "vs.s2t": "Gentle cue", "vs.s2b": "Water, movement or eye-rest cue",
+            "vs.s3t": "Stay in control", "vs.s3b": "Complete, defer or focus",
+            "vs.caption": "Conceptual workflow, not a current app screenshot. Refer to the installed version and user guide.",
+            "why.kicker": "The difference",
+            "why.title": "Not another timer you dismiss without moving.",
+            "why.lead": "MoveBit is built around three ideas: count the time that matters, deliver reminders in a way you notice without being interrupted, and recognize real time away from the desk.",
+            "why.c1.title": "Actual work time", "why.c1.body": "The reminder clock follows keyboard and mouse idle time across the desktop instead of blindly counting wall-clock minutes.", "why.c1.meta": "ACTIVE ≠ ELAPSED",
+            "why.c2.title": "Delivered by Mubi · never intrusive", "why.c2.body": "When a cycle is due, Mubi appears at the screen edge with a clear health suggestion; Done / Later / Hide / Focus stay within reach — the tray menu (Windows / macOS) or in-app controls (every platform). No fullscreen cover, no focus theft.", "why.c2.meta": "REMINDERS FIRST",
+            "why.c3.title": "Smart away detection", "why.c3.body": "Stay idle beyond your away threshold and MoveBit treats that as a real break. When you return, reminder cycles restart.", "why.c3.meta": "AWAY → RESET",
+            "upd.kicker": "Online updates", "upd.title": "A signed feed, an explicit update.",
+            "upd.lead": "Every release publishes per-platform update packages with SHA-256 sidecars and an Ed25519-signed update-manifest.json. The in-app check discovers, downloads and verifies; switching to the new version always goes through the “Update & restart” button you click.",
+            "upd.c1.title": "Discover", "upd.c1.body": "Checked at startup, then about every 6 hours, or manually from the tray anytime. Checks only touch GitHub Releases — no account, no telemetry.", "upd.c1.meta": "NO ACCOUNT",
+            "upd.c2.title": "Verify", "upd.c2.body": "After download, size and SHA-256 are checked against the Ed25519-signed update-manifest.json. Any mismatch aborts before a single file is touched.",
+            "upd.c3.title": "Update & restart", "upd.c3.body": "Once verified, you click “Update & restart”: MoveBit waits for itself to exit, swaps the payload and relaunches. Never silent; config and history live outside the app folder and upgrades never touch user data.", "upd.c3.meta": "NEVER SILENT",
+            "feat.kicker": "Useful without becoming noisy", "feat.title": "The everyday details are already there.",
+            "feat.f1.title": "Eye rest", "feat.f1.body": "An independent eye-rest cycle: Mubi closes its eyes and suggests looking away for a moment.",
+            "feat.f2.title": "Water reminders", "feat.f2.body": "An independent cycle. Mubi raises a little blue cup and brings \"drink some water\" to the screen edge.",
+            "feat.f3.title": "Work history", "feat.f3.body": "Daily active minutes and reminder counts survive restarts, with 370-day retention.",
+            "feat.f4.title": "Quick pause", "feat.f4.body": "Pause reminders for an hour during meetings, presentations or screen sharing.",
+            "feat.f5.title": "Autostart", "feat.f5.body": "One setting registers MoveBit with your login on Windows, macOS and Linux.",
+            "feat.f6.title": "Update checks", "feat.f6.body": "In-app download, SHA-256 verification and “Update & restart” in one step, checked against the signed feed.",
+            "feat.f7.title": "Windows installer", "feat.f7.body": "Run the MSI for a normal installed app, or unpack the portable ZIP anywhere you like.",
+            "feat.f8.title": "Single instance", "feat.f8.body": "Launching MoveBit again activates the existing app instead of creating duplicate schedulers.",
+            "feat.f9.title": "Configurable", "feat.f9.body": "The three reminder intervals, Mubi's size (S/M/L) and motion, dock position, sound and automatic update checks are adjustable.",
+            "priv.kicker": "Trust by design", "priv.title": "It watches the clock, not your work.",
+            "priv.lead": "A health utility should not need your documents, keystroke contents or an online account just to know when you've been at the computer too long.",
+            "priv.main.title": "Local-first by default.", "priv.main.body": "Configuration and history stay on your machine. Reminder logic works without an account or cloud service. Update checks contact GitHub Releases only to discover and download public release assets.",
+            "priv.p1.title": "Idle duration, not key contents", "priv.p1.body": "Native platform idle APIs provide elapsed idle time.",
+            "priv.p2.title": "Reminder surfaces never intercept input", "priv.p2.body": "Mubi's character and text stay click-through; only the action buttons on a reminder card accept clicks — no fullscreen cover, no OS input hooks.",
+            "priv.p3.title": "No silent update install", "priv.p3.body": "Update checks happen when you ask or allow; file replacement starts only after your approval.",
+            "plat.kicker": "Platform support", "plat.title": "Cross-platform, with the differences stated plainly.",
+            "plat.lead": "Official releases target Windows x64 (ARM64 Windows runs the x64 build via emulation), macOS on both Apple silicon and Intel, and Linux x64 and arm64. Every platform gets a portable archive; Windows and macOS additionally get an MSI/DMG installer, and Linux gets a deb, rpm and an AppImage. On Linux X11 the Mubi card can dock; Wayland sessions honestly fall back to in-app reminder cards.",
+            "plat.th1": "Platform", "plat.th2": "Idle detection", "plat.th3": "Character delivery", "plat.th4": "Distribution",
+            "plat.all": "Character card", "plat.all2": "Character card", "plat.all3": "Character card",
+            "plat.dist.win": "MSI + portable ZIP", "plat.dist.mac": "DMG + portable ZIP",
+            "plat.dist.linux": "tar.gz + deb + rpm + AppImage + ZIP", "plat.dist.linux2": "tar.gz + deb + rpm + AppImage + ZIP",
+            "plat.fallback": "Elapsed-time fallback", "plat.supported": "Reminder-card fallback",
+            "dl.kicker": "Download", "dl.title": "Install on Windows. Portable when you want it.",
+            "dl.lead": "Windows users normally choose the MSI installer; macOS ships a DMG for Apple silicon and Intel, and Linux gets deb packages and an AppImage. The links below always point at the files of the latest release and the card for your platform is highlighted; portable archives and every other format live on the Releases page.",
+            "dl.badge.release": "Latest release", "dl.badge.feed": "Update feed",
+            "dl.tag.installer": "Installer recommended", "dl.tag.apple": "Apple silicon & Intel",
+            "dl.generic": "Download MoveBit",
+            "dl.mac": "For macOS", "dl.win": "For Windows", "dl.linux": "For Linux",
+            "dl.menu-note": "On mobile or unknown platforms, pick the right package from the Releases page.",
+            "dl.note": "Every Release includes a verified SHA256SUMS and an independently signed update-manifest.json feed. Follow the supported update procedure for your installation channel; do not overwrite a running app.",
+            "dl.notes": "All formats, release notes & checksums",
+            "dl.warn.strong": "Unsigned builds:", "dl.warn.body": "current GitHub binaries are not code-signed or notarized, so Windows SmartScreen or macOS Gatekeeper may show a warning. MoveBit states this plainly until signed distribution is added.",
+            "faq.title": "The questions worth answering before install.",
+            "faq.q1": "Installer or portable archive?",
+            "faq.a1": "For normal daily use, choose the installer: the Windows MSI or the macOS DMG. It gives MoveBit a stable location, Start-menu/Launchpad launch and normal uninstall support. Choose the portable ZIP, Linux tar.gz, or AppImage for temporary use, USB drives, managed machines where installation is undesirable, or if you simply prefer portable apps.",
+            "faq.q2": "Does MoveBit update itself?",
+            "faq.a2": "Yes. “Check for updates” reads the Ed25519-signed update-manifest.json, downloads the new version and verifies its SHA-256; only then does your click on “Update & restart” swap it in. Any failed check aborts and leaves the current version untouched.",
+            "faq.q3": "Is a forced break the same as locking my computer?",
+            "faq.a3": "No. As of v0.0.1 the fullscreen forced break is removed from the product: reminders arrive through the edge-docked Mubi character or an in-app reminder card, never covering the screen, stealing focus or intercepting input.",
+            "faq.q4": "Does MoveBit record what I type or click?",
+            "faq.a4": "No. Idle providers ask the operating system how long it has been since user input; reminder logic needs elapsed idle duration, not keystroke, document or click contents.",
+            "faq.q5": "What happens on Linux Wayland?",
+            "faq.a5": "Reminders and online updates work as usual. Wayland compositors provide no reliable window-placement or click-through guarantees, so the Mubi card docks on X11 sessions and Wayland sessions honestly fall back to in-app reminder cards.",
+            "faq.q6": "Do I need to install anything else first?",
+            "faq.a6": "No for packaged releases. MoveBit bundles everything it needs — on Linux, GTK 4 and its system libraries are the only external dependency.",
+            "faq.q7": "Why might Windows or macOS warn about the download?",
+            "faq.a7": "The current community builds are unsigned. Signing/notarization is an additional publisher-identity signal and remains the next major distribution improvement.",
+            "cta.title": "Your chair is not a workout plan.",
+            "cta.body": "MoveBit stays quiet while you work and, when a cycle is due, Mubi delivers one clear health suggestion — readable at a glance, yours to act on. Startup and upgrade friction stays out of your way.",
+            "cta.get": "Get MoveBit", "cta.manual": "Read the manual",
+            "start.title": "Start with one useful session.",
+            "start.status": "Current public preview — MIT-licensed source, no paid activation or subscriptions enabled.",
+            "start.body": "Desktop reminders for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time, and the Mubi card docks on X11 while Wayland uses in-app reminder cards.",
+            "start.s1": "Install, pick your three intervals in the compact first-run flow, and let Mubi deliver the first cue.",
+            "start.s2": "Use Done / Later / Hide right on the cue card, and Focus during presentations — reminders queue quietly and return as one bounded summary.",
+            "start.s3": "Personalize Mubi's size, motion and dock if you like. History is a usage estimate, not a health measurement.",
+            "start.limits": "This tool provides reminders, not medical advice or a guaranteed way to prevent injury.",
+            "start.guide": "Installation, privacy & recovery", "start.help": "Get help",
+            "footer.tagline": "Water, stretch and eye-rest cues, delivered gently by Mubi.",
+            "footer.product": "Product", "footer.family": "Family", "footer.legal": "Legal",
+            "footer.manual": "Manual", "footer.releases": "Releases", "footer.portal": "All products", "footer.license": "MIT License",
+            "support.feedback": "Feedback", "support.releases": "Releases", "support.license": "Source license", "support.help": "Usage & help"
         }
-        var links = document.querySelectorAll('a[data-release-suffix]');
-        links.forEach(function (a) { a.href = RELEASES_PAGE; });
-        fetch('https://api.github.com/repos/turlamai/movebit/releases/latest',
-              {headers: {'Accept': 'application/vnd.github+json'}})
-          .then(function (r) { if (!r.ok) throw new Error('release lookup'); return r.json(); })
-          .then(function (release) {
-            if (release.draft || release.prerelease ||
-                !/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(release.tag_name)) return;
-            var version = release.tag_name.slice(1);
-            links.forEach(function (link) {
-              var name = 'movebit-' + version + '-' + link.dataset.releaseSuffix;
-              var exact = 'https://github.com/turlamai/movebit/releases/download/' + release.tag_name + '/' + name;
-              var asset = (release.assets || []).find(function (x) {
-                return x.name === name && x.size > 0 && x.browser_download_url === exact;
-              });
-              if (!asset) return;
-              link.href = exact;
-              var filename = link.querySelector('.format-name');
-              if (filename) filename.textContent = name;
-            });
-          }).catch(function () { /* Fall back to Release page. */ });
-      }());
+    }
+    </script>
 
-      apply(readLanguageOverride() || detectBrowserLanguage());
-      window.addEventListener("languagechange", function () {
-        if (!readLanguageOverride()) apply(detectBrowserLanguage());
-      });
-
-      // ---- theme toggle (manual switch + localStorage; head script prevents flash) ----
-      document.getElementById('theme-btn').addEventListener('click', function () {
-        var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-        document.documentElement.dataset.theme = next;
-        try { localStorage.setItem('movebit-theme', next); } catch (e) {}
-      });
-
-      var observer = 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('visible');
-            observer.unobserve(entry.target);
-          }
-        });
-      }, { threshold: 0.08 }) : null;
-      document.querySelectorAll('.animate').forEach(function (node) {
-        if (observer) observer.observe(node); else node.classList.add('visible');
-      });
-
-      var nav = document.querySelector('.nav');
-      function updateNav() { nav.classList.toggle('scrolled', window.scrollY > 8); }
-      updateNav();
-      window.addEventListener('scroll', updateNav, { passive: true });
-
-      document.getElementById('year').textContent = new Date().getFullYear();
-
-      // ---- release version badge: read-only lookup, the download links above
-      // are static alias URLs that GitHub resolves to the latest release ----
-      fetch('https://api.github.com/repos/turlamai/movebit/releases/latest', { headers: { 'Accept': 'application/vnd.github+json' } })
-        .then(function (response) { if (!response.ok) throw new Error('release lookup failed'); return response.json(); })
-        .then(function (release) {
-          if (release && release.tag_name) document.getElementById('release-version').textContent = release.tag_name;
-        })
-        .catch(function () { /* badge keeps its fallback label */ });
-    }());
-  </script>
+    <!-- Download config: one pattern per platform (mac .dmg, win .msi, linux .AppImage). -->
+    <script type="application/json" id="kit-download">
+    {
+        "repo": "turlamai/movebit",
+        "assets": {
+            "mac": "movebit-{v}-macos-{arch}.dmg",
+            "win": "movebit-{v}-windows-x64.msi",
+            "linux": "movebit-{v}-linux-{arch}.AppImage"
+        }
+    }
+    </script>
 </body>
+
 </html>
