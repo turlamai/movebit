@@ -1,0 +1,152 @@
+name: AppImage upgrade qualification (published N -> N+1)
+
+# Manual, real-feed qualification for #96: run the updater shipped in the
+# previous published release, let it download and swap the next published
+# AppImage through the Ed25519-signed feed, then relaunch both the new image
+# and the retained previous image with the same data directory.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RIVET_PIN: 9d766b4acab672844093204cb4845ef4ef933d2c
+  FROM_VERSION: "0.0.8"
+  TO_VERSION: "0.0.9"
+
+jobs:
+  qualify:
+    name: ${{ matrix.arch }} published upgrade
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            racket-arch: x64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            racket-arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out the updater under test (N)
+        uses: actions/checkout@v7
+        with:
+          ref: v0.0.8
+
+      - name: Add the qualification driver from main
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth 1
+          git checkout FETCH_HEAD -- scripts/acceptance/appimage-upgrade.rkt
+
+      - name: Install X11 tools
+        run: sudo apt-get update && sudo apt-get install -y xvfb xdotool x11-utils
+
+      - uses: Bogdanp/setup-racket@v1.16
+        with:
+          version: '9.3'
+          architecture: ${{ matrix.racket-arch }}
+          distribution: full
+          variant: CS
+
+      - name: Install pinned Rivet
+        shell: bash
+        run: raco pkg install --auto --no-docs "https://github.com/turlamai/rivet.git#${RIVET_PIN}"
+
+      - uses: turlamai/rivet/.github/actions/setup-embed-racket@8ccc95530af43287d1b7e94e1ae69e10279b4db4
+
+      - name: Fetch both published AppImages through the authenticated API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qual/from /tmp/qual/to /tmp/qual/data
+          gh release download "v${FROM_VERSION}" -R turlamai/movebit \
+            -p "movebit-${FROM_VERSION}-linux-${{ matrix.arch }}.AppImage" -D /tmp/qual/from
+          gh release download "v${TO_VERSION}" -R turlamai/movebit \
+            -p "movebit-${TO_VERSION}-linux-${{ matrix.arch }}.AppImage" \
+            -p SHA256SUMS -D /tmp/qual/to
+          FROM_IMAGE="/tmp/qual/from/movebit-${FROM_VERSION}-linux-${{ matrix.arch }}.AppImage"
+          TO_IMAGE="/tmp/qual/to/movebit-${TO_VERSION}-linux-${{ matrix.arch }}.AppImage"
+          test -s "$FROM_IMAGE" && test -s "$TO_IMAGE"
+          chmod +x "$FROM_IMAGE"
+          echo "EXPECTED_FROM_SHA=$(sha256sum "$FROM_IMAGE" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "EXPECTED_TO_SHA=$(sha256sum "$TO_IMAGE" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "FROM_IMAGE=$FROM_IMAGE" >> "$GITHUB_ENV"
+          echo "TO_IMAGE=$TO_IMAGE" >> "$GITHUB_ENV"
+          # The published checksum file must agree with the downloaded N+1 bytes.
+          grep "movebit-${TO_VERSION}-linux-${{ matrix.arch }}.AppImage" /tmp/qual/to/SHA256SUMS
+
+      - name: Execute the signed N -> N+1 update
+        run: |
+          set -euo pipefail
+          cp "$FROM_IMAGE" /tmp/qual/data/movebit.AppImage
+          chmod +x /tmp/qual/data/movebit.AppImage
+          printf '%s\n' '{"SchemaVersion":4,"WelcomeShown":true,"Language":"en","SoundEnabled":false,"AutoCheckUpdates":false}' \
+            > /tmp/qual/data/config.json
+          APPIMAGE=/tmp/qual/data/movebit.AppImage \
+          FROM_APPIMAGE=/tmp/qual/data/movebit.AppImage \
+          DATA_DIR=/tmp/qual/data \
+          FEED_URL="https://github.com/turlamai/movebit/releases/download/v${TO_VERSION}" \
+          EXPECTED_VERSION="$TO_VERSION" \
+          EXPECTED_FROM_SHA="$EXPECTED_FROM_SHA" \
+          EXPECTED_TO_SHA="$EXPECTED_TO_SHA" \
+          racket scripts/acceptance/appimage-upgrade.rkt | tee /tmp/qual/upgrade.json
+
+      - name: Relaunch the replaced image and the retained previous image
+        run: |
+          set -euo pipefail
+          Xvfb :99 -screen 0 1280x900x24 >/tmp/qual/xvfb.log 2>&1 &
+          xvfb_pid=$!
+          trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
+          export DISPLAY=:99 GDK_BACKEND=x11 GSK_RENDERER=cairo APPIMAGE_EXTRACT_AND_RUN=1
+          export HOME=/tmp/qual/home XDG_CONFIG_HOME=/tmp/qual/home/config
+          export XDG_DATA_HOME=/tmp/qual/home/share XDG_CACHE_HOME=/tmp/qual/home/cache
+          export MOVEBIT_DATA_DIR=/tmp/qual/data MOVEBIT_BOOTSTRAP_DIR=/tmp/qual/data
+          mkdir -p "$HOME"
+          wait_for_window() {
+            local bin="$1"
+            "$bin" >/tmp/qual/app.log 2>&1 &
+            local pid=$!
+            local win=""
+            for _ in $(seq 1 200); do
+              win="$(xdotool search --name 'MoveBit' 2>/dev/null | head -1 || true)"
+              [[ -n "$win" ]] && break
+              sleep 0.1
+            done
+            [[ -n "$win" ]] || { echo "$bin did not map a window" >&2; cat /tmp/qual/app.log >&2; return 1; }
+            echo "relaunch ok: $bin ($win)"
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 0.5
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          }
+          wait_for_window /tmp/qual/data/movebit.AppImage
+          wait_for_window /tmp/qual/data/movebit.AppImage.previous
+
+      - name: Write evidence
+        if: always()
+        run: |
+          {
+            echo "{"
+            echo "  \"format\": \"movebit-appimage-upgrade-qualification\","
+            echo "  \"format-version\": 1,"
+            echo "  \"arch\": \"${{ matrix.arch }}\","
+            echo "  \"from\": \"$FROM_VERSION\","
+            echo "  \"to\": \"$TO_VERSION\","
+            echo "  \"fromSha256\": \"$EXPECTED_FROM_SHA\","
+            echo "  \"toSha256\": \"$EXPECTED_TO_SHA\","
+            echo "  \"upgrade\": $(cat /tmp/qual/upgrade.json 2>/dev/null || echo null)"
+            echo "}"
+          } > /tmp/qual/evidence.json
+          mkdir -p .rivet/qualification
+          cp /tmp/qual/evidence.json .rivet/qualification/
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: appimage-upgrade-${{ matrix.arch }}
+          path: .rivet/qualification/evidence.json
+          if-no-files-found: warn
