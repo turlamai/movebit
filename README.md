@@ -23,7 +23,7 @@ Most reminder tools lose the moment the notification becomes easy to dismiss —
 - **Stay honest about what a click means.** Done is a self-report, never a measurement. Silence never counts as completion either: an unanswered invitation stays on screen, and a reminder firing while one is open merges into the same invitation (one Mubi, every meaning preserved) — nothing is settled behind your back. Focus mode queues cues and returns one bounded summary — never a pile-up.
 - **Do not nag after a real break.** Being idle beyond the away threshold resets every reminder cycle when you return, and the break itself is never counted as active work.
 - **Show patterns, not just today's number.** 7-day and 30-day activity history tracks continuous-work streaks, recent longest sessions, active-day averages, and the busiest recent day.
-- **Ship native installers and portable archives for every supported desktop.** Windows gets an MSI plus a portable ZIP, macOS gets a DMG plus a portable ZIP on both Apple silicon and Intel, and Linux gets a portable tar.gz and zip plus a deb, an rpm, and an AppImage.
+- **Ship native installers and portable archives for every supported desktop.** Windows gets an MSI plus a portable ZIP, macOS gets a DMG plus a portable ZIP on both Apple silicon and Intel, and Linux gets a portable tar.gz and zip plus a deb, an rpm, an AppImage, and a Flatpak bundle.
 
 ## Architecture
 
@@ -50,7 +50,7 @@ The Racket runtime is statically linked into each host — no external interpret
 - 🔁 **Autostart on login** — Windows registry / macOS LaunchAgent / Linux XDG autostart, owned by the backend
 - ⏸️ **Pause for one hour** — with exact pause-expiry accounting
 - 🔒 **Single-instance activation** — relaunching surfaces the existing instance instead of duplicating it
-- 📦 **Native + portable distribution** — Windows MSI, macOS DMG, portable ZIPs, Linux tar.gz/zip/deb/rpm/AppImage
+- 📦 **Native + portable distribution** — Windows MSI, macOS DMG, portable ZIPs, Linux tar.gz/zip/deb/rpm/AppImage/Flatpak
 
 ## Install
 
@@ -62,8 +62,8 @@ Grab your build from [Releases](https://github.com/turlamai/movebit/releases/lat
 | macOS Intel | `movebit-<version>-macos-x64.zip` | `movebit-<version>-macos-x64.dmg` |
 | Windows x64 | `movebit-<version>-windows-x64.zip` | `movebit-<version>-windows-x64.msi` |
 | Windows ARM64 | runs the x64 build via Windows on ARM's x64 emulation | — |
-| Linux x64 | `movebit-<version>-linux-x64.tar.gz` · `.zip` | `movebit-<version>-linux-x64.deb` · `-x86_64.rpm` · `.AppImage` |
-| Linux arm64 | `movebit-<version>-linux-arm64.tar.gz` · `.zip` | `movebit-<version>-linux-arm64.deb` · `-aarch64.rpm` |
+| Linux x64 | `movebit-<version>-linux-x64.tar.gz` · `.zip` | `movebit-<version>-linux-x64.deb` · `-x86_64.rpm` · `.AppImage` · `.flatpak` |
+| Linux arm64 | `movebit-<version>-linux-arm64.tar.gz` · `.zip` | `movebit-<version>-linux-arm64.deb` · `-aarch64.rpm` · `.AppImage` · `.flatpak` |
 
 Assets follow one lowercase scheme, `movebit-<version>-<os>-<arch>.<ext>` (for example `movebit-0.0.6-macos-arm64.dmg`). Release downloads include one checked `SHA256SUMS` file covering all versioned packages and the Ed25519-signed `update-manifest.json` for in-app updates. Per-file checksum sidecars and duplicate versionless installers are not published.
 
@@ -71,7 +71,7 @@ Platform notes:
 
 - **Windows** — run the MSI for a normal installed app, or unpack the portable ZIP anywhere you like. On ARM64 Windows, use the x64 assets: Windows on ARM runs them through its x64 emulation, and no native ARM64 build is published.
 - **macOS** — open the DMG and drag the app to Applications (or another folder); the portable ZIP is the same app bundle without the disk image. Builds are ad-hoc signed, not notarized, so Gatekeeper may require an explicit first-launch approval (right-click → Open, or `xattr -cr /Applications/MoveBit.app`). Notarization is deferred until paid Apple developer credentials are available.
-- **Linux** — install the deb (`sudo apt install ./movebit-<version>-linux-<arch>.deb`), install the rpm, run the AppImage, or unpack the tar.gz and run the host inside; GTK 4 and its system libraries are the only runtime dependencies, everything else is bundled. The deb installs to `/opt/movebit` with a `movebit` command and a desktop entry.
+- **Linux** — install the deb (`sudo apt install ./movebit-<version>-linux-<arch>.deb`), install the rpm, run the AppImage, or unpack the tar.gz and run the host inside; GTK 4 and its system libraries are the only runtime dependencies, everything else is bundled. The deb installs to `/opt/movebit` with a `movebit` command and a desktop entry. The Flatpak bundle (app id `site.jrtx.movebit`) installs with `flatpak --user install ./movebit-<version>-linux-<arch>.flatpak`; it carries the app payload only and pulls the GNOME Platform runtime from your Flatpak remote on first install.
 
 > Release binaries carry no publisher code signature. Windows SmartScreen or macOS Gatekeeper may therefore show a warning on first launch. Paid code signing/notarization is the remaining distribution roadmap item.
 
@@ -122,7 +122,7 @@ Linux packaging scripts (deb / rpm / AppImage) live under `packaging/linux/` and
 1. Bump the single-source `VERSION` file; `scripts/check-release-version.sh` enforces `VERSION == rivet.rktd`, and the release tag must equal it too (for example `0.3.1` ↔ `v0.3.1`).
 2. Add a `CHANGELOG.md` section for the version — the release validate job greps for it.
 3. Merge only with CI green (Racket tests plus the Windows/macOS/Linux host matrix).
-4. Push the version tag. Release automation builds macOS DMG + portable ZIP (arm64 and x64), the Windows MSI + portable ZIP, the Linux tar.gz + zip (x64 + arm64) plus deb, rpm, and AppImage installers, one consolidated `SHA256SUMS` manifest and the signed `update-manifest.json`; one GitHub Release is created only after every required package succeeds, with the release notes taken from the matching CHANGELOG section.
+4. Push the version tag. Release automation builds macOS DMG + portable ZIP (arm64 and x64), the Windows MSI + portable ZIP, the Linux tar.gz + zip (x64 + arm64) plus deb, rpm, AppImage, and Flatpak bundle installers, one consolidated `SHA256SUMS` manifest and the signed `update-manifest.json`; one GitHub Release is created only after every required package succeeds, with the release notes taken from the matching CHANGELOG section.
 
 ## Roadmap
 

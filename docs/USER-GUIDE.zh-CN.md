@@ -10,7 +10,7 @@
 
 ## 平台与安装
 
-正式发布覆盖 Windows x64、macOS（Apple silicon 与 Intel）和 Linux x64/arm64。每个平台都有便携压缩包；Windows 另有 MSI，macOS 有 DMG，Linux 有 deb、rpm 与 AppImage。请使用[官方 Releases](https://github.com/turlamai/movebit/releases)，选择明确列出的系统/架构资产并核对发布页的 `SHA256SUMS` 校验文件。预览资产可能缺少签名或公证；不要为安装关闭系统级安全保护。
+正式发布覆盖 Windows x64、macOS（Apple silicon 与 Intel）和 Linux x64/arm64。每个平台都有便携压缩包；Windows 另有 MSI，macOS 有 DMG，Linux 有 deb、rpm、AppImage 与 Flatpak 包。请使用[官方 Releases](https://github.com/turlamai/movebit/releases)，选择明确列出的系统/架构资产并核对发布页的 `SHA256SUMS` 校验文件。Linux 的 Flatpak 包用 `flatpak --user install ./movebit-<version>-linux-<arch>.flatpak` 安装（app id 为 `site.jrtx.movebit`；包内只含应用本体，GNOME Platform 运行时会在首次安装时从 Flatpak 远端拉取）。预览资产可能缺少签名或公证；不要为安装关闭系统级安全保护。
 
 平台说明：空闲检测使用系统原生 API（GetLastInputInfo / CoreGraphics / XScreenSaver）。Linux 上沐比角色卡在 X11 会话停靠；Wayland 合成器不允许应用自行放置穿透卡片，提醒改为应用内提醒卡投递（提醒、历史与更新照常工作）。
 
@@ -52,11 +52,19 @@
 
 ## 更新与卸载
 
-应用内「检查更新」读取 Ed25519 签名的 `update-manifest.json`，下载后校验大小与 SHA-256，只通过「更新并重启」换新。任何校验失败都会中止，当前安装原封不动。卸载程序不会删除独立的数据目录；删除个人数据前先确认备份。
+应用内「检查更新」读取 Ed25519 签名的 `update-manifest.json`，下载后校验大小与 SHA-256，只通过「更新并重启」换新。任何校验失败都会中止，当前安装原封不动。AppImage 安装由应用内更新原地替换；deb、rpm 与 Flatpak 安装由各自的包管理器接管，便携 tar.gz 由你自己管理——对这些形态，更新器只下载已验签的安装包并给出指引，不会自行替换。请用包管理器更新（Flatpak 包用 `flatpak --user update site.jrtx.movebit`），或用新版本直接覆盖安装。
 
 Windows 便携 ZIP 更新中，复制失败或 Windows 无法启动新程序时，会恢复旧安装并尝试重新启动它；失败原因写入应用数据目录下的 `updates/update-failed.txt`。Windows 接受启动请求不等于应用健康检查通过：后续崩溃、完整界面重启及真实版本回滚仍是独立验收门禁。MSI 更新交给 Windows Installer，不采用便携版目录替换流程。
 
 替换 Windows 便携版安装前，辅助程序最多等待两分钟让旧进程退出。如果无法确认退出，会保持安装不变并记录「更新未应用」，不会强制结束应用。请正常关闭原应用后再重试更新。
+
+卸载程序不会删除你的数据。`config.json` 与 `history/` 文件夹位于独立的数据目录（macOS `~/Library/Application Support/movebit`、Linux `~/.config/movebit`、Windows `%APPDATA%\movebit`；Flatpak 安装的沙箱数据在 `~/.var/app/site.jrtx.movebit/`，用 `flatpak --user uninstall --delete-data site.jrtx.movebit` 可连同应用一并删除）。按平台移除程序本体：
+
+- **Windows** —— 在「设置 → 应用」（应用和功能）卸载 MSI；便携 ZIP 直接删除其文件夹。
+- **macOS** —— 在「应用程序」里把 MoveBit 拖入废纸篓。
+- **Linux** —— 用安装时的包管理器卸载 deb/rpm（deb 安装在 `/opt/movebit`）；AppImage、tar.gz、zip 副本删除对应文件或目录即可；Flatpak 包用 `flatpak --user uninstall site.jrtx.movebit` 卸载。
+
+应用自己管理的开机自启项——Windows 的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下 `MoveBit` 值、macOS 的 `~/Library/LaunchAgents/com.turlamai.movebit.plist`、Linux 的 `~/.config/autostart/movebit.desktop`——属于用户级设置，可能比程序本身留存更久；不再需要 MoveBit 随登录启动时请自行删除。删除个人数据须在确认备份后另行、显式地操作。
 
 ## 获取帮助
 

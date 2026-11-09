@@ -10,7 +10,7 @@ Current public preview: MIT-licensed source and no enabled paid activation or su
 
 ## Platforms and installation
 
-Official releases target Windows x64, macOS (Apple silicon and Intel) and Linux x64/arm64. Every platform ships a portable archive; Windows adds an MSI, macOS a DMG, Linux a deb, rpm and AppImage. Use the [official Releases](https://github.com/turlamai/movebit/releases), select an explicitly listed OS/architecture asset, and check the release's `SHA256SUMS` file. Preview assets may lack publisher signing or notarization; do not disable system-wide security protections to install them.
+Official releases target Windows x64, macOS (Apple silicon and Intel) and Linux x64/arm64. Every platform ships a portable archive; Windows adds an MSI, macOS a DMG, Linux a deb, rpm, AppImage and Flatpak bundle. Use the [official Releases](https://github.com/turlamai/movebit/releases), select an explicitly listed OS/architecture asset, and check the release's `SHA256SUMS` file. On Linux the Flatpak bundle installs with `flatpak --user install ./movebit-<version>-linux-<arch>.flatpak` (app id `site.jrtx.movebit`; it carries the app payload only, and the GNOME Platform runtime is pulled from your Flatpak remote on first install). Preview assets may lack publisher signing or notarization; do not disable system-wide security protections to install them.
 
 Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / CoreGraphics / XScreenSaver). On Linux, Mubi's card docks on X11 sessions; on Wayland the compositor does not let an app place a click-through card, so cues deliver as in-app reminder cards instead (reminders, history and updates work as usual).
 
@@ -54,11 +54,19 @@ Reminder and accounting work is local. Update checks and release downloads conta
 
 ## Updates and removal
 
-The in-app **Check for updates** reads the Ed25519-signed `update-manifest.json`, verifies size and SHA-256 after download, and swaps the payload only through **Update & restart**. A failed check aborts without touching the current install. Removing the program does not erase the separate data directory; verify your backup before deleting personal data.
+The in-app **Check for updates** reads the Ed25519-signed `update-manifest.json`, verifies size and SHA-256 after download, and swaps the payload only through **Update & restart**. A failed check aborts without touching the current install. AppImage installs take that in-place update; deb, rpm and Flatpak installs are owned by their package managers, and portable tar.gz installs are yours to manage — for all of these the updater downloads the verified artifact and shows guidance instead of swapping. Update with the package manager (`flatpak --user update site.jrtx.movebit` for the Flatpak bundle) or install the new release over the old one.
 
 For Windows portable ZIP updates, a failed copy or an executable that Windows cannot start restores the previous installation and attempts to relaunch it. The updater records the failure in `updates/update-failed.txt` under the application data directory. Acceptance of a launch by Windows is not a full application-health check: a later crash, complete GUI restart and real-version rollback remain separate qualification gates. MSI updates use the Windows Installer handoff instead of this portable swap.
 
 Before replacing a Windows portable installation, the helper waits up to two minutes for the previous process to exit. If exit cannot be confirmed, it leaves the installation untouched and records that the update was not applied; it does not force the application to quit. Close the existing application normally before trying the update again.
+
+Removing the program does not erase your data. `config.json` and the `history/` folder live in the separate data directory (`~/Library/Application Support/movebit` on macOS, `~/.config/movebit` on Linux, `%APPDATA%\movebit` on Windows; a Flatpak install keeps its sandboxed copy under `~/.var/app/site.jrtx.movebit/`, and `flatpak --user uninstall --delete-data site.jrtx.movebit` removes it together with the app). Uninstall the program per platform:
+
+- **Windows** — remove the MSI from Settings → Apps (Apps & Features); a portable ZIP is removed by deleting its folder.
+- **macOS** — drag MoveBit from Applications to the Trash.
+- **Linux** — remove the deb/rpm with the package manager that installed it (the deb installs to `/opt/movebit`), delete an AppImage, tar.gz or zip copy like any standalone file or folder, and remove the Flatpak bundle with `flatpak --user uninstall site.jrtx.movebit`.
+
+Login-autostart entries the app manages itself — the `MoveBit` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows, `~/Library/LaunchAgents/com.turlamai.movebit.plist` on macOS, and `~/.config/autostart/movebit.desktop` on Linux — are user-level settings that can outlive the program; delete them if you no longer want MoveBit to start at login. Deleting personal data is a separate, explicit action after you have verified your backup.
 
 ## Get help
 

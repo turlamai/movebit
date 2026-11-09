@@ -23,7 +23,7 @@
 - **对「点一下」的含义保持诚实。** 「做到了」是自我报告而非实测；沉默同样不会被记成完成——无人回应的邀请会一直留在屏幕上，新一轮提醒触发时会合并进同一份邀请（始终只有一只沐比，每种含义都保留），绝不替你悄悄结账。专注模式静默排队，结束后只送回一条有界汇总。
 - **真的休息过，就不要马上再催。** 离开电脑达到阈值后回来，三个提醒周期都会从零开始，休息本身也不会被算进工作时长。
 - **不只看今天，还要看到工作模式。** 主界面支持最近 7 天 / 30 天切换，并统计当前连续工作、今日/近 30 天最长连续工作、活跃日平均时长、最活跃的一天等指标。
-- **每个桌面平台都同时提供原生安装器和便携压缩包。** Windows 有 MSI + 便携 ZIP，macOS 在 Apple silicon 和 Intel 上都有 DMG + 便携 ZIP，Linux 提供便携 tar.gz 与 zip，另有 deb、rpm 与 AppImage。
+- **每个桌面平台都同时提供原生安装器和便携压缩包。** Windows 有 MSI + 便携 ZIP，macOS 在 Apple silicon 和 Intel 上都有 DMG + 便携 ZIP，Linux 提供便携 tar.gz 与 zip，另有 deb、rpm、AppImage 与 Flatpak 包。
 
 ## 架构
 
@@ -50,7 +50,7 @@ Racket 运行时静态链接进宿主——不依赖外部解释器、没有 .NE
 - 🔁 **开机自启**：Windows 注册表 / macOS LaunchAgent / Linux XDG autostart，由后端统一管理
 - ⏸️ **一键暂停一小时**：精确计算暂停到期
 - 🔒 **单实例**：重复启动唤起已有实例，不会创建重复的调度器
-- 📦 **原生 + 便携分发**：Windows MSI、macOS DMG、便携 ZIP，Linux tar.gz/zip/deb/rpm/AppImage
+- 📦 **原生 + 便携分发**：Windows MSI、macOS DMG、便携 ZIP，Linux tar.gz/zip/deb/rpm/AppImage/Flatpak
 
 ## 安装
 
@@ -62,8 +62,8 @@ Racket 运行时静态链接进宿主——不依赖外部解释器、没有 .NE
 | macOS Intel | `movebit-<version>-macos-x64.zip` | `movebit-<version>-macos-x64.dmg` |
 | Windows x64 | `movebit-<version>-windows-x64.zip` | `movebit-<version>-windows-x64.msi` |
 | Windows ARM64 | 经 Windows on ARM 的 x64 模拟运行 x64 构建 | — |
-| Linux x64 | `movebit-<version>-linux-x64.tar.gz` · `.zip` | `movebit-<version>-linux-x64.deb` · `-x86_64.rpm` · `.AppImage` |
-| Linux arm64 | `movebit-<version>-linux-arm64.tar.gz` · `.zip` | `movebit-<version>-linux-arm64.deb` · `-aarch64.rpm` |
+| Linux x64 | `movebit-<version>-linux-x64.tar.gz` · `.zip` | `movebit-<version>-linux-x64.deb` · `-x86_64.rpm` · `.AppImage` · `.flatpak` |
+| Linux arm64 | `movebit-<version>-linux-arm64.tar.gz` · `.zip` | `movebit-<version>-linux-arm64.deb` · `-aarch64.rpm` · `.AppImage` · `.flatpak` |
 
 资产遵循统一的小写命名 `movebit-<version>-<os>-<arch>.<ext>`（例如 `movebit-0.5.0-macos-arm64.dmg`）。每个资产都有对应的 `.sha256` 文件，每个发布还提供 `SHA256SUMS` 与 Ed25519 签名的 `update-manifest.json`。
 
@@ -71,7 +71,7 @@ Racket 运行时静态链接进宿主——不依赖外部解释器、没有 .NE
 
 - **Windows** —— 日常使用运行 MSI 安装；便携 ZIP 解压到任意目录即可运行。ARM64 Windows 请使用 x64 资产（经模拟运行），暂无原生 ARM64 构建。
 - **macOS** —— 打开 DMG 把应用拖进"应用程序"；便携 ZIP 是不带磁盘镜像的同一应用。构建为 ad-hoc 签名、未经公证，Gatekeeper 首次启动可能需要右键 → 打开，或执行 `xattr -cr /Applications/MoveBit.app`。公证在具备付费 Apple 开发者账号后补上。
-- **Linux** —— 安装 deb（`sudo apt install ./movebit-<version>-linux-<arch>.deb`）或 rpm，运行 AppImage，或解压 tar.gz 直接运行；唯一运行时依赖是 GTK 4 及其系统库，其余全部内置。deb 安装到 `/opt/movebit`，带 `movebit` 命令与桌面入口。
+- **Linux** —— 安装 deb（`sudo apt install ./movebit-<version>-linux-<arch>.deb`）或 rpm，运行 AppImage，或解压 tar.gz 直接运行；唯一运行时依赖是 GTK 4 及其系统库，其余全部内置。deb 安装到 `/opt/movebit`，带 `movebit` 命令与桌面入口。Flatpak 包（app id 为 `site.jrtx.movebit`）用 `flatpak --user install ./movebit-<version>-linux-<arch>.flatpak` 安装；包内只含应用本体，首次安装时会从 Flatpak 远端拉取 GNOME Platform 运行时。
 
 > 发布二进制暂无发布者代码签名，Windows SmartScreen 或 macOS Gatekeeper 首次启动可能提示警告。付费签名/公证是分发路线上的最后一项。
 
@@ -122,7 +122,7 @@ Linux 打包脚本（deb / rpm / AppImage）在 `packaging/linux/` 下，作用�
 1. 更新单一来源的 `VERSION` 文件；`scripts/check-release-version.sh` 校验 `VERSION == rivet.rktd`，发布 tag 也必须一致（如 `0.3.1` ↔ `v0.3.1`）。
 2. 在 `CHANGELOG.md` 里加上对应版本的章节——发布流水线的 validate 任务会检查它。
 3. CI 全绿才可合入（Racket 测试 + Windows/macOS/Linux 宿主矩阵）。
-4. 推送版本 tag。发布自动化会构建 macOS DMG + 便携 ZIP（arm64/x64）、Windows MSI + 便携 ZIP、Linux tar.gz + zip（双架构）及 deb、rpm、AppImage，生成逐资产 `.sha256`、`SHA256SUMS` 与签名的 `update-manifest.json`；全部必需包成功后才创建唯一的 GitHub Release，发布说明取自 CHANGELOG 对应章节。
+4. 推送版本 tag。发布自动化会构建 macOS DMG + 便携 ZIP（arm64/x64）、Windows MSI + 便携 ZIP、Linux tar.gz + zip（双架构）及 deb、rpm、AppImage、Flatpak 包，生成逐资产 `.sha256`、`SHA256SUMS` 与签名的 `update-manifest.json`；全部必需包成功后才创建唯一的 GitHub Release，发布说明取自 CHANGELOG 对应章节。
 
 ## 路线图
 
