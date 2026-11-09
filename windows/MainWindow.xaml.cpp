@@ -1560,7 +1560,7 @@ void MainWindow::InitTray() {
     (void)api_->snooze_cue_async(id, [](rivet_app::Result<void>) {});
     // #56 §4 `later`: a quiet settle with the reassurance note, then home.
     companion_.Show(MubiCompanion::MubiState::Idle,
-                    winrt::to_hstring(l10n::t("mubi.laterNote")));
+                    winrt::to_hstring(l10n::t("mubi.laterNote")).c_str());
     RefreshTrayState();
   };
   companion_.later_tag_text =

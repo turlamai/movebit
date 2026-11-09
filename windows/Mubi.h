@@ -190,6 +190,8 @@ struct MubiCompanion {
   bool attending = false;
   std::function<void()> on_pet;
   std::function<void()> on_later;
+  // Localized "Later" label for the bubble tag; the host keeps it current.
+  std::wstring later_tag_text = L"Later";
   int act = 0;  // 0 none, 1 roll, 2 squish, 3 teary, 4 hop
   double act_progress = 0.0;
   double act_total_ticks = 1.0;
@@ -984,8 +986,6 @@ struct MubiCompanion {
   }
 
   // ---- petting + repertoire (issue #140) --------------------------------
-
-  std::wstring later_tag_text = L"Later";
 
   void HandleCueClick(LONG x, LONG y) {
     UINT dpi = ::GetDpiForWindow(hwnd);

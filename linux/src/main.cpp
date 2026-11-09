@@ -2018,6 +2018,8 @@ enum class MubiCompanionState { Idle = 0, Water = 1, Stand = 2, Eyes = 3,
 void on_mubi_done(GtkButton*, gpointer);
 void on_mubi_later(GtkButton*, gpointer);
 void on_mubi_hide(GtkButton*, gpointer);
+void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
+void on_capsule_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
 
 // ---- Mubi（沐比）companion (issue #56, X11 leg) ---------------------------------
 // Canonical character from assets/mubi/tokens.json (generator:
@@ -2421,8 +2423,6 @@ void stop_visit() {
 
 void schedule_play(bool attending);
 void start_act(int kind, bool attending);
-void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
-void on_capsule_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
 
 void start_act(int kind, bool attending) {
   auto& s = g_state;
