@@ -60,11 +60,8 @@ read -r idle_x idle_y <<<"$(geometry)"
 moved=0; near_center=0; start=$(date +%s)
 while (( $(date +%s) - start < 8 )); do
   read -r x y <<<"$(geometry)"
-  if (( x < idle_x - 120 )); then
-    moved=1
-    if (( x > 300 && x < 900 )); then near_center=1; fi
-    break
-  fi
+  if (( x < idle_x - 120 )); then moved=1; fi
+  if (( x > 400 && x < 800 )); then near_center=1; break; fi
   sleep .05
 done
 (( moved == 1 )) || { echo "Mubi did not approach the central third (home $idle_x,$idle_y)" >&2; exit 1; }
