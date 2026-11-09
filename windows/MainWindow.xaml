@@ -263,23 +263,6 @@
                             <TextBlock x:Name="SettingsIntro" Text=""
                                        FontSize="11" Foreground="#A39B8D"
                                        TextWrapping="Wrap" />
-                            <TextBlock x:Name="SetRhythmLabel" Text="Reminder rhythm"
-                                       FontSize="13" FontWeight="SemiBold"
-                                       Foreground="#26241F" />
-                            <TextBlock x:Name="SetRhythmHint" Text=""
-                                       FontSize="11" Foreground="#A39B8D"
-                                       TextWrapping="Wrap" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <ToggleButton x:Name="BalancedPresetButton"
-                                              Click="PresetBalanced_Click" MinWidth="96" />
-                                <ToggleButton x:Name="GentlePresetButton"
-                                              Click="PresetGentle_Click" MinWidth="96" />
-                                <ToggleButton x:Name="ActivePresetButton"
-                                              Click="PresetActive_Click" MinWidth="96" />
-                            </StackPanel>
-                            <TextBlock x:Name="PresetDetail" Text=""
-                                       FontSize="11.5" Foreground="#6E6A5E"
-                                       TextWrapping="Wrap" />
                             <TextBlock x:Name="NextCueText" Text=""
                                        FontSize="12" FontWeight="SemiBold"
                                        Foreground="#C25E3E" TextWrapping="Wrap" />
@@ -299,131 +282,7 @@
                             <TextBlock x:Name="SetSoundHint" Text=""
                                        FontSize="11" Foreground="#A39B8D"
                                        TextWrapping="Wrap" />
-                            <Button x:Name="CustomizeButton" Click="Customize_Click"
-                                    Background="Transparent" BorderThickness="0"
-                                    Padding="0" Foreground="#C25E3E"
-                                    HorizontalAlignment="Left" />
-                            <StackPanel x:Name="AdvancedSettings"
-                                        Spacing="10" Visibility="Collapsed">
-                                <TextBlock x:Name="SetKindsLabel" Text="Kinds"
-                                           FontSize="11.5" FontWeight="SemiBold"
-                                           Foreground="#6E6A5E" />
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetSitEnabledLabel"
-                                               Text="Stand-up reminders" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ToggleSwitch Grid.Column="1" x:Name="SitEnabledSwitch"
-                                                  MinWidth="0" HorizontalAlignment="Right"
-                                                  OnContent="" OffContent=""
-                                                  Toggled="SitEnabled_Toggled" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetSitLabel"
-                                               Text="Sit interval" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <NumberBox Grid.Column="1" x:Name="SitBox"
-                                               Minimum="10" Maximum="240" SmallChange="5"
-                                               Value="50" SpinButtonPlacementMode="Compact"
-                                               Width="120"
-                                               ValueChanged="Sit_ValueChanged" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetWaterEnabledLabel"
-                                               Text="Water reminders" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ToggleSwitch Grid.Column="1" x:Name="WaterEnabledSwitch"
-                                                  MinWidth="0" HorizontalAlignment="Right"
-                                                  OnContent="" OffContent=""
-                                                  Toggled="WaterEnabled_Toggled" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetWaterLabel"
-                                               Text="Water interval" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <NumberBox Grid.Column="1" x:Name="WaterBox"
-                                               Minimum="5" Maximum="180" SmallChange="5"
-                                               Value="60" SpinButtonPlacementMode="Compact"
-                                               Width="120"
-                                               ValueChanged="Water_ValueChanged" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetMicroLabel"
-                                               Text="Eye rest" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ToggleSwitch Grid.Column="1" x:Name="MicroSwitch"
-                                                  MinWidth="0" HorizontalAlignment="Right"
-                                                  OnContent="" OffContent=""
-                                                  Toggled="Micro_Toggled" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetMicroParamsLabel"
-                                               Text="Interval / duration" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <NumberBox Grid.Column="1" x:Name="MicroIntervalBox"
-                                               Minimum="10" Maximum="60" SmallChange="5"
-                                               Value="20" SpinButtonPlacementMode="Compact"
-                                               Width="96"
-                                               ValueChanged="MicroInterval_ValueChanged" />
-                                    <NumberBox Grid.Column="2" x:Name="MicroDurationBox"
-                                               Minimum="10" Maximum="60" SmallChange="5"
-                                               Value="20" SpinButtonPlacementMode="Compact"
-                                               Width="96"
-                                               ValueChanged="MicroDuration_ValueChanged" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetAwayLabel"
-                                               Text="Away reset" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <NumberBox Grid.Column="1" x:Name="AwayBox"
-                                               Minimum="1" Maximum="60" SmallChange="1"
-                                               Value="5" SpinButtonPlacementMode="Compact"
-                                               Width="120"
-                                               ValueChanged="Away_ValueChanged" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetSnoozeLabel"
-                                               Text="Snooze" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <NumberBox Grid.Column="1" x:Name="SnoozeBox"
-                                               Minimum="5" Maximum="60" SmallChange="5"
-                                               Value="10" SpinButtonPlacementMode="Compact"
-                                               Width="120"
-                                               ValueChanged="Snooze_ValueChanged" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
+                            <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -475,83 +334,6 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetMubiSizeLabel"
-                                               Text="Mubi size" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ComboBox Grid.Column="1" x:Name="MubiSizeCombo"
-                                              Width="132" HorizontalAlignment="Right"
-                                              SelectionChanged="MubiSize_SelectionChanged">
-                                        <ComboBoxItem Content="S" />
-                                        <ComboBoxItem Content="M" />
-                                        <ComboBoxItem Content="L" />
-                                    </ComboBox>
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetMubiMotionLabel"
-                                               Text="Character motion" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ComboBox Grid.Column="1" x:Name="MubiMotionCombo"
-                                              Width="132" HorizontalAlignment="Right"
-                                              SelectionChanged="MubiMotion_SelectionChanged">
-                                        <ComboBoxItem Content="Still" />
-                                        <ComboBoxItem Content="Subtle" />
-                                        <ComboBoxItem Content="Lively" />
-                                    </ComboBox>
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetMubiDockLabel"
-                                               Text="Dock position" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ComboBox Grid.Column="1" x:Name="MubiDockCombo"
-                                              Width="132" HorizontalAlignment="Right"
-                                              SelectionChanged="MubiDock_SelectionChanged">
-                                        <ComboBoxItem Content="Bottom right" />
-                                        <ComboBoxItem Content="Bottom left" />
-                                        <ComboBoxItem Content="Top right" />
-                                        <ComboBoxItem Content="Top left" />
-                                    </ComboBox>
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetMubiLabelsLabel"
-                                               Text="Label" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ComboBox Grid.Column="1" x:Name="MubiLabelsCombo"
-                                              Width="132" HorizontalAlignment="Right"
-                                              SelectionChanged="MubiLabels_SelectionChanged">
-                                        <ComboBoxItem Content="During reminders" />
-                                        <ComboBoxItem Content="Always" />
-                                    </ComboBox>
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="SetMotionLabel"
-                                               Text="Character motion" FontSize="13"
-                                               Foreground="#26241F" />
-                                    <ToggleSwitch Grid.Column="1" x:Name="MotionSwitch"
-                                                  MinWidth="0" HorizontalAlignment="Right"
-                                                  OnContent="" OffContent=""
-                                                  Toggled="Motion_Toggled" />
-                                </Grid>
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" x:Name="SetAutostartLabel"
                                                Text="Launch at login" FontSize="13"
                                                Foreground="#26241F" />
@@ -576,7 +358,6 @@
                                         <ComboBoxItem Content="English" />
                                     </ComboBox>
                                 </Grid>
-                            </StackPanel>
                         </StackPanel>
                     </Border>
 

@@ -205,14 +205,14 @@ struct MubiCompanion {
     return 78;
   }
 
-  void ApplyConfig(std::string const& size, std::string const& m,
-                   std::string const& d, std::string const& labels,
-                   std::int64_t freeX, std::int64_t freeY) {
+  void ApplyConfig(std::int64_t freeX, std::int64_t freeY) {
     StopVisit();
-    body_height = body_height_for(size);
-    motion = m;
-    dock = d;
-    labels_always = labels == "always";
+    // One shipped presentation (issue #140): M size, subtle motion, default
+    // corner unless a drag-placed position is stored.
+    body_height = body_height_for("M");
+    motion = "subtle";
+    dock = "bottom-right";
+    labels_always = false;
     free_x = freeX;
     free_y = freeY;
     if (hwnd != nullptr) {

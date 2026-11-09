@@ -25,60 +25,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   void Language_SelectionChanged(
       winrt::Windows::Foundation::IInspectable const& sender,
       Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args);
-  void Sit_ValueChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
-  void Water_ValueChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
-  void Away_ValueChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
-  void Snooze_ValueChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
-  void MicroInterval_ValueChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
-  void MicroDuration_ValueChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::NumberBoxValueChangedEventArgs const& args);
-  void Micro_Toggled(winrt::Windows::Foundation::IInspectable const& sender,
-                     Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void Motion_Toggled(winrt::Windows::Foundation::IInspectable const& sender,
-                      Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void MubiSize_SelectionChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args);
-  void MubiMotion_SelectionChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args);
-  void MubiDock_SelectionChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args);
-  void MubiLabels_SelectionChanged(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args);
   void Sound_Toggled(winrt::Windows::Foundation::IInspectable const& sender,
                      Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void PresetBalanced_Click(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void PresetGentle_Click(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void PresetActive_Click(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void Customize_Click(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void SitEnabled_Toggled(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::RoutedEventArgs const& args);
-  void WaterEnabled_Toggled(
-      winrt::Windows::Foundation::IInspectable const& sender,
-      Microsoft::UI::Xaml::RoutedEventArgs const& args);
   void QuietHours_Toggled(
       winrt::Windows::Foundation::IInspectable const& sender,
       Microsoft::UI::Xaml::RoutedEventArgs const& args);

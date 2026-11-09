@@ -117,9 +117,7 @@ struct Model {
   // Pre-bootstrap placeholder = the shipped balanced default; the backend
   // overwrites it with the real persisted config right after init.
   rivet_app::ReminderConfig config{
-      50, 60, 5, 10, true, 20, 20, true, false, true, false, "auto",
-      "M", "subtle", "bottom-right", "cue", "balanced", true, true, false,
-      1320, 420, -1, -1};
+      true, true, false, "auto", false, 1320, 420, -1, -1};
   rivet_app::DayStats today{"", 0, 0, 0, 0, 0};
   rivet_app::PauseState paused{false, std::nullopt};
   std::vector<rivet_app::LoopInfo> loops;
@@ -174,6 +172,20 @@ struct Model {
     }
     return "";
   }
+  // The sit cycle interval in active minutes, derived from the loops state
+  // (accumulated + due-in) so the host never hardcodes the cadence; falls
+  // back to the shipped 50 (issue #140: one product rhythm, no config).
+  std::int64_t sit_interval_mins() const {
+    for (auto const& l : loops) {
+      if (l.kind == rivet_app::ReminderKind::sit &&
+          l.due_in_active_mins.has_value()) {
+        return std::max<std::int64_t>(1, l.accumulated_mins +
+                                             *l.due_in_active_mins);
+      }
+    }
+    return 50;
+  }
+
   std::int64_t current_session_mins() const {
     auto sit = loop(rivet_app::ReminderKind::sit);
     return sit.has_value() ? sit->accumulated_mins : 0;
@@ -477,32 +489,13 @@ struct MainWidgets {
   GtkLabel* updates_hint{nullptr};
   GtkLabel* config_status{nullptr};
 
-  // Settings widgets (kept to apply config without re-signaling).
-  GtkSpinButton* sit_spin{nullptr};
-  GtkSpinButton* water_spin{nullptr};
-  GtkSpinButton* away_spin{nullptr};
-  GtkSpinButton* snooze_spin{nullptr};
-  GtkSpinButton* micro_interval_spin{nullptr};
-  GtkSpinButton* micro_duration_spin{nullptr};
-  GtkSwitch* motion_switch{nullptr};
-  GtkDropDown* mubi_size_drop{nullptr};
-  GtkDropDown* mubi_motion_drop{nullptr};
-  GtkDropDown* mubi_dock_drop{nullptr};
-  GtkDropDown* mubi_labels_drop{nullptr};
-  GtkSwitch* micro_switch{nullptr};
+  // Settings widgets (kept to apply config without re-signaling). The
+  // slim surface (issue #140): sound, quiet hours, auto-update, language.
   GtkSwitch* sound_switch{nullptr};
   GtkSwitch* autostart_switch{nullptr};
   GtkSwitch* updates_switch{nullptr};
   GtkDropDown* language_drop{nullptr};
-  // Rhythm presets (issues #87/#90): everyday surface above the disclosure.
-  GtkToggleButton* preset_buttons[3]{nullptr, nullptr, nullptr};
-  GtkLabel* preset_custom{nullptr};
-  GtkLabel* preset_detail{nullptr};
   GtkLabel* settings_next_cue{nullptr};
-  // Advanced (collapsed by default) controls.
-  GtkWidget* advanced_box{nullptr};
-  GtkSwitch* sit_switch{nullptr};
-  GtkSwitch* water_switch{nullptr};
   GtkSwitch* quiet_switch{nullptr};
   GtkWidget* quiet_start_row{nullptr};
   GtkWidget* quiet_end_row{nullptr};
@@ -578,20 +571,6 @@ GtkWidget* make_card() {
   return card;
 }
 
-GtkSpinButton* add_stepper_row(GtkWidget* parent, char const* label, double value,
-                               double min, double max, double step,
-                               GCallback changed) {
-  auto* row = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8));
-  box_append(row, label_with(label, "row-label"));
-  auto* spin = gtk_spin_button_new_with_range(min, max, step);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), value);
-  gtk_spin_button_set_numeric(GTK_SPIN_BUTTON(spin), TRUE);
-  g_signal_connect(spin, "value-changed", changed, nullptr);
-  box_append(row, spin);
-  box_append(parent, GTK_WIDGET(row));
-  return GTK_SPIN_BUTTON(spin);
-}
-
 GtkSwitch* add_toggle_row(GtkWidget* parent, char const* label, bool on,
                           GCallback toggled) {
   auto* row = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8));
@@ -610,62 +589,6 @@ GtkSwitch* add_toggle_row(GtkWidget* parent, char const* label, bool on,
 
 // ---- settings callbacks -----------------------------------------------------
 
-void on_sit_changed(GtkSpinButton* spin, gpointer) {
-  if (g_state.updating_settings) return;
-  mutate_config([&](auto& d) {
-    d.sit_reminder_minutes =
-        static_cast<std::int64_t>(gtk_spin_button_get_value(spin));
-  });
-}
-void on_water_changed(GtkSpinButton* spin, gpointer) {
-  if (g_state.updating_settings) return;
-  mutate_config([&](auto& d) {
-    d.water_reminder_minutes =
-        static_cast<std::int64_t>(gtk_spin_button_get_value(spin));
-  });
-}
-void on_away_changed(GtkSpinButton* spin, gpointer) {
-  if (g_state.updating_settings) return;
-  mutate_config([&](auto& d) {
-    d.away_reset_minutes =
-        static_cast<std::int64_t>(gtk_spin_button_get_value(spin));
-  });
-}
-void on_snooze_changed(GtkSpinButton* spin, gpointer) {
-  if (g_state.updating_settings) return;
-  mutate_config([&](auto& d) {
-    d.snooze_minutes =
-        static_cast<std::int64_t>(gtk_spin_button_get_value(spin));
-  });
-}
-void on_micro_interval_changed(GtkSpinButton* spin, gpointer) {
-  if (g_state.updating_settings) return;
-  mutate_config([&](auto& d) {
-    d.micro_break_interval_minutes =
-        static_cast<std::int64_t>(gtk_spin_button_get_value(spin));
-  });
-}
-void on_micro_duration_changed(GtkSpinButton* spin, gpointer) {
-  if (g_state.updating_settings) return;
-  mutate_config([&](auto& d) {
-    d.micro_break_duration_seconds =
-        static_cast<std::int64_t>(gtk_spin_button_get_value(spin));
-  });
-}
-int on_motion_set(GtkSwitch*, gboolean state, gpointer) {
-  if (!g_state.updating_settings) {
-    mutate_config([&](auto& d) { d.motion_enabled = state != FALSE; });
-  }
-  return FALSE;
-}
-
-// Mubi presentation pickers: value tables mirror the backend's clamp
-// choices; an out-of-range selection is impossible via the UI.
-static char const* const kMubiSizes[] = {"S", "M", "L"};
-static char const* const kMubiMotions[] = {"still", "subtle", "lively"};
-static char const* const kMubiDocks[] = {"bottom-right", "bottom-left",
-                                         "top-right", "top-left"};
-static char const* const kMubiLabels[] = {"cue", "always"};
 static char const* const kLanguages[] = {"auto", "zh", "en"};
 
 template <std::size_t N>
@@ -674,39 +597,6 @@ bool dropdown_index_valid(GtkDropDown* drop, unsigned& index) {
   return index < N;
 }
 
-void on_mubi_size_changed(GtkDropDown* drop, gpointer) {
-  if (g_state.updating_settings) return;
-  unsigned index = 0;
-  if (!dropdown_index_valid<3>(drop, index)) return;
-  mutate_config([&](auto& d) { d.companion_size = kMubiSizes[index]; });
-}
-
-void on_mubi_motion_changed(GtkDropDown* drop, gpointer) {
-  if (g_state.updating_settings) return;
-  unsigned index = 0;
-  if (!dropdown_index_valid<3>(drop, index)) return;
-  mutate_config([&](auto& d) { d.companion_motion = kMubiMotions[index]; });
-}
-
-void on_mubi_dock_changed(GtkDropDown* drop, gpointer) {
-  if (g_state.updating_settings) return;
-  unsigned index = 0;
-  if (!dropdown_index_valid<4>(drop, index)) return;
-  mutate_config([&](auto& d) { d.companion_dock = kMubiDocks[index]; });
-}
-
-void on_mubi_labels_changed(GtkDropDown* drop, gpointer) {
-  if (g_state.updating_settings) return;
-  unsigned index = 0;
-  if (!dropdown_index_valid<2>(drop, index)) return;
-  mutate_config([&](auto& d) { d.companion_labels = kMubiLabels[index]; });
-}
-int on_micro_set(GtkSwitch*, gboolean state, gpointer) {
-  if (!g_state.updating_settings) {
-    mutate_config([&](auto& d) { d.micro_break_enabled = state != FALSE; });
-  }
-  return FALSE;
-}
 int on_sound_set(GtkSwitch*, gboolean state, gpointer) {
   if (!g_state.updating_settings) {
     mutate_config([&](auto& d) { d.sound_enabled = state != FALSE; });
@@ -720,74 +610,6 @@ int on_autostart_set(GtkSwitch*, gboolean state, gpointer) {
 int on_updates_set(GtkSwitch*, gboolean state, gpointer) {
   if (!g_state.updating_settings) {
     mutate_config([&](auto& d) { d.auto_check_updates = state != FALSE; });
-  }
-  return FALSE;
-}
-
-// Named rhythm presets: the host only sends the name. The backend owns the
-// cadence values and re-derives the stored preset label from them, so the
-// host never sends "custom" itself.
-static char const* const kPresets[] = {"balanced", "gentle", "active"};
-static char const* const kPresetLabels[] = {"preset.balanced",
-                                            "preset.gentle",
-                                            "preset.active"};
-
-void apply_rhythm_preset(std::string const& name) {
-  if (g_state.api == nullptr) return;
-  (void)g_state.api->set_rhythm_preset_async(
-      name, [](rivet_app::Result<void> result) {
-        dispatch_ui([result = std::move(result)]() mutable {
-          g_state.model.config_status =
-              result.succeeded()
-                  ? l10n::t("set.statusSaved", {l10n::T(now_ms())})
-                  : l10n::t("set.statusSaveFailed");
-          // A failed call leaves model.config.preset unchanged: re-sync the
-          // chips so the optimistic highlight cannot claim a saved rhythm.
-          if (!result.succeeded()) refresh_settings_widgets();
-          refresh_status_label();
-        });
-      });
-}
-
-void on_preset_toggled(GtkToggleButton* button, gpointer) {
-  if (g_state.updating_settings) return;
-  // Clicking the selected chip again must not deselect it (nor re-apply
-  // anything): a segmented control always keeps one choice highlighted.
-  if (!gtk_toggle_button_get_active(button)) {
-    g_state.updating_settings = true;
-    gtk_toggle_button_set_active(button, TRUE);
-    g_state.updating_settings = false;
-    return;
-  }
-  auto const* name =
-      static_cast<char const*>(g_object_get_data(G_OBJECT(button), "preset"));
-  if (name == nullptr) return;
-  // Re-select happens in refresh_settings_widgets once the backend's
-  // config-changed broadcast lands; deselect siblings immediately so the
-  // row never shows two selected chips in the meantime.
-  g_state.updating_settings = true;
-  for (auto*& preset_button : mw.preset_buttons) {
-    if (preset_button != button) {
-      gtk_toggle_button_set_active(preset_button, FALSE);
-      gtk_widget_remove_css_class(GTK_WIDGET(preset_button),
-                                  "rhythm-chip-selected");
-    }
-  }
-  g_state.updating_settings = false;
-  gtk_widget_add_css_class(GTK_WIDGET(button), "rhythm-chip-selected");
-  apply_rhythm_preset(name);
-}
-
-int on_sit_enabled_set(GtkSwitch*, gboolean state, gpointer) {
-  if (!g_state.updating_settings) {
-    mutate_config([&](auto& d) { d.sit_enabled = state != FALSE; });
-  }
-  return FALSE;
-}
-
-int on_water_enabled_set(GtkSwitch*, gboolean state, gpointer) {
-  if (!g_state.updating_settings) {
-    mutate_config([&](auto& d) { d.water_enabled = state != FALSE; });
   }
   return FALSE;
 }
@@ -813,14 +635,6 @@ void on_quiet_end_changed(GtkSpinButton* spin, gpointer) {
   auto const hour = static_cast<std::int64_t>(
       gtk_spin_button_get_value(spin));
   mutate_config([&](auto& d) { d.quiet_hours_end_minutes = hour * 60; });
-}
-
-void on_customize_clicked(GtkButton* button, gpointer) {
-  if (mw.advanced_box == nullptr) return;
-  bool const show = !gtk_widget_get_visible(mw.advanced_box);
-  gtk_widget_set_visible(mw.advanced_box, show);
-  gtk_button_set_label(button,
-                       l10n::t(show ? "set.collapse" : "set.customize").c_str());
 }
 
 void on_language_changed(GtkDropDown* drop, GParamSpec*, gpointer) {
@@ -1086,10 +900,10 @@ void refresh_today_card() {
   }
   if (mw.sit_bar != nullptr) {
     double fraction = 0;
-    if (!model.is_paused() && model.config.sit_reminder_minutes > 0) {
+    if (!model.is_paused() && model.sit_interval_mins() > 0) {
       fraction = std::min(
           1.0, std::max(0.0, static_cast<double>(model.current_session_mins()) /
-                                 static_cast<double>(model.config.sit_reminder_minutes)));
+                                 static_cast<double>(model.sit_interval_mins())));
     }
     gtk_progress_bar_set_fraction(mw.sit_bar, fraction);
   }
@@ -1097,7 +911,7 @@ void refresh_today_card() {
     std::string text = "—";
     if (!model.is_paused()) {
       text = l10n::t("tpl.sitCycleMin", {l10n::A(model.current_session_mins()),
-                                        l10n::A(model.config.sit_reminder_minutes)});
+                                        l10n::A(model.sit_interval_mins())});
     }
     gtk_label_set_text(mw.sit_cycle_text, text.c_str());
   }
@@ -1167,7 +981,7 @@ void refresh_insight_card() {
   }
   if (mw.insight_sedentary != nullptr) {
     std::int64_t const longest = summary.longest;
-    std::int64_t const sit = model.config.sit_reminder_minutes;
+    std::int64_t const sit = model.sit_interval_mins();
     std::string text;
     if (longest <= 0) {
       text = l10n::t("insight.noData");
@@ -1185,35 +999,13 @@ void refresh_insight_card() {
 void refresh_settings_widgets() {
   auto const& c = g_state.model.config;
   g_state.updating_settings = true;
-  if (mw.sit_spin != nullptr) {
-    gtk_spin_button_set_value(mw.sit_spin, c.sit_reminder_minutes);
-    gtk_spin_button_set_value(mw.water_spin, c.water_reminder_minutes);
-    gtk_spin_button_set_value(mw.away_spin, c.away_reset_minutes);
-    gtk_spin_button_set_value(mw.snooze_spin, c.snooze_minutes);
-    gtk_spin_button_set_value(mw.micro_interval_spin, c.micro_break_interval_minutes);
-    gtk_spin_button_set_value(mw.micro_duration_spin, c.micro_break_duration_seconds);
-    gtk_switch_set_active(mw.motion_switch, c.motion_enabled);
-    gtk_drop_down_set_selected(mw.mubi_size_drop,
-                               c.companion_size == "S" ? 0
-                               : c.companion_size == "L" ? 2 : 1);
-    gtk_drop_down_set_selected(mw.mubi_motion_drop,
-                               c.companion_motion == "still" ? 0
-                               : c.companion_motion == "lively" ? 2 : 1);
-    gtk_drop_down_set_selected(mw.mubi_dock_drop,
-                               c.companion_dock == "bottom-left" ? 1
-                               : c.companion_dock == "top-right" ? 2
-                               : c.companion_dock == "top-left" ? 3 : 0);
-    gtk_drop_down_set_selected(mw.mubi_labels_drop,
-                               c.companion_labels == "always" ? 1 : 0);
-    gtk_switch_set_active(mw.micro_switch, c.micro_break_enabled);
+  if (mw.sound_switch != nullptr) {
     gtk_switch_set_active(mw.sound_switch, c.sound_enabled);
     gtk_switch_set_active(mw.autostart_switch, g_state.model.autostart);
     gtk_switch_set_active(mw.updates_switch, c.auto_check_updates);
     gtk_drop_down_set_selected(
         mw.language_drop,
         c.language == "zh" ? 1 : c.language == "en" ? 2 : 0);
-    gtk_switch_set_active(mw.sit_switch, c.sit_enabled);
-    gtk_switch_set_active(mw.water_switch, c.water_enabled);
     gtk_switch_set_active(mw.quiet_switch, c.quiet_hours_enabled);
     gtk_spin_button_set_value(mw.quiet_start_spin,
                               c.quiet_hours_start_minutes / 60);
@@ -1221,27 +1013,6 @@ void refresh_settings_widgets() {
                               c.quiet_hours_end_minutes / 60);
     gtk_widget_set_visible(mw.quiet_start_row, c.quiet_hours_enabled);
     gtk_widget_set_visible(mw.quiet_end_row, c.quiet_hours_enabled);
-    for (std::size_t i = 0; i < 3; ++i) {
-      bool const selected = c.preset == kPresets[i];
-      gtk_toggle_button_set_active(mw.preset_buttons[i], selected);
-      if (selected) {
-        gtk_widget_add_css_class(GTK_WIDGET(mw.preset_buttons[i]),
-                                 "rhythm-chip-selected");
-      } else {
-        gtk_widget_remove_css_class(GTK_WIDGET(mw.preset_buttons[i]),
-                                    "rhythm-chip-selected");
-      }
-    }
-    gtk_widget_set_visible(GTK_WIDGET(mw.preset_custom),
-                           c.preset == "custom");
-    gtk_label_set_text(
-        mw.preset_detail,
-        l10n::t("preset.detail",
-                {l10n::A(c.sit_reminder_minutes),
-                 l10n::A(c.water_reminder_minutes),
-                 l10n::A(c.micro_break_interval_minutes),
-                 l10n::A(c.micro_break_duration_seconds)})
-            .c_str());
   }
   g_state.updating_settings = false;
   refresh_next_cue_line();
@@ -2007,41 +1778,16 @@ void build_main_content() {
     mw.config_status = GTK_LABEL(status);
     box_append(GTK_BOX(card), head);
 
-    // Everyday surface (issues #87/#90): rhythm, sound, one disclosure.
-    box_append(GTK_BOX(card), label_with(l10n::t("set.rhythm").c_str(), "row-strong"));
-    auto* rhythm_hint =
-        label_with(l10n::t("set.rhythmHint").c_str(), "caption");
-    gtk_label_set_wrap(GTK_LABEL(rhythm_hint), TRUE);
-    box_append(GTK_BOX(card), rhythm_hint);
-
-    auto& c = g_state.model.config;
-    auto* preset_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    for (std::size_t i = 0; i < 3; ++i) {
-      auto* chip = gtk_toggle_button_new_with_label(
-          l10n::t(kPresetLabels[i]).c_str());
-      gtk_widget_add_css_class(chip, "rhythm-chip");
-      gtk_widget_set_hexpand(chip, TRUE);
-      g_object_set_data(G_OBJECT(chip), "preset",
-                        const_cast<char*>(kPresets[i]));
-      g_signal_connect(chip, "toggled", G_CALLBACK(on_preset_toggled),
-                       nullptr);
-      box_append(GTK_BOX(preset_row), chip);
-      mw.preset_buttons[i] = GTK_TOGGLE_BUTTON(chip);
+    // Slim surface (issue #140): the defaults are the product — four
+    // controls, no rhythm to study.
+    {
+      auto* defaults_hint =
+          label_with(l10n::t("set.defaultsHint").c_str(), "caption");
+      gtk_label_set_wrap(GTK_LABEL(defaults_hint), TRUE);
+      box_append(GTK_BOX(card), defaults_hint);
     }
-    box_append(GTK_BOX(card), preset_row);
 
-    auto* preset_custom = label_with(l10n::t("preset.custom").c_str(), "caption");
-    gtk_widget_set_visible(preset_custom, FALSE);
-    box_append(GTK_BOX(card), preset_custom);
-    mw.preset_custom = GTK_LABEL(preset_custom);
-
-    // Exact values, derived from the stored config so the label can never
-    // promise numbers the app does not use.
-    auto* preset_detail = label_with("", "caption");
-    gtk_label_set_wrap(GTK_LABEL(preset_detail), TRUE);
-    box_append(GTK_BOX(card), preset_detail);
-    mw.preset_detail = GTK_LABEL(preset_detail);
-
+    auto const& c = g_state.model.config;
     auto* settings_next_cue = gtk_label_new("");
     gtk_widget_add_css_class(settings_next_cue, "row-label");
     gtk_label_set_xalign(GTK_LABEL(settings_next_cue), 0.0f);
@@ -2055,66 +1801,14 @@ void build_main_content() {
     gtk_label_set_wrap(GTK_LABEL(sound_hint), TRUE);
     box_append(GTK_BOX(card), sound_hint);
 
-    auto* customize =
-        gtk_button_new_with_label(l10n::t("set.customize").c_str());
-    gtk_widget_add_css_class(customize, "flat");
-    gtk_widget_set_halign(customize, GTK_ALIGN_START);
-    g_signal_connect(customize, "clicked",
-                     G_CALLBACK(on_customize_clicked), nullptr);
-    box_append(GTK_BOX(card), customize);
-
-    // Advanced controls, collapsed by default (rare technical needs).
-    auto* advanced = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_visible(advanced, FALSE);
-    mw.advanced_box = advanced;
-    box_append(GTK_BOX(card), advanced);
-
-    box_append(GTK_BOX(advanced),
-               label_with(l10n::t("set.intro").c_str(), "caption"));
-    box_append(GTK_BOX(advanced),
-               label_with(l10n::t("set.kinds").c_str(), "section"));
-
-    mw.sit_switch = add_toggle_row(advanced, l10n::t("set.sitEnabled").c_str(),
-                                   c.sit_enabled,
-                                   G_CALLBACK(on_sit_enabled_set));
-    mw.sit_spin = add_stepper_row(advanced, l10n::t("set.sitInterval").c_str(),
-                                  c.sit_reminder_minutes, 10, 240, 5,
-                                  G_CALLBACK(on_sit_changed));
-    mw.water_switch = add_toggle_row(advanced, l10n::t("set.waterEnabled").c_str(),
-                                     c.water_enabled,
-                                     G_CALLBACK(on_water_enabled_set));
-    mw.water_spin = add_stepper_row(advanced, l10n::t("set.waterInterval").c_str(),
-                                    c.water_reminder_minutes, 5, 180, 5,
-                                    G_CALLBACK(on_water_changed));
-    mw.micro_switch = add_toggle_row(advanced, l10n::t("set.eyesToggle").c_str(),
-                                     c.micro_break_enabled,
-                                     G_CALLBACK(on_micro_set));
-    auto* micro_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    box_append(GTK_BOX(micro_row),
-               label_with(l10n::t("set.eyesParams").c_str(), "row-label"));
-    mw.micro_interval_spin = add_stepper_row(
-        micro_row, "", c.micro_break_interval_minutes, 10, 60, 5,
-        G_CALLBACK(on_micro_interval_changed));
-    mw.micro_duration_spin = add_stepper_row(
-        micro_row, "", c.micro_break_duration_seconds, 10, 60, 5,
-        G_CALLBACK(on_micro_duration_changed));
-    box_append(GTK_BOX(advanced), micro_row);
-
-    mw.away_spin = add_stepper_row(advanced, l10n::t("set.awayReset").c_str(),
-                                   c.away_reset_minutes, 1, 60, 1,
-                                   G_CALLBACK(on_away_changed));
-    mw.snooze_spin = add_stepper_row(advanced, l10n::t("set.snooze").c_str(),
-                                     c.snooze_minutes, 5, 60, 5,
-                                     G_CALLBACK(on_snooze_changed));
-
     mw.quiet_switch =
-        add_toggle_row(advanced, l10n::t("set.quietHours").c_str(),
+        add_toggle_row(card, l10n::t("set.quietHours").c_str(),
                        c.quiet_hours_enabled,
                        G_CALLBACK(on_quiet_hours_set));
     auto* quiet_hint =
         label_with(l10n::t("set.quietHoursHint").c_str(), "caption");
     gtk_label_set_wrap(GTK_LABEL(quiet_hint), TRUE);
-    box_append(GTK_BOX(advanced), quiet_hint);
+    box_append(GTK_BOX(card), quiet_hint);
 
     auto* quiet_start_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     box_append(GTK_BOX(quiet_start_row),
@@ -2127,7 +1821,7 @@ void build_main_content() {
                      G_CALLBACK(on_quiet_start_changed), nullptr);
     box_append(GTK_BOX(quiet_start_row), quiet_start_spin);
     gtk_widget_set_visible(quiet_start_row, c.quiet_hours_enabled);
-    box_append(GTK_BOX(advanced), quiet_start_row);
+    box_append(GTK_BOX(card), quiet_start_row);
     mw.quiet_start_row = quiet_start_row;
     mw.quiet_start_spin = GTK_SPIN_BUTTON(quiet_start_spin);
 
@@ -2142,91 +1836,12 @@ void build_main_content() {
                      G_CALLBACK(on_quiet_end_changed), nullptr);
     box_append(GTK_BOX(quiet_end_row), quiet_end_spin);
     gtk_widget_set_visible(quiet_end_row, c.quiet_hours_enabled);
-    box_append(GTK_BOX(advanced), quiet_end_row);
+    box_append(GTK_BOX(card), quiet_end_row);
     mw.quiet_end_row = quiet_end_row;
     mw.quiet_end_spin = GTK_SPIN_BUTTON(quiet_end_spin);
 
-    auto* mubi_size_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    box_append(GTK_BOX(mubi_size_row),
-               label_with(l10n::t("set.mubiSize").c_str(), "row-label"));
-    char const* size_items[] = {"S", "M", "L", nullptr};
-    auto* size_drop = gtk_drop_down_new_from_strings(size_items);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(size_drop),
-                               c.companion_size == "S" ? 0
-                               : c.companion_size == "L" ? 2 : 1);
-    g_signal_connect(size_drop, "notify::selected",
-                     G_CALLBACK(on_mubi_size_changed), nullptr);
-    box_append(GTK_BOX(mubi_size_row), size_drop);
-    gtk_widget_set_halign(size_drop, GTK_ALIGN_END);
-    gtk_widget_set_hexpand(size_drop, TRUE);
-    box_append(GTK_BOX(advanced), mubi_size_row);
-    mw.mubi_size_drop = GTK_DROP_DOWN(size_drop);
-
-    auto* mubi_motion_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    box_append(GTK_BOX(mubi_motion_row),
-               label_with(l10n::t("set.mubiMotion").c_str(), "row-label"));
-    std::string const motion_still = l10n::t("mubi.motionStill");
-    std::string const motion_subtle = l10n::t("mubi.motionSubtle");
-    std::string const motion_lively = l10n::t("mubi.motionLively");
-    char const* motion_items[] = {motion_still.c_str(), motion_subtle.c_str(),
-                                  motion_lively.c_str(), nullptr};
-    auto* motion_drop = gtk_drop_down_new_from_strings(motion_items);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(motion_drop),
-                               c.companion_motion == "still" ? 0
-                               : c.companion_motion == "lively" ? 2 : 1);
-    g_signal_connect(motion_drop, "notify::selected",
-                     G_CALLBACK(on_mubi_motion_changed), nullptr);
-    box_append(GTK_BOX(mubi_motion_row), motion_drop);
-    gtk_widget_set_halign(motion_drop, GTK_ALIGN_END);
-    gtk_widget_set_hexpand(motion_drop, TRUE);
-    box_append(GTK_BOX(advanced), mubi_motion_row);
-    mw.mubi_motion_drop = GTK_DROP_DOWN(motion_drop);
-
-    auto* mubi_dock_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    box_append(GTK_BOX(mubi_dock_row),
-               label_with(l10n::t("set.mubiDock").c_str(), "row-label"));
-    std::string const dock_br = l10n::t("mubi.dockBottomRight");
-    std::string const dock_bl = l10n::t("mubi.dockBottomLeft");
-    std::string const dock_tr = l10n::t("mubi.dockTopRight");
-    std::string const dock_tl = l10n::t("mubi.dockTopLeft");
-    char const* dock_items[] = {dock_br.c_str(), dock_bl.c_str(),
-                                dock_tr.c_str(), dock_tl.c_str(), nullptr};
-    auto* dock_drop = gtk_drop_down_new_from_strings(dock_items);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(dock_drop),
-                               c.companion_dock == "bottom-left" ? 1
-                               : c.companion_dock == "top-right" ? 2
-                               : c.companion_dock == "top-left" ? 3 : 0);
-    g_signal_connect(dock_drop, "notify::selected",
-                     G_CALLBACK(on_mubi_dock_changed), nullptr);
-    box_append(GTK_BOX(mubi_dock_row), dock_drop);
-    gtk_widget_set_halign(dock_drop, GTK_ALIGN_END);
-    gtk_widget_set_hexpand(dock_drop, TRUE);
-    box_append(GTK_BOX(advanced), mubi_dock_row);
-    mw.mubi_dock_drop = GTK_DROP_DOWN(dock_drop);
-
-    auto* mubi_labels_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    box_append(GTK_BOX(mubi_labels_row),
-               label_with(l10n::t("set.mubiLabels").c_str(), "row-label"));
-    std::string const labels_cue = l10n::t("mubi.labelsCue");
-    std::string const labels_always = l10n::t("mubi.labelsAlways");
-    char const* labels_items[] = {labels_cue.c_str(), labels_always.c_str(),
-                                  nullptr};
-    auto* labels_drop = gtk_drop_down_new_from_strings(labels_items);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(labels_drop),
-                               c.companion_labels == "always" ? 1 : 0);
-    g_signal_connect(labels_drop, "notify::selected",
-                     G_CALLBACK(on_mubi_labels_changed), nullptr);
-    box_append(GTK_BOX(mubi_labels_row), labels_drop);
-    gtk_widget_set_halign(labels_drop, GTK_ALIGN_END);
-    gtk_widget_set_hexpand(labels_drop, TRUE);
-    box_append(GTK_BOX(advanced), mubi_labels_row);
-    mw.mubi_labels_drop = GTK_DROP_DOWN(labels_drop);
-
-    mw.motion_switch = add_toggle_row(advanced, l10n::t("set.motion").c_str(),
-                                      c.motion_enabled,
-                                      G_CALLBACK(on_motion_set));
     mw.autostart_switch = add_toggle_row(
-        advanced, l10n::t("set.autostart").c_str(), g_state.model.autostart,
+        card, l10n::t("set.autostart").c_str(), g_state.model.autostart,
         G_CALLBACK(on_autostart_set));
 
     auto* lang_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -2241,7 +1856,7 @@ void build_main_content() {
     g_signal_connect(lang, "notify::selected", G_CALLBACK(on_language_changed), nullptr);
     box_append(GTK_BOX(lang_row), lang);
     mw.language_drop = GTK_DROP_DOWN(lang);
-    box_append(GTK_BOX(advanced), lang_row);
+    box_append(GTK_BOX(card), lang_row);
     box_append(right, card);
   }
 
@@ -3305,13 +2920,13 @@ void set_quiet(bool enabled) {
   present(enabled ? 5 : 0, "", nullptr);
 }
 
-void apply_config(std::string const& size, std::string const& motion,
-                  std::string const& dock, std::string const& labels,
-                  std::int64_t freeX, std::int64_t freeY) {
-  g_state.mubi_size = size;
-  g_state.mubi_motion = motion;  // static-state leg; budget tuning is #56 D3
-  g_state.mubi_dock = dock;
-  g_state.mubi_labels_always = labels == "always";
+void apply_config(std::int64_t freeX, std::int64_t freeY) {
+  // One shipped presentation (issue #140): M size, subtle motion, default
+  // corner unless a drag-placed position is stored.
+  g_state.mubi_size = "M";
+  g_state.mubi_motion = "subtle";
+  g_state.mubi_dock = "bottom-right";
+  g_state.mubi_labels_always = false;
   g_state.mubi_free_x = freeX;
   g_state.mubi_free_y = freeY;
   show_idle();
@@ -3494,8 +3109,7 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
     }
     if (has_micro) {
       items.push_back(menu_item(l10n::t("tray.eyeRest"), [] {
-        show_guided(g_state.model.config.micro_break_duration_seconds,
-                    l10n::t("tray.eyeRest"), l10n::t("micro.hint"));
+        show_guided(20, l10n::t("tray.eyeRest"), l10n::t("micro.hint"));
       }));
     }
     if (has_sit) {
@@ -3872,8 +3486,7 @@ void handle_health_cue(rivet_app::HealthCue const& cue, GtkApplication* app) {
     return;
   }
   if (kinds.size() == 1 && kinds[0] == rivet_app::ReminderKind::micro) {
-    micro_show(model.config.micro_break_duration_seconds, pick_micro(),
-               l10n::t("micro.hint"), cue.id, app);
+    micro_show(20, pick_micro(), l10n::t("micro.hint"), cue.id, app);
     cue_displayed(cue.id);
     return;
   }
@@ -3906,13 +3519,13 @@ void handle_health_cue(rivet_app::HealthCue const& cue, GtkApplication* app) {
 
   // Sound parity: the old Avalonia app was silent on non-Windows platforms,
   // so no bell here regardless of sound_enabled.
-  toast_show(title, lines, accent, cue.id, model.config.snooze_minutes, app);
+  toast_show(title, lines, accent, cue.id, 10, app);
   cue_displayed(cue.id);
 }
 
 void show_toast_plain(std::string const& title, std::vector<std::string> const& lines,
                       rivet_app::ReminderKind accent, GtkApplication* app) {
-  toast_show(title, lines, accent, 0, g_state.model.config.snooze_minutes, app);
+  toast_show(title, lines, accent, 0, 10, app);
 }
 
 void cue_displayed(std::int64_t id) {
@@ -4044,9 +3657,7 @@ void apply_config(rivet_app::ReminderConfig const& changed, bool announce,
   bool const language_changed =
       resolve_language(changed.language) != g_state.language;
   g_state.model.config = changed;
-  mubi::apply_config(changed.companion_size, changed.companion_motion,
-                     changed.companion_dock, changed.companion_labels,
-                     changed.companion_free_x, changed.companion_free_y);
+  mubi::apply_config(changed.companion_free_x, changed.companion_free_y);
   g_state.language = resolve_language(changed.language);
   apply_language();
   refresh_header_buttons();
@@ -4338,14 +3949,6 @@ int on_backend_finished(gpointer user_data) {
                                               dispatch_ui([app, cues] {
                                                 g_state.model.pending_cues = cues;
                                                 mubi::apply_config(
-                                                    g_state.model.config
-                                                        .companion_size,
-                                                    g_state.model.config
-                                                        .companion_motion,
-                                                    g_state.model.config
-                                                        .companion_dock,
-                                                    g_state.model.config
-                                                        .companion_labels,
                                                     g_state.model.config
                                                         .companion_free_x,
                                                     g_state.model.config

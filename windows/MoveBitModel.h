@@ -172,9 +172,7 @@ struct Model {
   // Pre-bootstrap placeholder = the shipped default; the backend overwrites
   // it with the real persisted config right after init.
   rivet_app::ReminderConfig config{
-      50, 60, 5, 10, true, 20, 20, true, false, true, false, "auto",
-      "M", "subtle", "bottom-right", "cue",
-      "balanced", true, true, false, 1320, 420, -1, -1};
+      true, true, false, "auto", false, 1320, 420, -1, -1};
   rivet_app::DayStats today{"", 0, 0, 0, 0, 0};
   rivet_app::PauseState paused{false, std::nullopt};
   std::vector<rivet_app::LoopInfo> loops;
@@ -200,6 +198,17 @@ struct Model {
   std::int64_t current_session_mins() const {
     auto sit = loop(rivet_app::ReminderKind::sit);
     return sit.has_value() ? sit->accumulated_mins : 0;
+  }
+  // The sit cycle interval in active minutes, derived from the loops state
+  // (accumulated + due-in) so the host never hardcodes the cadence; falls
+  // back to the shipped 50 (issue #140: one product rhythm, no config).
+  std::int64_t sit_interval_mins() const {
+    auto sit = loop(rivet_app::ReminderKind::sit);
+    if (sit.has_value() && sit->due_in_active_mins.has_value()) {
+      return std::max<std::int64_t>(
+          1, sit->accumulated_mins + *sit->due_in_active_mins);
+    }
+    return 50;
   }
   std::optional<rivet_app::CueOutcomeTotals> outcome(
       rivet_app::ReminderKind kind) const {
