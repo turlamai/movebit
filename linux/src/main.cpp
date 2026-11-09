@@ -264,6 +264,16 @@ struct AppState {
   // restores the empty X11 input region.
   bool mubi_placing = false;
   guint mubi_place_timer = 0;
+  // Persistent invitation + petting + repertoire (issue #140): while a due
+  // cue waits, the canvas+capsule become pettable/clickable and Mubi
+  // rotates small begging acts; between reminders it plays by itself.
+  bool mubi_attending = false;
+  int mubi_act = 0;  // 0 none, 1 roll, 2 squish, 3 teary, 4 hop
+  double mubi_act_progress = 1.0;
+  double mubi_act_step = 0.0;
+  double mubi_act_side = 1.0;
+  guint mubi_act_tick_id{0};
+  guint mubi_play_tick_id{0};
   // #104 central-third visit for a genuine due cue: approach, hold, return
   // to exactly the persisted home. Movement never acknowledges the cue.
   int mubi_home_x = 0;
@@ -2275,7 +2285,34 @@ void draw(GtkDrawingArea*, cairo_t* cr, int, int, gpointer) {
   double const s = scale_for(g_state.mubi_size);
   cairo_save(cr);
   cairo_scale(cr, s, s);
+  // Repertoire acts (issue #140): a roll tilts from the docked bottom, a
+  // glass-press squishes, a hop lifts — all single-bump transforms.
+  double const q = std::sin(std::min(1.0, g_state.mubi_act_progress) *
+                            3.14159265358979);
+  if (g_state.mubi_act == 1) {
+    cairo_translate(cr, 60, 128);
+    cairo_rotate(cr, 14.0 * q * g_state.mubi_act_side *
+                     3.14159265358979 / 180.0);
+    cairo_translate(cr, -60, -128);
+  } else if (g_state.mubi_act == 2) {
+    cairo_translate(cr, 60, 128);
+    cairo_scale(cr, 1.0 + 0.08 * q, 1.0 - 0.10 * q);
+    cairo_translate(cr, -60, -128);
+  } else if (g_state.mubi_act == 4) {
+    cairo_translate(cr, 0, -4.0 * q);
+  }
   draw_state(cr, g_state.mubi_state);
+  if (g_state.mubi_act == 3) {
+    // Teary begging droplets welling under each eye.
+    GdkRGBA tear;
+    gdk_rgba_parse(&tear, "#65C8B8");
+    cairo_set_source_rgba(cr, tear.red, tear.green, tear.blue,
+                          tear.alpha * 0.85);
+    cairo_arc(cr, 46.5, 72, 1.4, 0, 2 * 3.14159265358979);
+    cairo_fill(cr);
+    cairo_arc(cr, 73.5, 72, 1.4, 0, 2 * 3.14159265358979);
+    cairo_fill(cr);
+  }
   cairo_restore(cr);
 }
 
@@ -2376,6 +2413,88 @@ void stop_visit() {
   s.mubi_visit_step = 0;
 }
 
+// ---- self-play + begging repertoire (issue #140) ---------------------------
+// Small bounded acts with real sleeps between: while an invitation waits
+// Mubi begs (roll, press against the glass, teary sniffles); between
+// reminders it plays by itself near its dock (hops, curious tilts). Still
+// motion, Focus and placement keep everything static.
+
+void schedule_play(bool attending);
+void start_act(int kind, bool attending);
+void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
+void on_capsule_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
+
+void start_act(int kind, bool attending) {
+  auto& s = g_state;
+  if (s.mubi_act_tick_id != 0) {
+    g_source_remove(s.mubi_act_tick_id);
+    s.mubi_act_tick_id = 0;
+  }
+  s.mubi_act = kind;
+  s.mubi_act_side = g_random_int_range(0, 2) == 0 ? 1.0 : -1.0;
+  s.mubi_act_progress = 0.0;
+  s.mubi_act_step = 33.0 / 600.0;
+  s.mubi_act_tick_id = g_timeout_add(
+      33,
+      +[](gpointer user) -> int {
+        bool const attending = user != nullptr;
+        auto& st = g_state;
+        st.mubi_act_progress =
+            std::min(1.0, st.mubi_act_progress + st.mubi_act_step);
+        if (st.mubi_canvas != nullptr) {
+          gtk_widget_queue_draw(GTK_WIDGET(st.mubi_canvas));
+        }
+        if (st.mubi_act_progress < 1.0) return G_SOURCE_CONTINUE;
+        st.mubi_act_tick_id = 0;
+        st.mubi_act = 0;
+        st.mubi_act_progress = 1.0;
+        schedule_play(attending);
+        return G_SOURCE_REMOVE;
+      },
+      attending ? (gpointer)1 : nullptr);
+}
+
+void schedule_play(bool attending) {
+  auto& s = g_state;
+  if (s.mubi_play_tick_id != 0) {
+    g_source_remove(s.mubi_play_tick_id);
+    s.mubi_play_tick_id = 0;
+  }
+  auto const delay = attending ? g_random_int_range(13, 20)
+                               : g_random_int_range(12, 22);
+  s.mubi_play_tick_id = g_timeout_add(
+      delay * 1000,
+      +[](gpointer user) -> int {
+        bool const attending = user != nullptr;
+        auto& st = g_state;
+        st.mubi_play_tick_id = 0;
+        if (st.mubi_motion == "still" || st.mubi_quiet || st.mubi_placing ||
+            attending != st.mubi_attending) {
+          return G_SOURCE_REMOVE;
+        }
+        int const kind = attending
+            ? static_cast<int>(g_random_int_range(1, 4))
+            : (g_random_int_range(0, 2) == 0 ? 4 : 1);
+        start_act(kind, attending);
+        return G_SOURCE_REMOVE;
+      },
+      attending ? (gpointer)1 : nullptr);
+}
+
+void stop_play() {
+  auto& s = g_state;
+  if (s.mubi_play_tick_id != 0) {
+    g_source_remove(s.mubi_play_tick_id);
+    s.mubi_play_tick_id = 0;
+  }
+  if (s.mubi_act_tick_id != 0) {
+    g_source_remove(s.mubi_act_tick_id);
+    s.mubi_act_tick_id = 0;
+  }
+  s.mubi_act = 0;
+  s.mubi_act_progress = 1.0;
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 void move_visit_window(int x, int y) {
@@ -2455,11 +2574,21 @@ void present(int state, std::string const& message, GtkApplication* app,
   if (g_state.acceptance) return;  // headless probe sees the main window only
   if (app == nullptr) app = g_state.app;
   if (app == nullptr) return;
+  // Settled invitation (Done / Later / Hide / ledger settled): bring Mubi
+  // home before the calm pose — no timer does this anymore (issue #140).
+  if ((state == 0 || state == 5) && g_state.mubi_visit_phase == 2) {
+    begin_visit_return();
+    return;
+  }
   auto& s = g_state;
+  // A due cue = a live invitation on screen: pettable canvas, Later tag.
+  bool const due = cue_id != 0 && state >= 1 && state <= 3;
+  s.mubi_attending = due;
   s.mubi_state = state;
   s.mubi_message = message;
   s.mubi_cue_id = cue_id;
   start_anim(state);
+  if (!due) stop_play();
   // Static poses (idle/eyes/focus) start no animation tick, so without an
   // explicit redraw the canvas keeps showing the previous pose forever.
   if (s.mubi_canvas != nullptr) {
@@ -2548,6 +2677,11 @@ void present(int state, std::string const& message, GtkApplication* app,
     g_signal_connect(drag, "drag-update", G_CALLBACK(on_drag_update), nullptr);
     g_signal_connect(drag, "drag-end", G_CALLBACK(on_drag_end), nullptr);
     gtk_widget_add_controller(GTK_WIDGET(canvas), GTK_EVENT_CONTROLLER(drag));
+    // Petting = Done (issue #140): a tap on the character acknowledges the
+    // open cue. The capsule tap = the Later tag.
+    auto* tap = gtk_gesture_click_new();
+    g_signal_connect(tap, "released", G_CALLBACK(on_canvas_tap), nullptr);
+    gtk_widget_add_controller(GTK_WIDGET(canvas), GTK_EVENT_CONTROLLER(tap));
     box_append(GTK_BOX(body_box), GTK_WIDGET(canvas));
     s.mubi_canvas = canvas;
 
@@ -2557,6 +2691,10 @@ void present(int state, std::string const& message, GtkApplication* app,
     gtk_widget_set_halign(capsule, GTK_ALIGN_CENTER);
     gtk_label_set_justify(GTK_LABEL(capsule), GTK_JUSTIFY_CENTER);
     gtk_label_set_wrap(GTK_LABEL(capsule), TRUE);
+    auto* capsule_tap = gtk_gesture_click_new();
+    g_signal_connect(capsule_tap, "released", G_CALLBACK(on_capsule_tap),
+                     nullptr);
+    gtk_widget_add_controller(capsule, GTK_EVENT_CONTROLLER(capsule_tap));
     box_append(GTK_BOX(body_box), capsule);
     s.mubi_capsule = GTK_LABEL(capsule);
 
@@ -2571,12 +2709,41 @@ void present(int state, std::string const& message, GtkApplication* app,
   // Explicit size: the window hugs the character (canvas + capsule area
   // while a label shows). Cue actions live in the tray menu, not here.
   bool const label_visible = s.mubi_labels_always || !s.mubi_message.empty();
-  bool const due = cue_id != 0 && state >= 1 && state <= 3;
   int const win_w = canvas_w;
   int const win_h = canvas_h + (label_visible ? 44 : 0);
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
   // Do not request window-manager keyboard focus for a floating pet.
   gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
+  // Pettable surface while an invitation waits (canvas = pet/Done, capsule
+  // = Later); click-through again the moment it settles. Re-apply shortly
+  // after, once the label's allocation has landed this frame.
+  set_interactive(due || s.mubi_placing);
+  g_timeout_add(
+      60,
+      +[](gpointer user) -> int {
+        bool const due = user != nullptr;
+        if (g_state.mubi_attending == due || g_state.mubi_placing) {
+          set_interactive(due || g_state.mubi_placing);
+        }
+        return G_SOURCE_REMOVE;
+      },
+      due ? (gpointer)1 : nullptr);
+  {
+    gboolean gtk_animations = TRUE;
+    if (auto* settings = gtk_settings_get_default()) {
+      g_object_get(G_OBJECT(settings), "gtk-enable-animations",
+                   &gtk_animations, nullptr);
+    }
+    if (due && s.mubi_motion != "still" && !s.mubi_quiet &&
+        !s.mubi_placing && gtk_animations) {
+      schedule_play(true);
+    } else if (state == 0 && s.mubi_motion != "still" && !s.mubi_quiet &&
+               !s.mubi_placing && gtk_animations) {
+      schedule_play(false);
+    } else {
+      stop_play();
+    }
+  }
 
   // Dock inside the monitor work area. GTK4 has no gtk_window_move; on
   // X11 position through Xlib against the monitor's work area. Same story
@@ -2637,7 +2804,12 @@ void present(int state, std::string const& message, GtkApplication* app,
         g_object_get(G_OBJECT(settings), "gtk-enable-animations",
                      &gtk_animations, nullptr);
       }
-      if (due && s.mubi_motion != "still" && !s.mubi_quiet &&
+      if (due && s.mubi_visit_phase == 2) {
+        // Already holding at the center from the invitation being merged
+        // into: refresh in place, no second travel.
+        stop_visit();
+        s.mubi_visit_phase = 2;
+      } else if (due && s.mubi_motion != "still" && !s.mubi_quiet &&
           !s.mubi_placing && gtk_animations) {
         s.mubi_home_x = x;
         s.mubi_home_y = y;
@@ -2668,9 +2840,9 @@ void present(int state, std::string const& message, GtkApplication* app,
   // Previously this callback rescheduled itself every five seconds forever.
   // Keep a short, self-ending 1.6s acknowledgment flourish; real due cues
   // continue to use their own bounded timeout and never imply "Done".
-  if (!message.empty() || state == 4) {
+  if ((!message.empty() || state == 4) && !due) {
     s.mubi_expire_id = g_timeout_add(
-      (state == 4 ? 1600 : due ? 9000 : 5000),
+      (state == 4 ? 1600 : 5000),
       +[](gpointer) -> int {
         g_state.mubi_expire_id = 0;
         if (g_state.mubi_visit_phase != 0) {
@@ -2699,31 +2871,42 @@ void set_interactive(bool interactive) {
   auto* surface = gtk_native_get_surface(GTK_NATIVE(g_state.mubi_window));
   if (surface == nullptr) return;
   if (interactive) {
-    graphene_rect_t bounds;
-    if (!gtk_widget_compute_bounds(GTK_WIDGET(g_state.mubi_canvas),
-                                   GTK_WIDGET(g_state.mubi_window),
-                                   &bounds)) {
+    double const scale = gdk_surface_get_scale(surface);
+    cairo_region_t* region = cairo_region_create();
+    // Union of the character's canvas (pet = Done) and the capsule (Later
+    // tag); everything else on the surface stays pointer-through.
+    for (GtkWidget* widget : {GTK_WIDGET(g_state.mubi_canvas),
+                              GTK_WIDGET(g_state.mubi_capsule)}) {
+      if (widget == nullptr) continue;
+      graphene_rect_t bounds;
+      if (!gtk_widget_compute_bounds(widget,
+                                     GTK_WIDGET(g_state.mubi_window),
+                                     &bounds)) {
+        continue;
+      }
+      // The allocation may not exist yet (before the first frame). Fall
+      // back to the body area instead of a useless 0×0 region.
+      if (bounds.size.width < 1 || bounds.size.height < 1) {
+        bounds.origin.x = 4;
+        bounds.origin.y = 4;
+        bounds.size.width = std::max(
+            1, gtk_widget_get_width(GTK_WIDGET(g_state.mubi_window)) - 8);
+        bounds.size.height = std::max(
+            1, gtk_widget_get_height(GTK_WIDGET(g_state.mubi_window)) - 8);
+      }
+      cairo_rectangle_int_t rect;
+      rect.x = static_cast<int>(std::floor(bounds.origin.x * scale)) - 2;
+      rect.y = static_cast<int>(std::floor(bounds.origin.y * scale)) - 2;
+      rect.width = static_cast<int>(std::ceil(bounds.size.width * scale)) + 4;
+      rect.height = static_cast<int>(std::ceil(bounds.size.height * scale)) + 4;
+      if (rect.width > 0 && rect.height > 0) {
+        cairo_region_union_rectangle(region, &rect);
+      }
+    }
+    if (cairo_region_num_rectangles(region) == 0) {
+      cairo_region_destroy(region);
       return;
     }
-    // The canvas allocation may not exist yet when placement is entered
-    // (before the first frame). Fall back to the body area instead of
-    // installing a useless 0×0 region.
-    if (bounds.size.width < 1 || bounds.size.height < 1) {
-      bounds.origin.x = 4;
-      bounds.origin.y = 4;
-      bounds.size.width =
-          std::max(1, gtk_widget_get_width(GTK_WIDGET(g_state.mubi_window)) - 8);
-      bounds.size.height =
-          std::max(1, gtk_widget_get_height(GTK_WIDGET(g_state.mubi_window)) - 8);
-    }
-    double const scale = gdk_surface_get_scale(surface);
-    cairo_rectangle_int_t rect;
-    rect.x = static_cast<int>(std::floor(bounds.origin.x * scale)) - 2;
-    rect.y = static_cast<int>(std::floor(bounds.origin.y * scale)) - 2;
-    rect.width = static_cast<int>(std::ceil(bounds.size.width * scale)) + 4;
-    rect.height = static_cast<int>(std::ceil(bounds.size.height * scale)) + 4;
-    if (rect.width <= 0 || rect.height <= 0) return;
-    cairo_region_t* region = cairo_region_create_rectangle(&rect);
     gdk_surface_set_input_region(surface, region);
     cairo_region_destroy(region);
   } else {
@@ -3005,14 +3188,28 @@ void on_toast_hide(GtkButton*, gpointer) {
 }
 
 // Companion card actions (#54): same semantics as the toast row, offered
-// on the character itself while a cue is on screen.
+// on the character itself while a cue is on screen. Petting = Done since
+// issue #140: a tap on the character acknowledges with the happy glint,
+// then Mubi heads home.
+void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer) {
+  on_mubi_done(nullptr, nullptr);
+}
+
+void on_capsule_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer) {
+  on_mubi_later(nullptr, nullptr);
+}
+
 void on_mubi_done(GtkButton*, gpointer) {
   auto cue_id = g_state.mubi_cue_id;
   if (g_state.api != nullptr && cue_id != 0) {
     (void)g_state.api->acknowledge_cue_async(cue_id,
                                              [](rivet_app::Result<void>) {});
   }
-  mubi::present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
+  if (g_state.mubi_quiet) {
+    mubi::present(5, "", nullptr);
+  } else {
+    mubi::present(4, "", nullptr);  // happy glint, then travel home
+  }
 }
 
 void on_mubi_later(GtkButton*, gpointer) {
@@ -3028,8 +3225,13 @@ void on_mubi_later(GtkButton*, gpointer) {
                     });
         });
   }
-  // #56 §4 `later`: a tiny quiet settle with the reassurance note.
-  mubi::present(0, l10n::t("mubi.laterNote"), nullptr);
+  // #56 §4 `later`: a quiet settle — the reassurance note rides the toast,
+  // Mubi walks home (the persistent invitation is settled now).
+  if (g_state.app != nullptr) {
+    ::show_toast_plain(l10n::t("mubi.laterNote"), {},
+                       rivet_app::ReminderKind::water, g_state.app);
+  }
+  mubi::begin_visit_return();
 }
 
 void on_mubi_hide(GtkButton*, gpointer) {

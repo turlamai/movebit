@@ -184,6 +184,20 @@ struct MubiCompanion {
 
   bool IsPlacing() const { return placing; }
 
+  // Persistent invitation + petting + repertoire (issue #140): while a due
+  // cue waits, the character is pettable (tap = Done) and a Later tag rides
+  // the capsule; between reminders Mubi plays by itself near its dock.
+  bool attending = false;
+  std::function<void()> on_pet;
+  std::function<void()> on_later;
+  int act = 0;  // 0 none, 1 roll, 2 squish, 3 teary, 4 hop
+  double act_progress = 0.0;
+  double act_total_ticks = 1.0;
+  double act_side = 1.0;
+  Microsoft::UI::Dispatching::DispatcherQueueTimer act_timer{nullptr};
+  Microsoft::UI::Dispatching::DispatcherQueueTimer play_timer{nullptr};
+  Microsoft::UI::Dispatching::DispatcherQueueTimer proximity_timer{nullptr};
+
   HWND hwnd = nullptr;
   Microsoft::UI::Dispatching::DispatcherQueueTimer anim_timer{nullptr};
   Microsoft::UI::Dispatching::DispatcherQueueTimer label_timer{nullptr};
@@ -255,6 +269,7 @@ struct MubiCompanion {
       StopVisit();
       EnsureWindow();
       mubi_trace("show:ensure-ok");
+      attending = IsDueState(state);
       anim_state = state;
       current_message = message;
       Render(state, message);
@@ -262,6 +277,17 @@ struct MubiCompanion {
       StartGesture(state);
       StartVisit(state);
       StartLabelTimer(message, state);
+      if (attending) {
+        StartProximity();
+        SchedulePlay(true);
+      } else {
+        StopProximity();
+        if (state == MubiState::Idle) {
+          SchedulePlay(false);
+        } else {
+          StopPlay();
+        }
+      }
       mubi_trace("show:timers-ok");
     } catch (...) {
       mubi_trace("show:caught");
@@ -280,6 +306,14 @@ struct MubiCompanion {
   void ShowAck() {
     if (quiet) return;
     Show(MubiState::Ack, L"");
+    // The glint plays, then Mubi walks home (the invitation is settled).
+    if (label_timer) label_timer.Stop();
+    if (!label_timer) {
+      label_timer = make_timer(std::chrono::milliseconds(700), false,
+                               [this] { ShowIdle(); });
+    }
+    label_timer.Interval(std::chrono::milliseconds(700));
+    label_timer.Start();
   }
 
   /// Temporary explicit placement mode (issue #104). Only while active does
@@ -317,6 +351,9 @@ struct MubiCompanion {
     }
     if (anim_timer) anim_timer.Stop();
     if (label_timer) label_timer.Stop();
+    if (act_timer) act_timer.Stop();
+    if (play_timer) play_timer.Stop();
+    if (proximity_timer) proximity_timer.Stop();
   }
 
  private:
@@ -337,6 +374,16 @@ struct MubiCompanion {
         self->EndPlacement();
         return 0;
       }
+    }
+    if (self != nullptr && self->attending && !self->placing &&
+        msg == WM_LBUTTONDOWN) {
+      // Client == window (WS_POPUP): the click lands where the layered
+      // content paints. Character = pet/Done, Later tag = snooze.
+      LONG const x = static_cast<LONG>(static_cast<short>(l & 0xFFFF));
+      LONG const y = static_cast<LONG>(static_cast<short>(
+          (l >> 16) & 0xFFFF));
+      self->HandleCueClick(x, y);
+      return 0;
     }
     return ::DefWindowProcW(h, msg, w, l);
   }
@@ -515,6 +562,23 @@ struct MubiCompanion {
       graphics.TranslateTransform(ox, oy);
       graphics.ScaleTransform(static_cast<float>(s * dp),
                               static_cast<float>(s * dp));
+      // Repertoire acts (issue #140): a roll tilts from the docked bottom,
+      // a glass-press squishes, a hop lifts — single-bump transforms.
+      double const act_q =
+          std::sin(std::min(1.0, act_progress) * 3.14159265358979);
+      if (act == 1) {
+        graphics.TranslateTransform(60.0f, 128.0f);
+        graphics.RotateTransform(
+            static_cast<float>(14.0 * act_q * act_side));
+        graphics.TranslateTransform(-60.0f, -128.0f);
+      } else if (act == 2) {
+        graphics.TranslateTransform(60.0f, 128.0f);
+        graphics.ScaleTransform(static_cast<float>(1.0 + 0.08 * act_q),
+                                static_cast<float>(1.0 - 0.10 * act_q));
+        graphics.TranslateTransform(-60.0f, -128.0f);
+      } else if (act == 4) {
+        graphics.TranslateTransform(0.0f, static_cast<float>(-4.0 * act_q));
+      }
       // Everything below paints in the 120x140 canonical grid.
 
       // Stand stretches the body upward from the docked bottom edge.
@@ -614,6 +678,12 @@ struct MubiCompanion {
       } else {
         eye(46.5, 65);
         eye(73.5, 65);
+        if (act == 3) {
+          // Teary begging droplets welling under each eye.
+          Gdiplus::SolidBrush tear_brush(argb(217, "#65C8B8"));
+          graphics.FillEllipse(&tear_brush, 45.1f, 69.5f, 2.8f, 4.2f);
+          graphics.FillEllipse(&tear_brush, 72.1f, 69.5f, 2.8f, 4.2f);
+        }
         if (state == MubiState::Ack) {
           closed_arc("M 57.5 74 C 59 75.4, 61 75.4, 62.5 74");
         }
@@ -709,6 +779,35 @@ struct MubiCompanion {
         Gdiplus::RectF box(px, py, pill_w, pill_h);
         graphics.DrawString(text.c_str(), -1, &font, box, &format,
                             &text_brush);
+        if (IsReadableHealthCue()) {
+          // The Later tag: one click defers every merged kind (issue #140).
+          float const tag_w = 64.0f * dp;
+          float const tag_h = pill_h - 12.0f * dp;
+          float const tag_x = px + pill_w - tag_w - 6.0f * dp;
+          float const tag_y = py + 6.0f * dp;
+          Gdiplus::GraphicsPath tag_path;
+          float const tag_cap = tag_h;
+          tag_path.AddArc(tag_x, tag_y, tag_cap, tag_cap, 180, 180);
+          tag_path.AddArc(tag_x + tag_w - tag_cap, tag_y, tag_cap, tag_cap,
+                          270, 180);
+          tag_path.CloseFigure();
+          Gdiplus::SolidBrush tag_brush(dark ? argb(255, "#4A453D")
+                                             : argb(255, "#EFE3D2"));
+          graphics.FillPath(&tag_brush, &tag_path);
+          Gdiplus::FontFamily tag_family(
+              IsCjkText(later_tag_text) ? L"Microsoft YaHei UI" : L"Segoe UI");
+          Gdiplus::Font tag_font(
+              &tag_family, static_cast<float>(11 * dp), Gdiplus::FontStyleBold,
+              Gdiplus::UnitPixel);
+          Gdiplus::SolidBrush tag_text_brush(
+              dark ? argb(255, "#F1EEE7") : argb(255, "#2D2A28"));
+          Gdiplus::StringFormat tag_format;
+          tag_format.SetAlignment(Gdiplus::StringAlignmentCenter);
+          tag_format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+          Gdiplus::RectF tag_box(tag_x, tag_y, tag_w, tag_h);
+          graphics.DrawString(later_tag_text.c_str(), -1, &tag_font, tag_box,
+                              &tag_format, &tag_text_brush);
+        }
       }
     }
 
@@ -862,10 +961,12 @@ struct MubiCompanion {
     anim_timer.Start();
   }
 
-  // Due cues remain legible ~9s; timeout/return never ack the cue ledger.
-  // A mere Later reply uses 5s and cannot launch a second center visit.
+  // Persistent invitations (issue #140): due cues never auto-return — the
+  // surface waits until answered. Only a transient reply (the Later note)
+  // settles back after ~5 s; timeouts never ack the cue ledger.
   void StartLabelTimer(std::wstring const& message, MubiState state) {
     if (label_timer) label_timer.Stop();
+    if (IsDueState(state)) return;
     // "Always show label" means persistent idle text, NOT a recurring
     // five-second idle timer that repeatedly wakes and recreates Mubi.
     if (message.empty()) return;
@@ -878,9 +979,138 @@ struct MubiCompanion {
                                    ShowIdle();
                                });
     }
-    label_timer.Interval(std::chrono::milliseconds(
-        IsDueState(state) ? 9000 : 5000));
+    label_timer.Interval(std::chrono::milliseconds(5000));
     label_timer.Start();
+  }
+
+  // ---- petting + repertoire (issue #140) --------------------------------
+
+  std::wstring later_tag_text = L"Later";
+
+  void HandleCueClick(LONG x, LONG y) {
+    UINT dpi = ::GetDpiForWindow(hwnd);
+    double const dp = static_cast<double>(dpi) / 96.0;
+    double const s = body_height / 108.0;
+    SIZE const size = pixel_size();
+    double const grid_w = 120.0 * s * dp;
+    double const grid_h = 140.0 * s * dp;
+    double const grid_ox = (static_cast<double>(size.cx) - grid_w) / 2.0;
+    double const grid_oy = (static_cast<double>(size.cy) - grid_h) / 2.0 -
+                           22.0 * dp;
+    // Character: pet = Done.
+    RECT const pet{static_cast<LONG>(grid_ox),
+                   static_cast<LONG>(grid_oy),
+                   static_cast<LONG>(grid_ox + grid_w),
+                   static_cast<LONG>(grid_oy + grid_h)};
+    // Later tag: right end of the capsule pill band.
+    double const pill_w = 244.0 * dp;
+    double const pill_h = 54.0 * dp;
+    double const pill_x = (static_cast<double>(size.cx) - pill_w) / 2.0;
+    double const pill_y =
+        static_cast<double>(size.cy) - pill_h - 4.0 * dp;
+    RECT const later{static_cast<LONG>(pill_x + pill_w / 2),
+                     static_cast<LONG>(pill_y),
+                     static_cast<LONG>(pill_x + pill_w),
+                     static_cast<LONG>(pill_y + pill_h)};
+    POINT const point{x, y};
+    if (::PtInRect(&later, point)) {
+      if (on_later) on_later();
+    } else if (::PtInRect(&pet, point)) {
+      if (on_pet) on_pet();
+    }
+    // Clicks on empty surface areas do nothing: only an explicit answer
+    // (pet, tag, tray) ends the invitation.
+  }
+
+  void StartProximity() {
+    if (proximity_timer) {
+      proximity_timer.Start();
+      return;
+    }
+    proximity_timer = make_timer(std::chrono::milliseconds(250), true,
+                                 [this] {
+      if (hwnd == nullptr || placing || !attending) return;
+      POINT cursor{};
+      if (!::GetCursorPos(&cursor)) return;
+      RECT rect{};
+      if (!::GetWindowRect(hwnd, &rect)) return;
+      bool const inside = ::PtInRect(&rect, cursor) != FALSE;
+      LONG_PTR ex = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+      bool const transparent_now =
+          (ex & static_cast<LONG_PTR>(WS_EX_TRANSPARENT)) != 0;
+      if (inside == transparent_now) {
+        // Cursor over Mubi: the surface becomes pettable; elsewhere it
+        // returns to full pointer-through.
+        ApplyPlacementStyle(!inside);
+      }
+    });
+    proximity_timer.Start();
+  }
+
+  void StopProximity() {
+    if (proximity_timer) proximity_timer.Stop();
+    if (!placing && hwnd != nullptr) ApplyPlacementStyle(false);
+  }
+
+  void StartAct(int kind, bool attending) {
+    if (act_timer) act_timer.Stop();
+    act = kind;
+    act_side = (::GetTickCount64() % 2) == 0 ? 1.0 : -1.0;
+    act_progress = 0.0;
+    act_total_ticks = 600.0 / 33.0 + 1.0;
+    if (!act_timer) {
+      act_timer = make_timer(std::chrono::milliseconds(33), true,
+                             [this, attending] {
+        act_progress = std::min(
+            1.0, act_progress + 1.0 / act_total_ticks);
+        Render(anim_state, current_message);
+        if (act_progress >= 1.0) {
+          if (act_timer) act_timer.Stop();
+          act = 0;
+          act_progress = 1.0;
+          SchedulePlay(attending);
+        }
+      });
+    }
+    act_timer.Start();
+  }
+
+  void SchedulePlay(bool attending) {
+    if (play_timer) play_timer.Stop();
+    if (motion == "still" || quiet || placing) return;
+    BOOL client_animation_enabled = TRUE;
+    if (::SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0,
+                                &client_animation_enabled, 0) &&
+        !client_animation_enabled) {
+      return;
+    }
+    if (attending != this->attending) return;
+    auto const ms = static_cast<int>(
+        attending ? 13000 + (::GetTickCount64() % 7000)
+                  : 12000 + (::GetTickCount64() % 10000));
+    if (!play_timer) {
+      play_timer = make_timer(std::chrono::milliseconds(ms), false,
+                              [this, attending] {
+        if (play_timer) play_timer.Stop();
+        if (motion == "still" || quiet || placing ||
+            attending != this->attending) {
+          return;
+        }
+        int const kind = attending
+            ? static_cast<int>(::GetTickCount64() % 3) + 1
+            : (::GetTickCount64() % 2 == 0 ? 4 : 1);
+        StartAct(kind, attending);
+      });
+    }
+    play_timer.Interval(std::chrono::milliseconds(ms));
+    play_timer.Start();
+  }
+
+  void StopPlay() {
+    if (play_timer) play_timer.Stop();
+    if (act_timer) act_timer.Stop();
+    act = 0;
+    act_progress = 1.0;
   }
 };
 

@@ -1066,6 +1066,8 @@ void MainWindow::ApplyTexts() {
   InsightBusiestLabel().Text(winrt::to_hstring(l10n::t("insight.busiest")));
   SettingsTitle().Text(winrt::to_hstring(l10n::t("set.title")));
   SettingsIntro().Text(winrt::to_hstring(l10n::t("set.defaultsHint")));
+  companion_.later_tag_text =
+      winrt::to_hstring(l10n::t("tray.cueLater"));
   SetQuietHoursLabel().Text(winrt::to_hstring(l10n::t("set.quietHours")));
   SetQuietHoursHint().Text(winrt::to_hstring(l10n::t("set.quietHoursHint")));
   SetQuietStartLabel().Text(winrt::to_hstring(l10n::t("set.quietStart")));
@@ -1543,6 +1545,26 @@ void MainWindow::InitTray() {
     (void)api_->dismiss_cue_async(id, [](rivet_app::Result<void>) {});
     RefreshTrayState();
   };
+  // Petting = Done on the newest open cue; the bubble's Later tag = snooze
+  // (issue #140). Same semantics as the tray actions above.
+  companion_.on_pet = [this]() {
+    if (model_.pending_cues.empty()) return;
+    auto const id = model_.pending_cues.back().id;
+    (void)api_->acknowledge_cue_async(id, [](rivet_app::Result<void>) {});
+    companion_.ShowAck();
+    RefreshTrayState();
+  };
+  companion_.on_later = [this]() {
+    if (model_.pending_cues.empty()) return;
+    auto const id = model_.pending_cues.back().id;
+    (void)api_->snooze_cue_async(id, [](rivet_app::Result<void>) {});
+    // #56 §4 `later`: a quiet settle with the reassurance note, then home.
+    companion_.Show(MubiCompanion::MubiState::Idle,
+                    winrt::to_hstring(l10n::t("mubi.laterNote")));
+    RefreshTrayState();
+  };
+  companion_.later_tag_text =
+      winrt::to_hstring(l10n::t("tray.cueLater"));
   tray_.on_focus_toggle = [this]() {
     auto const next = !model_.quiet;
     (void)api_->set_quiet_async(next, [](rivet_app::Result<void>) {});
