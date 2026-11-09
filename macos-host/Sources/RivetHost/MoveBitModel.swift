@@ -89,18 +89,13 @@ final class MoveBitModel: ObservableObject {
                                     water_reminders: 0, micro_breaks: 0,
                                     longest_session_mins: 0)
     @Published var config = ReminderConfig(
-        sit_reminder_minutes: 50, water_reminder_minutes: 60, away_reset_minutes: 5,
-        // Pre-bootstrap placeholder = the shipped balanced default; the
-        // backend overwrites it with the real persisted config right after init.
-        snooze_minutes: 10, micro_break_enabled: true, micro_break_interval_minutes: 20,
-        micro_break_duration_seconds: 20, motion_enabled: true, sound_enabled: false,
-        auto_check_updates: true, welcome_shown: false, language: "auto",
-        companion_size: "M", companion_motion: "subtle",
-        companion_dock: "bottom-right", companion_labels: "cue",
-        preset: "balanced", sit_enabled: true, water_enabled: true,
-        quiet_hours_enabled: false, quiet_hours_start_minutes: 1320,
-        quiet_hours_end_minutes: 420, companion_free_x: -1,
-        companion_free_y: -1)
+        // Pre-bootstrap placeholder = the shipped v5 defaults (issue #140);
+        // the backend overwrites it with the real persisted config right
+        // after init.
+        sound_enabled: true, auto_check_updates: true, welcome_shown: false,
+        language: "auto", quiet_hours_enabled: false,
+        quiet_hours_start_minutes: 1320, quiet_hours_end_minutes: 420,
+        companion_free_x: -1, companion_free_y: -1)
     @Published var paused = PauseState(paused: false, until_ms: nil)
     @Published var loops: [LoopInfo] = []
     /// Per-kind delivery/response truth for today (issue #88): shown and
@@ -184,6 +179,16 @@ final class MoveBitModel: ObservableObject {
     /// reading of "current continuous session" (it resets on break/away/snooze).
     var currentSessionMins: Int64 {
         loop(.sit)?.accumulated_mins ?? 0
+    }
+
+    /// The sit cycle interval in active minutes, derived from the loops state
+    /// (accumulated + due-in) so the host never hardcodes the cadence. Falls
+    /// back to the shipped 50 when the loop has no live due time (paused).
+    var sitIntervalMins: Int64 {
+        if let l = loop(.sit), let due = l.due_in_active_mins {
+            return max(1, l.accumulated_mins + due)
+        }
+        return 50
     }
 
     // MARK: lifecycle
@@ -343,24 +348,6 @@ final class MoveBitModel: ObservableObject {
                 config = previous
                 language = previous.language
                 L10n.language = resolvedLanguage
-                configStatus = L10n.t("set.statusSaveFailed")
-            }
-        }
-    }
-
-    /// Select a named rhythm preset. The exact cadence values live in the
-    /// Racket config module; the host only sends the name.
-    func applyRhythmPreset(_ name: String) {
-        guard let api = api() else { return }
-        Task {
-            do {
-                try await api.set_rhythm_preset(name: name)
-                if let c = try? await api.get_active_config() {
-                    applyConfig(c, announce: true)
-                }
-                if let l = try? await api.get_loops() { loops = l }
-                configStatus = L10n.t("set.statusSaved", Date())
-            } catch {
                 configStatus = L10n.t("set.statusSaveFailed")
             }
         }

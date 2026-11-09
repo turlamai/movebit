@@ -156,9 +156,14 @@ private struct MubiShape: Shape {
 struct MubiView: View {
     let state: MubiState
     let message: String
-    let bodySize: CGFloat          // logical body height (60/78/104)
+    let bodySize: CGFloat          // logical body height (the shipped 78)
     let motion: String             // "still" | "subtle" | "lively"
-    let labelsAlways: Bool
+    /// Petting = Done: tapping the character acknowledges the open cue.
+    var onPet: (() -> Void)? = nil
+    /// The bubble's Later tag = snooze.
+    var onLater: (() -> Void)? = nil
+    /// A teary begging act played — the host may add a rate-limited chime.
+    var onTearyAct: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.colorScheme) private var scheme
     @State private var hop = false
@@ -167,12 +172,24 @@ struct MubiView: View {
     @State private var nod = false
     @State private var blinking = false
     @State private var idleGazeOffset: CGFloat = 0
+    // Begging-repertoire states (issue #140): roll, glass-press, teary eyes.
+    @State private var tilt: CGFloat = 0
+    @State private var squishing = false
+    @State private var teary = false
 
     private var dark: Bool { scheme == .dark }
     private var motionAllowed: Bool { motion != "still" && !systemReduceMotion }
     private var idleMotionActive: Bool { state == .idle && motionAllowed }
-    // Restart the animation task on motion level or Reduce Motion changes.
+    /// A live invitation waits on screen: the begging repertoire runs and the
+    /// Later tag shows. Petting (tap on the character) = Done.
+    private var attending: Bool {
+        state == .water || state == .stand || state == .eyes
+    }
+    // Restart the animation tasks on motion level / state / Reduce Motion changes.
     private var idleAnimationToken: String { idleMotionActive ? motion : "off" }
+    private var performanceToken: String {
+        (attending && motionAllowed) ? "cue-\(state)" : "off"
+    }
     private var scale: CGFloat { bodySize / MubiArt.bodyHeight }
     private var artSize: CGSize {
         CGSize(width: MubiArt.canvas.width * scale,
@@ -182,21 +199,50 @@ struct MubiView: View {
     var body: some View {
         VStack(spacing: 6) {
             character
+                .contentShape(Rectangle())
+                .onTapGesture { onPet?() }
             capsule
+            if attending {
+                laterPill
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(message.isEmpty ? "MoveBit" : message)
+        .accessibilityHint(attending ? L10n.t("tray.cueDone") : "")
         .onAppear { cueAnimation() }
         .onChange(of: state) { _ in cueAnimation() }
-        // SwiftUI cancels this task when the view disappears or the token
+        // SwiftUI cancels these tasks when the view disappears or the token
         // changes; no perpetual timer or renderer wakeups while hidden/focused.
         .task(id: idleAnimationToken) { await runIdleAnimation() }
+        .task(id: performanceToken) { await runCuePerformance() }
     }
 
-    /// Rare, bounded idle gestures rather than one blink on initial appear.
-    /// Sleeps between gestures (no display-link or continuous rendering), and
-    /// cancellation follows focus/quiet, Still, system Reduce Motion and
-    /// NSHostingView removal. Never schedule a health cue from decoration.
+    /// The bubble's Later tag: one click defers every merged kind. The only
+    /// non-pet answer path on the surface itself — everything else stays in
+    /// the tray menu.
+    private var laterPill: some View {
+        Button(action: { onLater?() }) {
+            Text(L10n.t("tray.cueLater"))
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundColor(dark ? MubiArt.labelTextDark : MubiArt.labelTextLight)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(
+                    (dark ? MubiArt.labelSurfaceDark : MubiArt.labelSurfaceLight)
+                        .opacity(0.92)))
+                .overlay(Capsule().strokeBorder(
+                    (dark ? Color.white : Color.black).opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(L10n.t("tray.cueLater"))
+    }
+
+    /// Idle self-play (issue #140): while nothing is due, Mubi plays by
+    /// itself near its dock — blinks, glances, tilts, little rolls and hops
+    /// — like a pet patiently hanging around. Rare, bounded acts with real
+    /// sleeps between (no display-link or continuous rendering); cancellation
+    /// follows focus/quiet, Still, system Reduce Motion and NSHostingView
+    /// removal. Never schedules a health cue from decoration.
     @MainActor
     private func runIdleAnimation() async {
         guard idleMotionActive else {
@@ -212,23 +258,105 @@ struct MubiView: View {
             catch { break }
             guard !Task.isCancelled, idleMotionActive else { break }
 
-            if Bool.random() {
-                // Short 150ms blink; don't flash or bounce in idle.
-                withAnimation(.easeInOut(duration: 0.07)) { blinking = true }
-                do { try await Task.sleep(nanoseconds: 150_000_000) }
-                catch { break }
-                withAnimation(.easeInOut(duration: 0.07)) { blinking = false }
-            } else {
-                // A single tiny sideways glance, then return to neutral.
-                let glance: CGFloat = (Bool.random() ? 1.6 : -1.6) * scale
-                withAnimation(.easeInOut(duration: 0.2)) { idleGazeOffset = glance }
-                do { try await Task.sleep(nanoseconds: 850_000_000) }
-                catch { break }
-                withAnimation(.easeInOut(duration: 0.2)) { idleGazeOffset = 0 }
+            switch Int.random(in: 0..<5) {
+            case 0: await blinkAct()
+            case 1: await glanceAct()
+            case 2: await tiltAct()
+            case 3: await rollAct()
+            default: await hopAct()
             }
         }
         blinking = false
         idleGazeOffset = 0
+        tilt = 0
+    }
+
+    /// While an invitation waits on screen, rotate a small begging
+    /// repertoire every ~20-28 s — a playful roll, pressing against the
+    /// glass, or teary sniffles (the host may chime, rate-limited). The
+    /// kind gesture still plays on arrival via cueAnimation().
+    @MainActor
+    private func runCuePerformance() async {
+        guard attending, motionAllowed else { return }
+        do {
+            try await Task.sleep(
+                nanoseconds: UInt64.random(in: 11...15) * 1_000_000_000)
+        } catch { return }
+        while !Task.isCancelled, attending {
+            switch Int.random(in: 0..<3) {
+            case 0:
+                await rollAct()
+            case 1:
+                // Press against the glass.
+                withAnimation(.easeInOut(duration: 0.3)) { squishing = true }
+                do { try await Task.sleep(nanoseconds: 900_000_000) }
+                catch { squishing = false; return }
+                withAnimation(.easeInOut(duration: 0.3)) { squishing = false }
+            default:
+                withAnimation(.easeInOut(duration: 0.25)) { teary = true }
+                onTearyAct?()
+                do { try await Task.sleep(nanoseconds: 2_400_000_000) }
+                catch { teary = false; return }
+                withAnimation(.easeInOut(duration: 0.3)) { teary = false }
+            }
+            do {
+                try await Task.sleep(
+                    nanoseconds: UInt64.random(in: 13...19) * 1_000_000_000)
+            } catch { break }
+        }
+        tilt = 0
+        squishing = false
+        teary = false
+    }
+
+    // MARK: shared acts
+
+    private func blinkAct() async {
+        withAnimation(.easeInOut(duration: 0.07)) { blinking = true }
+        do { try await Task.sleep(nanoseconds: 150_000_000) }
+        catch { return }
+        withAnimation(.easeInOut(duration: 0.07)) { blinking = false }
+    }
+
+    private func glanceAct() async {
+        let glance: CGFloat = (Bool.random() ? 1.6 : -1.6) * scale
+        withAnimation(.easeInOut(duration: 0.2)) { idleGazeOffset = glance }
+        do { try await Task.sleep(nanoseconds: 850_000_000) }
+        catch { return }
+        withAnimation(.easeInOut(duration: 0.2)) { idleGazeOffset = 0 }
+    }
+
+    /// A curious head tilt.
+    private func tiltAct() async {
+        let side: CGFloat = Bool.random() ? 1 : -1
+        withAnimation(.easeInOut(duration: 0.28)) { tilt = 9 * side }
+        do { try await Task.sleep(nanoseconds: 420_000_000) }
+        catch { tilt = 0; return }
+        withAnimation(.easeInOut(duration: 0.24)) { tilt = 0 }
+    }
+
+    /// A playful roll: tilt onto one side with a little hop, then upright.
+    private func rollAct() async {
+        let side: CGFloat = Bool.random() ? 1 : -1
+        withAnimation(.easeInOut(duration: 0.22)) {
+            tilt = 16 * side
+            hop = true
+        }
+        do { try await Task.sleep(nanoseconds: 280_000_000) }
+        catch { tilt = 0; hop = false; return }
+        withAnimation(.easeInOut(duration: 0.26)) {
+            tilt = 0
+            hop = false
+        }
+    }
+
+    private func hopAct() async {
+        withAnimation(.easeInOut(duration: 0.24).repeatCount(2, autoreverses: true)) {
+            hop = true
+        }
+        do { try await Task.sleep(nanoseconds: 520_000_000) }
+        catch { return }
+        hop = false
     }
 
     private func cueAnimation() {
@@ -306,6 +434,8 @@ struct MubiView: View {
         .frame(width: artSize.width, height: artSize.height)
         .offset(y: hop ? -4 : 0)
         .scaleEffect(x: 1, y: standStretch ? 1.06 : 1, anchor: .bottom)
+        .scaleEffect(x: squishing ? 1.08 : 1, y: squishing ? 0.88 : 1, anchor: .bottom)
+        .rotationEffect(.degrees(tilt), anchor: .bottom)
         .offset(y: nod ? 1.5 : 0)
     }
 
@@ -338,6 +468,17 @@ struct MubiView: View {
             Circle().fill(Color.white.opacity(0.85))
                 .frame(width: 2 * scale, height: 2 * scale)
                 .offset(x: (MubiArt.eyeRight.x - 60 + 1.1) * scale + idleGazeOffset, y: gy * scale)
+            if teary {
+                // Begging droplets welling under each eye.
+                Ellipse().fill(MubiArt.eyes.opacity(0.85))
+                    .frame(width: 2.4 * scale, height: 3.6 * scale)
+                    .offset(x: (MubiArt.eyeLeft.x - 60) * scale + idleGazeOffset,
+                            y: (MubiArt.eyeLeft.y - 70 + 7.5) * scale)
+                Ellipse().fill(MubiArt.eyes.opacity(0.85))
+                    .frame(width: 2.4 * scale, height: 3.6 * scale)
+                    .offset(x: (MubiArt.eyeRight.x - 60) * scale + idleGazeOffset,
+                            y: (MubiArt.eyeRight.y - 70 + 7.5) * scale)
+            }
             if state == .ack {
                 MubiShape(d: MubiArt.mouthAck)
                     .stroke(MubiArt.ink, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
@@ -410,7 +551,7 @@ struct MubiView: View {
     }
 
     @ViewBuilder private var capsule: some View {
-        if labelsAlways || !message.isEmpty {
+        if !message.isEmpty {
             HStack(spacing: 7) {
                 if !capsuleIcon.isEmpty {
                     Image(systemName: capsuleIcon)
@@ -461,25 +602,35 @@ final class CompanionController: NSObject {
     // movement step and return the character to its original dock.
     private var visitTask: Task<Void, Never>?
 
-    // Presentation inputs from the v1 config; applied on bootstrap/change.
-    private var bodySize: CGFloat = 78
-    private var motion = "subtle"
-    private var dock = "bottom-right"
-    private var labelsAlways = false
+    // Presentation is one shipped design now (issue #140): the M-size
+    // character with subtle motion. The only config input left is the
+    // drag-placed home position.
+    private let bodySize: CGFloat = 78
+    private let motion = "subtle"
     private var quiet = false
     // Issue #104: a directly placed home position (per-mille of the usable
-    // work area; -1 = the named dock). The temporary placement mode flips the
-    // pointer-through panel into a draggable surface only while active.
+    // work area; -1 = the default bottom-right corner). The temporary
+    // placement mode flips the pointer-through panel into a draggable
+    // surface only while active.
     private var freeX: Int64 = -1
     private var freeY: Int64 = -1
     private var placing = false
     private var placementTimer: Task<Void, Never>?
     private var placementSaveTask: Task<Void, Never>?
+    /// While an invitation is on screen, polls the pointer to flip the panel
+    /// between click-through and pettable when the cursor is over it.
+    private var proximityTask: Task<Void, Never>?
     var isPlacing: Bool { placing }
     /// Persist the normalized position after a drag (debounced) and on exit.
     var onPlacementChanged: ((Int64, Int64) -> Void)?
     /// The mode ended (Done or the 30 s safety timeout): refresh menu labels.
     var onPlacementEnded: (() -> Void)?
+    /// Petting = Done (self-reported acknowledgement of the open cue).
+    var onPet: (() -> Void)?
+    /// The bubble's Later tag = snooze the open cue.
+    var onLater: (() -> Void)?
+    /// The teary begging act played; the host may chime (rate-limited).
+    var onTearyAct: (() -> Void)?
 
     override init() {
         super.init()
@@ -493,52 +644,43 @@ final class CompanionController: NSObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    func applyConfig(size: String, motion: String, dock: String, labels: String,
-                     freeX: Int64, freeY: Int64) {
+    func applyConfig(freeX: Int64, freeY: Int64) {
         cancelVisit()
-        bodySize = Self.bodyHeight(for: size)
-        self.motion = motion
-        self.dock = dock
         self.freeX = freeX
         self.freeY = freeY
-        labelsAlways = labels == "always"
         if let panel, panel.isVisible {
             present(quiet ? .focus : .idle, message: "")
         }
     }
 
-    /// One click from the menu bar temporarily parks Mubi somewhere else.
-    /// This is an action, not another saved preference; it never edits cue
-    /// completion/snooze or asks for screen-wide mouse permissions.
+    /// One click from the menu bar parks Mubi in the next corner. This is
+    /// an action, not a saved preference: the position persists through the
+    /// same free-coordinate write as dragging, and moving never edits cue
+    /// completion/snooze.
     func moveAside() {
         endPlacement()
         // An explicit Move Aside during a cue's travel wins: cancel the
         // in-flight visit so it cannot carry Mubi back to the old home.
         cancelVisit()
-        // A one-click move falls back to the named docks; it must override a
-        // previously placed free position for this session.
-        freeX = -1
-        freeY = -1
-        let corners = ["bottom-right", "bottom-left", "top-left", "top-right"]
-        let index = corners.firstIndex(of: dock) ?? 0
-        dock = corners[(index + 1) % corners.count]
+        // Corner order (per-mille, top-left origin): BR -> BL -> TL -> TR.
+        let corners: [(Int64, Int64)] = [(1000, 1000), (0, 1000), (0, 0), (1000, 0)]
+        let index = corners.firstIndex(where: { $0 == (freeX, freeY) }) ?? 0
+        let next = corners[(index + 1) % corners.count]
+        freeX = next.0
+        freeY = next.1
+        onPlacementChanged?(freeX, freeY)
         // Moving the pet must not dismiss a health invitation or turn
         // it into an idle pose. Keep the active artwork and cue readable.
         if panel?.isVisible == true { relayout() }
     }
 
-    static func bodyHeight(for size: String) -> CGFloat {
-        switch size {
-        case "S": return 60
-        case "L": return 104
-        default: return 78
-        }
-    }
-
-    /// A genuine due cue makes one friendly, non-activating visit toward the
-    /// visible work area's center. The label is readable for ~9 seconds once
-    /// there; it never silently records completion. Focus/Hide/ack/snooze
-    /// cancel the visit synchronously and return Mubi to its home dock.
+    /// A genuine due cue makes one friendly, non-activating visit to the
+    /// visible work area's center and STAYS there until answered (issue
+    /// #140): the invitation persists, so there is no return timer. The
+    /// pointer near the character flips the panel pettable; tap = Done, the
+    /// bubble's Later tag = snooze, tray actions work as always. Nothing
+    /// time-based or click-outside-based ends the visit — showIdle/showAck
+    /// (driven by the settled ledger) bring Mubi home.
     func show(state: MubiState, message: String) {
         cancelVisit()
         endPlacement()
@@ -557,7 +699,31 @@ final class CompanionController: NSObject {
     func showIdle() {
         cancelVisit()
         endPlacement()
-        present(quiet ? .focus : .idle, message: "")
+        returnHomeThen { self.present(self.quiet ? .focus : .idle, message: "") }
+    }
+
+    /// Travel back to the home dock (or jump, when motion is off), then run
+    /// the finisher at the dock.
+    private func returnHomeThen(_ finish: @escaping () -> Void) {
+        guard let panel else { finish(); return }
+        let home = homeOrigin()
+        let from = panel.frame.origin
+        guard from != home else { finish(); return }
+        let canTravel = motion != "still"
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard canTravel else {
+            panel.setFrameOrigin(home)
+            finish()
+            return
+        }
+        let current = generation
+        visitTask = Task { [weak self] in
+            guard let self else { return }
+            if await self.travel(panel: panel, from: from, to: home,
+                                 steps: 12, current: current) {
+                finish()
+            }
+        }
     }
 
     /// Temporary explicit placement mode (issue #104): the panel accepts
@@ -599,16 +765,19 @@ final class CompanionController: NSObject {
         onPlacementEnded?()
     }
 
-    /// Brief acknowledgment flourish after a tray Done (self-reported).
+    /// Acknowledgment flourish after a pet or tray Done (self-reported):
+    /// the happy glint plays where Mubi stands, then it heads home.
     func showAck() {
         guard !quiet else { return }
         cancelVisit()
         present(.ack, message: "")
         let current = generation
-        Task { [weak self] in
+        visitTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_600_000_000)
             guard let self, self.generation == current else { return }
-            self.present(.idle, message: "")
+            await self.returnHomeThen {
+                self.present(self.quiet ? .focus : .idle, message: "")
+            }
         }
     }
 
@@ -616,7 +785,7 @@ final class CompanionController: NSObject {
         cancelVisit()
         endPlacement()
         quiet = enabled
-        present(quiet ? .focus : .idle, message: "")
+        returnHomeThen { self.present(self.quiet ? .focus : .idle, message: "") }
     }
 
     func hide() {
@@ -629,10 +798,42 @@ final class CompanionController: NSObject {
     private func cancelVisit() {
         visitTask?.cancel()
         visitTask = nil
+        stopProximityMonitor()
+    }
+
+    // MARK: pettable window
+
+    /// While the invitation waits, flip the panel between click-through and
+    /// pettable based on pointer proximity — the whole surface stays
+    /// pointer-through everywhere except over Mubi itself (issue #140).
+    private func startProximityMonitor(_ current: Int) {
+        proximityTask?.cancel()
+        proximityTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let panel = self.panel,
+                      self.generation == current else { return }
+                if NSPointInRect(NSEvent.mouseLocation, panel.frame) {
+                    panel.ignoresMouseEvents = false
+                } else if !self.placing {
+                    panel.ignoresMouseEvents = true
+                }
+                do { try await Task.sleep(nanoseconds: 250_000_000) }
+                catch { return }
+            }
+        }
+    }
+
+    private func stopProximityMonitor() {
+        proximityTask?.cancel()
+        proximityTask = nil
+        if let panel, !placing {
+            panel.ignoresMouseEvents = true
+        }
     }
 
     /// Frame-bounded animation instead of a persistent 30/60 FPS timer.
-    /// The panel remains fully pointer-through and non-activating throughout.
+    /// The panel remains non-activating throughout; while an invitation is
+    /// up, the pointer-proximity monitor flips it pettable over Mubi itself.
     /// Window movement is a health-cue-only behavior, not autonomous roaming.
     private func runVisit(generation current: Int,
                           dueInvitation: Bool) async {
@@ -658,20 +859,34 @@ final class CompanionController: NSObject {
                                steps: 18, current: current) else { return }
         }
 
-        // Visible for a bounded interval, regardless of animation setting.
-        // The Racket cue ledger survives this visual timer untouched.
-        do {
-            try await Task.sleep(nanoseconds: dueInvitation
-                                 ? 9_000_000_000 : 4_000_000_000)
-        } catch { return }
+        // Persistent invitation (issue #140): no return timer. Wait here
+        // until the ledger settles (showIdle/showAck) and bring Mubi home;
+        // while waiting, make the character pettable under the cursor.
         guard !Task.isCancelled, generation == current, !quiet else { return }
+        startProximityMonitor(current)
+    }
 
-        if canTravel {
-            guard await travel(panel: panel, from: panel.frame.origin,
-                               to: home, steps: 12, current: current) else { return }
+    /// The home-dock frame origin for the current placement (per-mille free
+    /// position, else the default bottom-right corner).
+    private func homeOrigin() -> NSPoint {
+        guard let contentView = panel?.contentView,
+              let screen = panel?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        else {
+            return panel?.frame.origin ?? NSPoint.zero
         }
-        guard !Task.isCancelled, generation == current, !quiet else { return }
-        present(.idle, message: "")
+        let size = contentView.fittingSize
+        let safe = screen.visibleFrame
+        let clearance: CGFloat = 16
+        if freeX >= 0 && freeY >= 0 {
+            let travelW = max(0, safe.width - size.width - 2 * clearance)
+            let travelH = max(0, safe.height - size.height - 2 * clearance)
+            return NSPoint(
+                x: safe.minX + clearance + travelW * CGFloat(freeX) / 1000,
+                y: safe.maxY - size.height - clearance
+                    - travelH * CGFloat(freeY) / 1000)
+        }
+        return NSPoint(x: safe.maxX - size.width - clearance,
+                       y: safe.minY + clearance)
     }
 
     /// ~720ms approach and ~480ms return. Cancellation is checked for each
@@ -699,7 +914,9 @@ final class CompanionController: NSObject {
         self.panel = panel
         let character = MubiView(state: state, message: message,
                                  bodySize: bodySize, motion: motion,
-                                 labelsAlways: labelsAlways)
+                                 onPet: { [weak self] in self?.onPet?() },
+                                 onLater: { [weak self] in self?.onLater?() },
+                                 onTearyAct: { [weak self] in self?.onTearyAct?() })
         let root = placing
             ? AnyView(character.overlay(
                 RoundedRectangle(cornerRadius: 14)
@@ -723,13 +940,13 @@ final class CompanionController: NSObject {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .floating
+        // Above every app window, including fullscreen Spaces: a reminder
+        // that can be covered is not a reminder (issue #140).
+        panel.level = .screenSaver
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        // Deliberately transient: presentation safety outranks being
-        // omnipresent — Mubi does not follow into full-screen Spaces.
-        panel.collectionBehavior = [.transient]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = false
         return panel
     }
@@ -758,20 +975,9 @@ final class CompanionController: NSObject {
             panel.setFrameOrigin(NSPoint(x: x, y: y))
             return
         }
-        switch dock {
-        case "bottom-left":
-            x = safe.minX + clearance
-            y = safe.minY + clearance
-        case "top-right":
-            x = safe.maxX - size.width - clearance
-            y = safe.maxY - size.height - clearance
-        case "top-left":
-            x = safe.minX + clearance
-            y = safe.maxY - size.height - clearance
-        default: // bottom-right
-            x = safe.maxX - size.width - clearance
-            y = safe.minY + clearance
-        }
+        // Default corner: bottom-right.
+        x = safe.maxX - size.width - clearance
+        y = safe.minY + clearance
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 

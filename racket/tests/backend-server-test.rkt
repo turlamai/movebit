@@ -36,11 +36,6 @@
   (lambda (out)
     (write-json
      (hasheq 'SchemaVersion config-schema-version
-             'SitReminderMinutes 10
-             'WaterReminderMinutes 8
-             'AwayResetMinutes 1
-             'SnoozeMinutes 10
-             'MicroBreakEnabled #f
              'AutoCheckUpdates #f)
      out)))
 
@@ -127,14 +122,11 @@
   (define f (wait-for-event "health-cue" timeout))
   (list-ref f 1))
 
+;; Persistent invitations supersede-merge (issue #140): a cue's kinds are
+;; a priority-ordered union that snowballs until answered, so matching is
+;; by MEMBERSHIP, never exact kind-list equality.
 (define (health-cue-kind? cue kind)
-  (equal? (list-ref cue 1) (list kind)))
-
-(define (find-cue-by-kind candidates wanted)
-  ;; wanted is a list of acceptable kind-lists (e.g. '(("water"))).
-  (for/first ([c (in-list candidates)]
-              #:when (member (list-ref c 1) wanted))
-    c))
+  (and (member kind (list-ref cue 1)) #t))
 
 (define (pending-ids)
   (for/list ([c (in-list (get-state "pending-cues"))])
@@ -147,7 +139,9 @@
 
 ;; HealthCue wire layout: (id kinds action delivery animated due-at-ms
 ;; expires-at-ms). The FIRST cue to arrive must be a well-formed
-;; character-delivered health cue with the ten-minute expiry policy.
+;; character-delivered health cue; expires-at-ms is the day-scale ledger
+;; bookkeeping bound (issue #140: invitations are persistent, hosts never
+;; dismiss on it).
 (define first-cue (wait-for-health-cue))
 (check-true (exact-positive-integer? (list-ref first-cue 0)))
 (check-true (pair? (list-ref first-cue 1)))
@@ -160,49 +154,55 @@
 (check-equal? (list-ref first-cue 3) "character")
 (check-true (list-ref first-cue 4))
 (check-true (= (list-ref first-cue 6)
-               (+ (list-ref first-cue 5) (* 10 60 1000))))
+               (+ (list-ref first-cue 5) (* 24 60 60 1000))))
 
-;; Collect cues until BOTH a sit and a water cue have been seen (bounded by
-;; the event timeout; extra merged cues may arrive under load — fine).
+;; Collect cues until BOTH kinds have been seen (bounded by the event
+;; timeout; the kinds union snowballs until answered — fine).
 (define seen (list first-cue))
 (define water-cue
-  (or (find-cue-by-kind seen '(("water")))
+  (or (findf (lambda (c) (health-cue-kind? c "water")) (reverse seen))
       (let loop ([tries 0])
-        (if (or (> tries 200)
-                (and (find-cue-by-kind seen '(("water")))
-                     (find-cue-by-kind seen '(("sit")))))
-            (find-cue-by-kind seen '(("water")))
-            (begin
-              (set! seen (cons (wait-for-health-cue) seen))
-              (loop (add1 tries)))))))
+        (cond [(> tries 200) #f]
+              [else
+               (define c (wait-for-health-cue))
+               (set! seen (cons c seen))
+               (if (health-cue-kind? c "water")
+                   c
+                   (loop (add1 tries)))]))))
 (define sit-cue
-  (or (find-cue-by-kind seen '(("sit")))
+  (or (findf (lambda (c) (health-cue-kind? c "sit")) (reverse seen))
       (let loop ([tries 0])
-        (if (or (> tries 200) (find-cue-by-kind seen '(("sit"))))
-            (find-cue-by-kind seen '(("sit")))
-            (begin
-              (set! seen (cons (wait-for-health-cue) seen))
-              (loop (add1 tries)))))))
-(check-true (pair? water-cue) "a water cue must arrive")
-(check-equal? (list-ref water-cue 2) "drink-water")
-(check-true (pair? sit-cue) "a sit cue must arrive")
-(check-equal? (list-ref sit-cue 2) "stand-and-stretch")
+        (cond [(> tries 200) #f]
+              [else
+               (define c (wait-for-health-cue))
+               (set! seen (cons c seen))
+               (if (health-cue-kind? c "sit")
+                   c
+                   (loop (add1 tries)))]))))
+(check-true (pair? water-cue) "a cue containing water must arrive")
+(check-true (pair? sit-cue) "a cue containing sit must arrive")
 (define wc water-cue)
 (define sc sit-cue)
 
-;; The pending-cues state reconciles a reconnecting host: both cues are
-;; open (or were already settled — assert the union is visible or was
-;; acted on; under load one may have expired only after 10 minutes, so
-;; at least ONE of them must still be pending).
+;; The pending-cues state reconciles a reconnecting host: invitations are
+;; persistent now, so at least one must still be open (or already settled
+;; by an action under load).
 (check-true (>= (length (get-state "pending-cues")) 1))
 
 ;; --- 2. the lifecycle over the wire -----------------------------------------
 
 ;; Host reports the sit cue visible, then the user acknowledges it (Done).
 ;; The Done carries the milestone signal: cue-acknowledged(sit, 1).
+;; (Persistent invitations supersede-merge, so act on the CURRENTLY open
+;; cue containing sit from the reconciliation state, not a stale reference.)
 (define-values (disp-result disp-ev) (call "cue-displayed" (list-ref sc 0)))
 (check-true (void? disp-result))
-(define-values (ack-result ack-ev) (call "acknowledge-cue" (list-ref sc 0)))
+(define sc-open
+  (for/first ([c (in-list (get-state "pending-cues"))]
+              #:when (member "sit" (list-ref c 1)))
+    c))
+(check-true (pair? sc-open) "an open cue containing sit must exist")
+(define-values (ack-result ack-ev) (call "acknowledge-cue" (list-ref sc-open 0)))
 (check-true (void? ack-result))
 (define ack-event
   (for/first ([e (in-list ack-ev)] #:when (string=? (car e) "cue-acknowledged"))
@@ -215,15 +215,22 @@
 (check-true (>= (list-ref today-after-ack 2) 1))
 (check-true (>= (list-ref today-after-ack 1) 10))
 
-;; Hide (dismiss) expires the water cue without claiming completion: the
-;; dismissed id leaves the pending-cues reconciliation view.
-(define-values (dismiss-result dismiss-ev) (call "dismiss-cue" (list-ref wc 0)))
+;; Hide (dismiss) the next cue containing water without claiming completion:
+;; it arrives as a health-cue event (persistent invitations supersede-merge,
+;; so wait for the event rather than racing the reconciliation state).
+(define wa-first
+  (let loop ([tries 0])
+    (define c (wait-for-health-cue))
+    (if (health-cue-kind? c "water")
+        c
+        (loop (add1 tries)))))
+(define-values (dismiss-result dismiss-ev) (call "dismiss-cue" (list-ref wa-first 0)))
 (check-true (void? dismiss-result))
-(check-false (member (list-ref wc 0) (pending-ids)))
+(check-false (member (list-ref wa-first 0) (pending-ids)))
 
 ;; The dismissed water reminder is not lost: it re-fires on its normal full
 ;; interval and a fresh cue arrives with a HIGHER id.
-(define water-again-id (list-ref wc 0))
+(define water-again-id (list-ref wa-first 0))
 (let loop ([tries 0])
   (when (< tries 200)
     (define c (wait-for-health-cue))
@@ -246,8 +253,8 @@
 (define water-loop
   (findf (lambda (l) (string=? (list-ref l 0) "water")) loops-wire))
 (check-true (pair? water-loop))
-(check-equal? (list-ref water-loop 2) -2)                 ; 8 - 10 accumulated
-(check-equal? (list-ref water-loop 1) 10)                 ; due-in = 8 - (-2)
+(check-equal? (list-ref water-loop 2) 50)                 ; 60 - 10 accumulated
+(check-equal? (list-ref water-loop 1) 10)                 ; due-in = 60 - 50
 (check-false (member wa-id (pending-ids)))
 
 ;; --- 3. quiet mode queues, and exits with a bounded summary -----------------
@@ -289,47 +296,42 @@
 ;; under load either or both of sit/water may have queued.
 (check-true (pair? (list-ref qs 1)))
 (check-not-false
- (andmap (lambda (k) (member k (list "sit" "water"))) (list-ref qs 1)))
+ (andmap (lambda (k) (member k (list "sit" "water" "micro"))) (list-ref qs 1)))
 (check-true (>= (length (get-state "pending-cues")) 1))
 
 ;; --- 4. set-config clamps + announces ---------------------------------------
 
 (define-values (cfg-result cfg-events)
   (call "set-config"
-        (list 5 999 0 999 #f 99 99 #t #t #t #f "klingon"
-              "huge" "fast" "center" "sometimes"
-              "balanced" #f #f #f 1320 420 -1 -1)))
+        (list #t #f #f "klingon" #f -5 9999 5000 -7)))
 (check-true (void? cfg-result))
 (define config-event
   (for/first ([e (in-list cfg-events)] #:when (string=? (car e) "config-changed"))
     e))
 (check-true (pair? config-event))
 (define saved-config (list-ref config-event 1))
-(check-equal? (list-ref saved-config 0) 10)    ; sit clamped
-(check-equal? (list-ref saved-config 1) 180)   ; water clamped
-(check-equal? (list-ref saved-config 11) "auto") ; language normalized
-(check-equal? (list-ref saved-config 16) "custom") ; label matches clamped values
-(check-false (list-ref saved-config 17))           ; sit switch preserved
-;; the published config state carries the same v1 shape
+(check-true (list-ref saved-config 0))             ; sound preserved
+(check-equal? (list-ref saved-config 3) "auto")    ; language normalized
+(check-equal? (list-ref saved-config 5) 0)         ; quiet start clamped
+(check-equal? (list-ref saved-config 6) 1439)      ; quiet end clamped
+(check-equal? (list-ref saved-config 7) 1000)      ; free-x clamped
+(check-equal? (list-ref saved-config 8) -1)        ; free-y -> default corner
+;; the published config state carries the same slim shape
 (define cfg-state (get-state "active-config"))
-(check-equal? (list-ref cfg-state 1) 180)
+(check-equal? (list-ref cfg-state 3) "auto")
 
 ;; Quiet hours (#87) pause the live scheduler on the next config write and
 ;; resume when the user turns them off — the setting must not wait for a
 ;; restart or for the original window boundary.
 (define-values (quiet-hours-on-result _quiet-on-ev)
   (call "set-config"
-        (list 50 60 5 10 #t 20 20 #t #f #f #f "en"
-              "M" "subtle" "bottom-right" "cue"
-              "balanced" #t #t #t 0 1380 -1 -1)))
+        (list #t #t #f "en" #t 0 1380 -1 -1)))
 (check-true (void? quiet-hours-on-result))
 (define quiet-paused (get-state "paused"))
 (check-true (list-ref quiet-paused 0))
 (define-values (quiet-hours-off-result _quiet-off-ev)
   (call "set-config"
-        (list 50 60 5 10 #t 20 20 #t #f #f #f "en"
-              "M" "subtle" "bottom-right" "cue"
-              "balanced" #t #t #f 0 1380 -1 -1)))
+        (list #t #t #f "en" #f 0 1380 -1 -1)))
 (check-true (void? quiet-hours-off-result))
 (define quiet-resumed (get-state "paused"))
 (check-false (list-ref quiet-resumed 0))
@@ -404,7 +406,7 @@
 (define persisted-config
   (call-with-input-file (build-path tmp-dir "config.json") read-json))
 (check-equal? (hash-ref persisted-config 'SchemaVersion) config-schema-version)
-(check-equal? (hash-ref persisted-config 'WaterReminderMinutes) 60) ; last write was the quiet-hours config
+(check-equal? (hash-ref persisted-config 'Language) "en") ; last write was the quiet-hours config
 (check-false (hash-has-key? persisted-config 'ForceBreakEnabled))
 
 ;; --- diagnostics: JSONL into the data dir --------------------------------------

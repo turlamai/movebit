@@ -151,6 +151,7 @@ enum GeneratedI18n {
         "set.awayReset": ["zh": "离开多久算休息（分钟）", "en": "Away counts as rest (min)"],
         "set.collapse": ["zh": "收起", "en": "Collapse"],
         "set.customize": ["zh": "自定义", "en": "Customize"],
+        "set.defaultsHint": ["zh": "默认节奏就是产品调好的，无需研究设置；需要时拖动 Mubi、用托盘菜单即可。", "en": "The defaults are the product; there is nothing to study. Drag Mubi or use the tray menu when needed."],
         "set.eyesParams": ["zh": "每 X 分钟 · 看远 Y 秒", "en": "Every X min · look away Y s"],
         "set.eyesToggle": ["zh": "护眼提醒", "en": "Eye-rest reminders"],
         "set.intro": ["zh": "可直接点击数字输入；按 Enter 或点到别处后立即生效。上下按钮已按常用步长调整。", "en": "Click a number to type in it; changes apply on Enter or focus loss. Steppers use sensible steps."],

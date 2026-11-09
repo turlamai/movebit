@@ -127,32 +127,20 @@
    [due-at-ms : Int64]
    [expires-at-ms : Int64]))
 
+;; The slim settings surface (issue #140): language, quiet hours, sound,
+;; auto-update, plus internal state (welcome-shown) and the drag-placed home
+;; position. Cadence, presentation and per-kind switches are product
+;; defaults now — the scheduler owns the one rhythm.
 (define-record ReminderConfig
-  ([sit-reminder-minutes : Int64]
-   [water-reminder-minutes : Int64]
-   [away-reset-minutes : Int64]
-   [snooze-minutes : Int64]
-   [micro-break-enabled : Bool]
-   [micro-break-interval-minutes : Int64]
-   [micro-break-duration-seconds : Int64]
-   [motion-enabled : Bool]
-   [sound-enabled : Bool]
+  ([sound-enabled : Bool]
    [auto-check-updates : Bool]
    [welcome-shown : Bool]
    [language : String]
-   [companion-size : String]
-   [companion-motion : String]
-   [companion-dock : String]
-   [companion-labels : String]
-   ;; Issue #87: named rhythm preset (the label always matches the values),
-   ;; per-kind switches and a local quiet-hours window.
-   [preset : String]
-   [sit-enabled : Bool]
-   [water-enabled : Bool]
    [quiet-hours-enabled : Bool]
    [quiet-hours-start-minutes : Int64]
    [quiet-hours-end-minutes : Int64]
-   ;; Issue #104: normalized directly-placed home position (-1 = named dock).
+   ;; Issue #104: normalized directly-placed home position
+   ;; (-1 = the default corner).
    [companion-free-x : Int64]
    [companion-free-y : Int64]))
 
@@ -239,25 +227,10 @@
 
 (define (config->dto c)
   (ReminderConfig
-   (reminder-config-sit-reminder-minutes c)
-   (reminder-config-water-reminder-minutes c)
-   (reminder-config-away-reset-minutes c)
-   (reminder-config-snooze-minutes c)
-   (reminder-config-micro-break-enabled c)
-   (reminder-config-micro-break-interval-minutes c)
-   (reminder-config-micro-break-duration-seconds c)
-   (reminder-config-motion-enabled c)
    (reminder-config-sound-enabled c)
    (reminder-config-auto-check-updates c)
    (reminder-config-welcome-shown c)
    (reminder-config-language c)
-   (reminder-config-companion-size c)
-   (reminder-config-companion-motion c)
-   (reminder-config-companion-dock c)
-   (reminder-config-companion-labels c)
-   (reminder-config-preset c)
-   (reminder-config-sit-enabled c)
-   (reminder-config-water-enabled c)
    (reminder-config-quiet-hours-enabled c)
    (reminder-config-quiet-hours-start-minutes c)
    (reminder-config-quiet-hours-end-minutes c)
@@ -267,25 +240,10 @@
 (define (dto->config dto)
   (clamp-config
    (reminder-config
-    (record-ref dto 'sit-reminder-minutes)
-    (record-ref dto 'water-reminder-minutes)
-    (record-ref dto 'away-reset-minutes)
-    (record-ref dto 'snooze-minutes)
-    (record-ref dto 'micro-break-enabled)
-    (record-ref dto 'micro-break-interval-minutes)
-    (record-ref dto 'micro-break-duration-seconds)
-    (record-ref dto 'motion-enabled)
     (record-ref dto 'sound-enabled)
     (record-ref dto 'auto-check-updates)
     (record-ref dto 'welcome-shown)
     (record-ref dto 'language)
-    (record-ref dto 'companion-size)
-    (record-ref dto 'companion-motion)
-    (record-ref dto 'companion-dock)
-    (record-ref dto 'companion-labels)
-    (record-ref dto 'preset)
-    (record-ref dto 'sit-enabled)
-    (record-ref dto 'water-enabled)
     (record-ref dto 'quiet-hours-enabled)
     (record-ref dto 'quiet-hours-start-minutes)
     (record-ref dto 'quiet-hours-end-minutes)
@@ -342,7 +300,9 @@
 (define (symbol->kind k) (ReminderKind k))
 
 ;; cue-record → wire DTO. The planned presentation travels WITH the cue so a
-;; host that reconnects mid-lifecycle renders the same decision.
+;; host that reconnects mid-lifecycle renders the same decision. Since
+;; issue #140 an invitation is persistent — expires-at-ms is the pure
+;; bookkeeping bound (hosts never dismiss on it).
 (define (cue->dto c)
   (define planned (cue-record-planned c))
   (HealthCue (cue-record-id c)
@@ -351,7 +311,7 @@
              (CueDelivery (companion-cue-delivery planned))
              (and (companion-cue-animated? planned) #t)
              (cue-record-created-ms c)
-             (+ (cue-record-created-ms c) cue-expiry-ms)))
+             (+ (cue-record-created-ms c) ledger-expiry-ms)))
 
 ;; --- States (kept in sync with the runtime; hosts sync via $state) --------
 ;; Defined after the conversion helpers; `init` publishes the real values.
@@ -387,26 +347,16 @@
 
 (define (loops->dto rt)
   (define scheduler (runtime-scheduler rt))
-  (define c (scheduler-config scheduler))
-  (define (loop-dto kind accum-ms interval-mins enabled?)
+  ;; One product cadence (issue #140): the intervals are the scheduler's
+  ;; constants; every kind is always on.
+  (define (loop-dto kind accum-ms cycle-ms)
     (LoopInfo (symbol->kind kind)
-              (if enabled?
-                  (quotient (max 0 (- (* interval-mins minute-ms) accum-ms)) minute-ms)
-                  (void))
+              (quotient (max 0 (- cycle-ms accum-ms)) minute-ms)
               (quotient accum-ms minute-ms)))
   (list
-   (loop-dto 'sit
-             (movebit-scheduler-sit-accum-ms scheduler)
-             (reminder-config-sit-reminder-minutes c)
-             (reminder-config-sit-enabled c))
-   (loop-dto 'water
-             (movebit-scheduler-water-accum-ms scheduler)
-             (reminder-config-water-reminder-minutes c)
-             (reminder-config-water-enabled c))
-   (loop-dto 'micro
-             (movebit-scheduler-micro-accum-ms scheduler)
-             (reminder-config-micro-break-interval-minutes c)
-             (reminder-config-micro-break-enabled c))))
+   (loop-dto 'sit (movebit-scheduler-sit-accum-ms scheduler) sit-cycle-ms)
+   (loop-dto 'water (movebit-scheduler-water-accum-ms scheduler) water-cycle-ms)
+   (loop-dto 'micro (movebit-scheduler-micro-accum-ms scheduler) micro-cycle-ms)))
 
 (define (publish-stats! rt)
   (define scheduler (runtime-scheduler rt))
@@ -690,23 +640,6 @@
   (config-changed (config->dto clamped))
   (void))
 
-;; Rhythm presets live in the shared config module, so every host sends only
-;; the preset NAME and the exact cadence values stay a single Racket source of
-;; truth (issue #87).
-(define-rpc (set-rhythm-preset [name : String] : Void)
-  (define rt (require-runtime))
-  (define which (string->symbol name))
-  (unless (memq which '(balanced gentle active))
-    (error 'set-rhythm-preset "unknown rhythm preset: ~a" name))
-  (define applied (apply-preset (scheduler-config (runtime-scheduler rt)) which))
-  (save-config (runtime-data-dir rt) applied)
-  (set-scheduler-config! (runtime-scheduler rt) applied)
-  (state-set! active-config (config->dto applied))
-  (apply-quiet-hours! rt)
-  (state-set! loops (loops->dto rt))
-  (config-changed (config->dto applied))
-  (void))
-
 ;; --- History --------------------------------------------------------------
 
 (define-rpc (get-history [days : Int64] : (List DayStats))
@@ -866,15 +799,11 @@
         " water " (day-stats-water-reminders stats)
         " micro " (day-stats-micro-breaks stats)
         " longest " (ms->mins (day-stats-longest-session-ms stats)) "m")
-    (~a "config: sit " (reminder-config-sit-reminder-minutes c)
-        "m water " (reminder-config-water-reminder-minutes c)
-        "m away " (reminder-config-away-reset-minutes c)
-        "m micro " (reminder-config-micro-break-enabled c)
-        " motion " (reminder-config-motion-enabled c)
-        " language " (reminder-config-language c)
-        " mubi " (reminder-config-companion-size c)
-        "/" (reminder-config-companion-motion c)
-        "/" (reminder-config-companion-dock c))
+    (~a "config: language " (reminder-config-language c)
+        " sound " (reminder-config-sound-enabled c)
+        " quiet-hours " (reminder-config-quiet-hours-enabled c)
+        " placement " (reminder-config-companion-free-x c)
+        "/" (reminder-config-companion-free-y c))
     (~a "paused: " (scheduler-paused-until-ms scheduler))
     (~a "quiet: " (movebit-orchestrator-quiet? (runtime-orchestrator rt))
         " · open cues: "

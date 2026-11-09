@@ -66,35 +66,7 @@
 (check-exn exn:fail:contract?
            (lambda () (plan-companion-cue '(water) #:reduce-motion? 'maybe)))
 
-;; The expiry window is a real policy: long enough to survive a slide change,
-;; short enough that the character never becomes furniture.
-(check-true (> cue-expiry-ms 0))
-(check-equal? cue-expiry-ms (* 10 60 1000))
-
-;; Quiet exit collapses queued cues into ONE priority-ordered summary —
-;; the bounded "not a pile-up" contract from issue #55.
-(check-false (summarize-open-cues '()))
-(check-equal? (summarize-open-cues
-               (list (open-cue 1 '(water) 'pending 0)
-                     (open-cue 2 '(micro) 'pending 5)))
-              '(water micro))
-;; displayed entries were SEEN before quiet — never re-emitted as a summary
-(check-equal? (summarize-open-cues
-               (list (open-cue 1 '(water) 'displayed 0)
-                     (open-cue 2 '(micro) 'pending 5)))
-              '(micro))
-;; duplicates collapse: two water moments mean one water kind
-(check-equal? (summarize-open-cues
-               (list (open-cue 1 '(water) 'pending 0)
-                     (open-cue 2 '(water sit) 'pending 5)))
-              '(sit water))
-;; expired entries have already returned to the normal cycle: not summarized
-(check-equal? (summarize-open-cues
-               (list (open-cue 1 '(water) 'expired 0)
-                     (open-cue 2 '(micro) 'pending 5)))
-              '(micro))
-;; settled cues (acknowledged/snoozed never reach this list, but contract it)
-(check-false (summarize-open-cues
-              (list (open-cue 1 '(water) 'expired 0))))
-(check-exn exn:fail:contract?
-           (lambda () (summarize-open-cues "nope")))
+;; The ledger bound is bookkeeping only (issue #140): invitations persist
+;; until answered in a live session; this closes stale-session entries.
+(check-true (> ledger-expiry-ms 0))
+(check-equal? ledger-expiry-ms (* 24 60 60 1000))

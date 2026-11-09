@@ -250,5 +250,6 @@
   "upd.staging": "校验通过，正在准备替换文件…",
   "upd.unsupported": "当前 CPU / 系统组合暂无官方在线更新包。",
   "upd.usePackageManager": "此副本由系统包管理器安装，请用系统包管理器升级 MoveBit。",
-  "upd.verifying": "正在校验 SHA-256…"
+  "upd.verifying": "正在校验 SHA-256…",
+  "set.defaultsHint": "默认节奏就是产品调好的，无需研究设置；需要时拖动 Mubi、用托盘菜单即可。"
 }

@@ -2,7 +2,7 @@
 
 > **v0.0.1 — the fresh start (2026-10-27).** The rebooted MoveBit first shipped as v0.0.1 by owner decision: a historical restart of the version line, not a statement of the current release. For the latest published build, check Releases. The old experimental v0.5.0 line (with its fullscreen forced breaks) is retired history — v0.0.1 contains no fullscreen break anywhere and no migration path from v0.5.
 
-A desktop health reminder app: water, stand-up and eye-rest cues delivered by **Mubi（沐比）**, a small original character docked at the edge of your screen — never a fullscreen cover, never stolen focus, never intercepted input. One Racket domain core (the canonical reminder state machine) drives first-party native hosts on Windows, macOS, and Linux over [Rivet](https://github.com/turlamai/rivet)'s typed RPC.
+A desktop health reminder app: water, stand-up and eye-rest cues delivered by **Mubi（沐比）**, a small original character who walks onto your screen at each break, waits — topmost and unmissable — until you answer, and plays by itself while you work. It never steals keyboard focus, never covers your work, and everything outside Mubi itself stays click-through. One Racket domain core (the canonical reminder state machine) drives first-party native hosts on Windows, macOS, and Linux over [Rivet](https://github.com/turlamai/rivet)'s typed RPC.
 
 [![release](https://img.shields.io/github/v/release/turlamai/movebit)](https://github.com/turlamai/movebit/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-c15f3c) [![CI](https://github.com/turlamai/movebit/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/movebit/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -19,8 +19,8 @@ Current preview is free and licensed under MIT. A Free + Pro commercial edition 
 Most reminder tools lose the moment the notification becomes easy to dismiss — or they overcorrect with a fullscreen takeover. MoveBit is designed around a stronger contract:
 
 - **Track active work instead of blindly counting wall-clock time.** Session-wide idle detection is available on Windows, macOS, Linux/X11, and Wayland sessions that expose an idle API. Otherwise MoveBit deliberately falls back to elapsed time instead of inventing idle data.
-- **Deliver reminders you notice without being interrupted.** Mubi（沐比）, a small original character, docks at the screen edge and presents each cue with a clear health suggestion and explicit Done / Later / Hide controls. The panel is fully click-through, never activates, and never crosses your work.
-- **Stay honest about what a click means.** Done is a self-report, never a measurement. Silence never counts as completion; unanswered cues expire and the next reminder arrives on its normal schedule. Focus mode queues cues and returns one bounded summary — never a pile-up.
+- **Deliver reminders you cannot miss and must answer.** Mubi（沐比）, a small original character, walks to the center of your work area on every break and waits there — above every window — until you respond. **Pet Mubi = Done** (a self-report), the bubble's Later tag defers, the tray keeps Done / Later / Hide reachable. A reminder that can be covered by another app or dismissed by a stray click is not a reminder.
+- **Stay honest about what a click means.** Done is a self-report, never a measurement. Silence never counts as completion either: an unanswered invitation stays on screen, and a reminder firing while one is open merges into the same invitation (one Mubi, every meaning preserved) — nothing is settled behind your back. Focus mode queues cues and returns one bounded summary — never a pile-up.
 - **Do not nag after a real break.** Being idle beyond the away threshold resets every reminder cycle when you return, and the break itself is never counted as active work.
 - **Show patterns, not just today's number.** 7-day and 30-day activity history tracks continuous-work streaks, recent longest sessions, active-day averages, and the busiest recent day.
 - **Ship native installers and portable archives for every supported desktop.** Windows gets an MSI plus a portable ZIP, macOS gets a DMG plus a portable ZIP on both Apple silicon and Intel, and Linux gets a portable tar.gz and zip plus a deb, an rpm, and an AppImage.
@@ -40,9 +40,9 @@ The Racket runtime is statically linked into each host — no external interpret
 ## Features
 
 - ⏱️ **Active-work monitoring** — Windows `GetLastInputInfo`, macOS CoreGraphics, Linux/X11 XScreenSaver, Wayland session-bus backends where available
-- 🐹 **Mubi, the reminder character** — water cup, stretch and eye-rest gestures at the screen edge, with clear advice text, screen-reader labels and Reduce Motion support; S/M/L body sizes, still/subtle/lively motion, dock position and label visibility are settings
-- 💧 **Three independent cycles** — water, sit and eye rest, each with its own interval; several due reminders merge into one cue with every meaning preserved
-- ✅ **An honest cue lifecycle** — due → pending/displayed → acknowledged (self-reported) | snoozed | expired; ten-minute expiry with the next reminder on its normal schedule
+- 🐹 **Mubi, the reminder character** — walks to your work area and waits, topmost, with clear advice text, screen-reader labels and Reduce Motion support. Between reminders it plays by itself — rolls, tilts, blinks, little hops — like a pet waiting nearby. Petting it answers the cue.
+- 💧 **Three independent cycles** — water, sit and eye rest on the one balanced cadence (50 / 60 / 20 active minutes); several due reminders merge into one cue with every meaning preserved
+- ✅ **An honest cue lifecycle** — due → pending/displayed → acknowledged (self-reported) | snoozed; invitations persist until answered and never pile up — a new reminder merges into the open one
 - 🎯 **Focus mode** — presentation silence that queues cues and returns one bounded summary; tray Done/Later/Hide stay reachable at all times
 - 📊 **7 / 30-day history** — switchable activity chart backed by up to 370 days of persisted history
 - 🧠 **Work-pattern insights** — current continuous session, today's/recent longest session, active-day average, busiest recent day
@@ -77,38 +77,30 @@ Platform notes:
 
 ## How it works
 
-Three independent cycles advance on a 30-second scheduler tick:
+Three independent cycles advance on a 30-second scheduler tick, all on one balanced cadence that is the product's default and needs no studying:
 
-- **Sit cycle** accumulates active work only. At the configured interval (45 minutes by default) it becomes a cue — Mubi stands up and invites a stretch.
-- **Water cycle** runs independently (30 minutes by default) — Mubi raises a cup.
-- **Eye-rest cycle** runs independently (30 minutes by default) — Mubi closes its eyes and suggests looking far away.
+- **Sit cycle** accumulates active work only. At 50 active minutes it becomes a cue — Mubi stands up and invites a stretch.
+- **Water cycle** runs independently — every 60 active minutes Mubi raises a cup.
+- **Eye-rest cycle** runs independently — every 20 active minutes Mubi closes its eyes and suggests looking far away.
 
-Idle time at or above the away threshold (5 minutes by default) freezes accumulation. On return, all cycles restart from zero. Oversized clock jumps such as system sleep are clamped so stale reminders are not dumped after wake.
+Idle time at or above the away threshold (5 minutes) freezes accumulation. On return, all cycles restart from zero. Oversized clock jumps such as system sleep are clamped so stale reminders are not dumped after wake.
 
-Each due tick merges into ONE cue that moves through an explicit lifecycle: `due → pending/displayed → acknowledged | snoozed | expired`. Done is a self-report (never a measurement), Later defers every merged kind by the snooze delay (10 active minutes by default), Hide claims nothing, and unanswered cues expire after ten minutes with the next reminder arriving on its normal schedule. Focus mode queues cues silently and delivers one bounded summary when it ends.
+Each due tick merges into ONE cue that moves through an explicit lifecycle: `due → pending/displayed → acknowledged | snoozed`. Done is a self-report (never a measurement) — on screen it is petting Mubi; Later defers every merged kind by 10 active minutes; Hide claims nothing. An invitation never expires or auto-dismisses: it waits on top of every window until answered, and a reminder firing while one is open merges into it. Focus mode queues cues silently and delivers one bounded summary when it ends.
 
 Daily stats are flushed to the history store every few minutes, archived across day boundaries, and pruned to the most recent 370 days.
 
 ## Configuration
 
-Settings live in `%APPDATA%\movebit\config.json` on Windows or the platform application-data directory on macOS/Linux. All user-facing settings can be changed from the settings window; the backend clamps values and re-announces changes to every host.
+Settings live in `%APPDATA%\movebit\config.json` on Windows or the platform application-data directory on macOS/Linux. The defaults are the product: there is no rhythm to study, no per-kind switches and no presentation options — the balanced cadence (50/60/20), one companion presentation and drag-to-place (plus Move Aside) cover it. Four controls remain in the settings window, and the backend clamps and re-announces every change:
 
-| Setting | Default | Range |
-| --- | --- | --- |
-| Sit reminder interval | 45 | 10–240 min |
-| Water reminder interval | 30 | 5–180 min |
-| Away reset | 5 | 1–60 min |
-| Snooze | 10 | 5–60 min |
-| Eye-rest cycle | on, 30 min | 10–60 min, 10–60 s duration |
-| Mubi size | M (78) | S (60) / M / L (104) body height |
-| Mubi motion | subtle | still / subtle / lively |
-| Mubi dock | bottom-right | bottom-right / bottom-left / top-right |
-| Mubi label | during reminders | cue-only / always |
-| Sound | on | — |
-| Auto update checks | on | — |
-| Language | auto | auto / zh / en |
+| Setting | Default |
+| --- | --- |
+| Sound (one soft chime per arrival) | on |
+| Quiet hours window | off, 22:00–07:00 |
+| Auto update checks | on |
+| Language | auto (system), zh / en |
 
-The on-disk config carries a `SchemaVersion` marker; a file without it (any v0.5 document) is foreign and falls back to defaults — v1 is clean-install only.
+"Not now" lives in the tray, not in settings: Focus defers everything, Pause silences an hour, Later snoozes one cue. The on-disk config carries a `SchemaVersion` marker (v5); older on-disk schemas migrate, keeping your language, quiet hours, sound and Mubi position; a file without a known marker is foreign and falls back to defaults.
 
 ## Build from source
 

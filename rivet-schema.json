@@ -304,62 +304,6 @@
     {
       "fields": [
         {
-          "name": "sit-reminder-minutes",
-          "type": {
-            "kind": "scalar",
-            "name": "Int64"
-          }
-        },
-        {
-          "name": "water-reminder-minutes",
-          "type": {
-            "kind": "scalar",
-            "name": "Int64"
-          }
-        },
-        {
-          "name": "away-reset-minutes",
-          "type": {
-            "kind": "scalar",
-            "name": "Int64"
-          }
-        },
-        {
-          "name": "snooze-minutes",
-          "type": {
-            "kind": "scalar",
-            "name": "Int64"
-          }
-        },
-        {
-          "name": "micro-break-enabled",
-          "type": {
-            "kind": "scalar",
-            "name": "Bool"
-          }
-        },
-        {
-          "name": "micro-break-interval-minutes",
-          "type": {
-            "kind": "scalar",
-            "name": "Int64"
-          }
-        },
-        {
-          "name": "micro-break-duration-seconds",
-          "type": {
-            "kind": "scalar",
-            "name": "Int64"
-          }
-        },
-        {
-          "name": "motion-enabled",
-          "type": {
-            "kind": "scalar",
-            "name": "Bool"
-          }
-        },
-        {
           "name": "sound-enabled",
           "type": {
             "kind": "scalar",
@@ -385,55 +329,6 @@
           "type": {
             "kind": "scalar",
             "name": "String"
-          }
-        },
-        {
-          "name": "companion-size",
-          "type": {
-            "kind": "scalar",
-            "name": "String"
-          }
-        },
-        {
-          "name": "companion-motion",
-          "type": {
-            "kind": "scalar",
-            "name": "String"
-          }
-        },
-        {
-          "name": "companion-dock",
-          "type": {
-            "kind": "scalar",
-            "name": "String"
-          }
-        },
-        {
-          "name": "companion-labels",
-          "type": {
-            "kind": "scalar",
-            "name": "String"
-          }
-        },
-        {
-          "name": "preset",
-          "type": {
-            "kind": "scalar",
-            "name": "String"
-          }
-        },
-        {
-          "name": "sit-enabled",
-          "type": {
-            "kind": "scalar",
-            "name": "Bool"
-          }
-        },
-        {
-          "name": "water-enabled",
-          "type": {
-            "kind": "scalar",
-            "name": "Bool"
           }
         },
         {
@@ -874,22 +769,6 @@
         }
       ],
       "name": "set-quiet",
-      "result": {
-        "kind": "scalar",
-        "name": "Void"
-      }
-    },
-    {
-      "arguments": [
-        {
-          "name": "name",
-          "type": {
-            "kind": "scalar",
-            "name": "String"
-          }
-        }
-      ],
-      "name": "set-rhythm-preset",
       "result": {
         "kind": "scalar",
         "name": "Void"

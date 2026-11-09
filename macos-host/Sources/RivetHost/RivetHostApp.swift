@@ -179,6 +179,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                companion_free_y: y))
         }
         companion?.onPlacementEnded = { [weak self] in self?.rebuildMenuBar() }
+        // Petting = Done on the newest open cue (the same gesture the tray's
+        // Done offers); the Later tag = snooze. The teary act may chime,
+        // rate-limited so begging never becomes noise.
+        companion?.onPet = { [weak self] in
+            guard let self, let model = self.model, let cue = model.pendingCues.last
+            else { return }
+            model.acknowledgeCue(cue.id)
+            companion?.showAck()
+        }
+        companion?.onLater = { [weak self] in
+            guard let self, let model = self.model, let cue = model.pendingCues.last
+            else { return }
+            model.snoozeCue(cue.id)
+            companion?.show(state: .idle, message: L10n.t("mubi.laterNote"))
+        }
+        companion?.onTearyAct = { [weak self] in self?.playCueChime() }
         syncCompanionConfig()
         companion?.showIdle()
         if ProcessInfo.processInfo.environment["MOVEBIT_ACCEPTANCE"] == "1" {
@@ -252,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     handler: { [weak self] in
                         guard let self, let model = self.model else { return }
                         self.microController?.show(
-                            durationSeconds: model.config.micro_break_duration_seconds,
+                            durationSeconds: 20,
                             title: L10n.t("tray.eyeRest"),
                             hint: L10n.t("micro.hint"),
                             cueId: cue.id)
@@ -370,11 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func syncCompanionConfig() {
         guard let config = model?.config else { return }
-        companion?.applyConfig(size: config.companion_size,
-                               motion: config.companion_motion,
-                               dock: config.companion_dock,
-                               labels: config.companion_labels,
-                               freeX: config.companion_free_x,
+        companion?.applyConfig(freeX: config.companion_free_x,
                                freeY: config.companion_free_y)
     }
 
@@ -457,17 +469,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // notification fallback (a future "hide character" setting can report
     // surface-supported = false and the backend plans notifications).
 
+    /// One soft chime per arrival, plus at most one per minute for begging
+    /// acts — attention, never noise. Honors the sound setting and Focus.
+    private var lastChimeAt = Date.distantPast
+    private func playCueChime() {
+        guard let model, model.config.sound_enabled, !model.quiet else { return }
+        guard Date().timeIntervalSince(lastChimeAt) >= 60 else { return }
+        lastChimeAt = Date()
+        NSSound(named: "Ping")?.play()
+    }
+
     private func handleHealthCue(_ cue: HealthCue) {
         guard let model else { return }
 
         if cue.delivery == .character {
-            // Sound was only played on the notification fallback path.
             // Character cues (water, move, eye rest, including merged kinds)
-            // must honor the same user-selected one-shot sound setting.
-            // Quiet/focus cues are normally withheld by the backend.
-            if model.config.sound_enabled && !model.quiet {
-                NSSound(named: "Ping")?.play()
-            }
+            // honor the user-selected one-shot sound setting. Quiet/focus
+            // cues are normally withheld by the backend.
+            playCueChime()
             companion?.show(state: cue.action.mubiState,
                             message: cueMessage(cue))
             model.cueDisplayed(cue.id)
@@ -478,7 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let kinds: [ReminderKind] = cue.kinds
         if kinds == [.micro] {
             // Micro-only cue: the eye-rest invitation card (opt-in start).
-            microController?.show(durationSeconds: model.config.micro_break_duration_seconds,
+            microController?.show(durationSeconds: 20,
                                   title: CopyPool.pickMicro(),
                                   hint: L10n.t("micro.hint"),
                                   cueId: cue.id)
@@ -503,7 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toastController?.onSnooze = { [weak self] id in self?.model?.snoozeCue(id) }
         toastController?.onHide = { [weak self] id in self?.model?.dismissCue(id) }
         toastController?.show(ToastContent(title: title, lines: lines, accent: accent,
-                                           snoozeMinutes: model.config.snooze_minutes,
+                                           snoozeMinutes: 10,
                                            cueId: cue.id))
         model.cueDisplayed(cue.id)
     }

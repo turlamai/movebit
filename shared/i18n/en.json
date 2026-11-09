@@ -250,5 +250,6 @@
   "upd.staging": "Verified — preparing to swap in the new files…",
   "upd.unsupported": "No official update package for this CPU / OS combination yet.",
   "upd.usePackageManager": "This copy came from the system package manager — use it to upgrade MoveBit.",
-  "upd.verifying": "Verifying SHA-256…"
+  "upd.verifying": "Verifying SHA-256…",
+  "set.defaultsHint": "The defaults are the product; there is nothing to study. Drag Mubi or use the tray menu when needed."
 }

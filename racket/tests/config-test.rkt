@@ -1,7 +1,8 @@
 #lang racket/base
 
-;; MoveBit v1 config schema tests: version gate, clamping, tolerance and the
-;; clean-install contract (a foreign file is defaults, never guessed at).
+;; MoveBit config schema v5 tests (issue #140): the slim nine-field surface,
+;; version gate, clamping, tolerance, legacy migrations and the clean-install
+;; contract (a foreign file is defaults, never guessed at).
 
 (require rackunit
          racket/file
@@ -15,47 +16,15 @@
 
 ;; Save_and_load_roundtrip_all_settings
 (let* ([dir (make-temp-dir "cfg")]
-       [expected (reminder-config 50 40 7 25 #f 25 30 #f #f #f #t "auto"
-                             "L" "lively" "top-right" "always"
-                             "custom" #t #t #f 1320 420 250 750)])
+       [expected (reminder-config #f #f #t "zh" #t 1230 480 250 750)])
   (check-true (save-config dir expected))
   (define actual (load-config dir))
-  (check-equal? (reminder-config-sit-reminder-minutes actual) 50)
-  (check-equal? (reminder-config-water-reminder-minutes actual) 40)
-  (check-equal? (reminder-config-away-reset-minutes actual) 7)
-  (check-equal? (reminder-config-snooze-minutes actual) 25)
-  (check-false (reminder-config-micro-break-enabled actual))
-  (check-equal? (reminder-config-micro-break-interval-minutes actual) 25)
-  (check-equal? (reminder-config-micro-break-duration-seconds actual) 30)
-  (check-false (reminder-config-motion-enabled actual))
-  (check-false (reminder-config-sound-enabled actual))
-  (check-false (reminder-config-auto-check-updates actual))
-  (check-true (reminder-config-welcome-shown actual))
-  (check-equal? (reminder-config-companion-size actual) "L")
-  (check-equal? (reminder-config-companion-motion actual) "lively")
-  (check-equal? (reminder-config-companion-dock actual) "top-right")
-  (check-equal? (reminder-config-companion-labels actual) "always")
-  (check-equal? (reminder-config-companion-free-x actual) 250)
-  (check-equal? (reminder-config-companion-free-y actual) 750)
+  (check-equal? actual expected)
   ;; atomic write: no .tmp residue
   (check-false (file-exists? (build-path dir "config.json.tmp")))
   ;; every write stamps the schema version
   (define on-disk (call-with-input-file (config-path dir) read-json))
   (check-equal? (hash-ref on-disk 'SchemaVersion) config-schema-version)
-  (delete-directory/files dir))
-
-;; Dock_top_left_roundtrips_through_the_existing_schema_v2
-;; The 4th corner is additive: old profiles and the file version are unchanged.
-(let* ([dir (make-temp-dir "dock-top-left")]
-       [fresh (default-config)]
-       [as-json (hash-set (config->jsexpr fresh) 'CompanionDock "top-left")])
-  (define parsed (jsexpr->config as-json))
-  (check-equal? (reminder-config-companion-dock parsed) "top-left")
-  (check-true (save-config dir parsed))
-  (check-equal? (reminder-config-companion-dock (load-config dir)) "top-left")
-  (check-equal? (hash-ref (call-with-input-file (config-path dir) read-json)
-                          'SchemaVersion)
-                config-schema-version)
   (delete-directory/files dir))
 
 ;; TrySave_returns_false_when_config_directory_is_a_file
@@ -72,50 +41,41 @@
     (lambda (out)
       (write-json
        (hasheq 'SchemaVersion config-schema-version
-               'SitReminderMinutes 1
-               'WaterReminderMinutes 999
-               'AwayResetMinutes 0
-               'SnoozeMinutes 999
-               'MicroBreakIntervalMinutes 1
-               'MicroBreakDurationSeconds 999
-               'MotionEnabled "yes")
+               'QuietHoursStartMinutes -5
+               'QuietHoursEndMinutes 9999
+               'SoundEnabled "yes"
+               'Language "klingon"
+               'CompanionFreeX 5000
+               'CompanionFreeY -7)
        out)))
   (define actual (load-config dir))
-  (check-equal? (reminder-config-sit-reminder-minutes actual) 10)
-  (check-equal? (reminder-config-water-reminder-minutes actual) 180)
-  (check-equal? (reminder-config-away-reset-minutes actual) 1)
-  (check-equal? (reminder-config-snooze-minutes actual) 60)
-  (check-equal? (reminder-config-micro-break-interval-minutes actual) 10)
-  (check-equal? (reminder-config-micro-break-duration-seconds actual) 60)
+  (check-equal? (reminder-config-quiet-hours-start-minutes actual) 0)
+  (check-equal? (reminder-config-quiet-hours-end-minutes actual) 1439)
   ;; wrong-typed boolean keeps the default, it is not coerced
-  (check-true (reminder-config-motion-enabled actual))
-  (check-true (reminder-config-auto-check-updates actual))
+  (check-true (reminder-config-sound-enabled actual))
+  (check-equal? (reminder-config-language actual) "auto")
+  ;; free position: 5000 clamps to 1000, -7 means "default corner"
+  (check-equal? (reminder-config-companion-free-x actual) 1000)
+  (check-equal? (reminder-config-companion-free-y actual) -1)
   (delete-directory/files dir))
 
 ;; Corrupt_json_falls_back_to_defaults
 (let* ([dir (make-temp-dir "corrupt")]
        [path (build-path dir "config.json")])
   (display-to-file "{ definitely not json" path)
-  (define actual (load-config dir))
-  (check-equal? (reminder-config-sit-reminder-minutes actual) 50)
-  (check-equal? (reminder-config-water-reminder-minutes actual) 60)
-  (check-equal? (reminder-config-snooze-minutes actual) 10)
-  (check-true (reminder-config-motion-enabled actual))
-  (check-true (reminder-config-auto-check-updates actual))
+  (check-equal? (load-config dir) (default-config))
   (delete-directory/files dir))
 
-;; v1_has_one_gentle_experience_no_forced_break_fields_exist
-(let* ([fresh (default-config)])
-  ;; The struct has no force-break/duration/skip accessors at all — the old
-  ;; fullscreen contract cannot come back through config. Motion starts on,
-  ;; sound starts OFF (issue #87's calm default), onboarding has not run.
-  (check-true (reminder-config-motion-enabled fresh))
-  (check-false (reminder-config-sound-enabled fresh))
+;; The v5 defaults ARE the product: sound on (the new cue chime), updates on,
+;; onboarding pending, language auto, quiet hours off, default corner.
+(let ([fresh (default-config)])
+  (check-true (reminder-config-sound-enabled fresh))
+  (check-true (reminder-config-auto-check-updates fresh))
   (check-false (reminder-config-welcome-shown fresh))
-  (check-equal? (reminder-config-preset fresh) "balanced")
-  (check-true (reminder-config-sit-enabled fresh))
-  (check-true (reminder-config-water-enabled fresh))
-  (check-false (reminder-config-quiet-hours-enabled fresh)))
+  (check-equal? (reminder-config-language fresh) "auto")
+  (check-false (reminder-config-quiet-hours-enabled fresh))
+  (check-equal? (reminder-config-companion-free-x fresh) -1)
+  (check-equal? (reminder-config-companion-free-y fresh) -1))
 
 ;; Legacy_v0x_PascalCase_file_without_version_marker_is_foreign
 (let* ([dir (make-temp-dir "legacy")]
@@ -130,11 +90,9 @@
 }
 EOF
                    path)
-  ;; v0.x had no real users: an old file is NOT migrated. A fresh v1 profile
+  ;; v0.x had no real users: an old file is NOT migrated. A fresh profile
   ;; starts with defaults; the next save overwrites the foreign file.
-  (define actual (load-config dir))
-  (check-equal? actual (default-config))
-  (check-false (reminder-config-welcome-shown actual))
+  (check-equal? (load-config dir) (default-config))
   (delete-directory/files dir))
 
 ;; Unknown_future_schema_version_is_also_rejected
@@ -159,92 +117,104 @@ EOF
   (check-equal? (load-config dir) (default-config))
   (delete-directory/files dir))
 
-;; Partial_v1_file_keeps_defaults_for_missing_keys
+;; Partial_v5_file_keeps_defaults_for_missing_keys
 (let* ([dir (make-temp-dir "partial")]
        [path (build-path dir "config.json")])
   (display-to-file
-   (format "{\"SchemaVersion\": ~a, \"SitReminderMinutes\": 60, \"WelcomeShown\": true}"
+   (format "{\"SchemaVersion\": ~a, \"SoundEnabled\": false, \"WelcomeShown\": true, \"Language\": \"zh\"}"
            config-schema-version)
    path)
   (define actual (load-config dir))
-  (check-equal? (reminder-config-sit-reminder-minutes actual) 60)
-  (check-equal? (reminder-config-snooze-minutes actual) 10)
+  (check-false (reminder-config-sound-enabled actual))
   (check-true (reminder-config-welcome-shown actual))
+  (check-equal? (reminder-config-language actual) "zh")
+  (check-false (reminder-config-quiet-hours-enabled actual))
   (delete-directory/files dir))
 
 ;; Save_clamps_out_of_range_values_too (clamp on save, per the port contract)
-(let* ([dir (make-temp-dir "saveclamp")])
-  (save-config dir (reminder-config 1 999 0 999 #t 1 999 "x" #t #t #f "klingon"
-                                   "huge" "fast" "center" "sometimes"
-                                   "bogus" #f #f #t -5 9999 5000 -7))
+(let* ([dir (make-temp-dir "saveclamp")]
+       [draft (struct-copy reminder-config (default-config)
+                           [language "klingon"]
+                           [quiet-hours-start-minutes -5]
+                           [quiet-hours-end-minutes 9999]
+                           [companion-free-x 5000]
+                           [companion-free-y -7])])
+  (save-config dir draft)
   (define actual (load-config dir))
-  (check-equal? (reminder-config-sit-reminder-minutes actual) 10)
-  (check-equal? (reminder-config-water-reminder-minutes actual) 180)
-  (check-equal? (reminder-config-snooze-minutes actual) 60)
-  (check-true (reminder-config-motion-enabled actual))
   (check-equal? (reminder-config-language actual) "auto")
-  ;; unknown companion choices normalize to the shipped defaults
-  (check-equal? (reminder-config-companion-size actual) "M")
-  (check-equal? (reminder-config-companion-motion actual) "subtle")
-  (check-equal? (reminder-config-companion-dock actual) "bottom-right")
-  (check-equal? (reminder-config-companion-labels actual) "cue")
-  ;; free position: 5000 clamps to 1000, -7 means "use the dock"
+  (check-equal? (reminder-config-quiet-hours-start-minutes actual) 0)
+  (check-equal? (reminder-config-quiet-hours-end-minutes actual) 1439)
   (check-equal? (reminder-config-companion-free-x actual) 1000)
   (check-equal? (reminder-config-companion-free-y actual) -1)
   (delete-directory/files dir))
 
-;; --- issue #87: rhythm presets -------------------------------------------
+;; --- legacy migrations: only the kept fields survive ------------------------
 
-;; Applying a preset writes the exact published values and the matching label.
-(let* ([base (default-config)]
-       [gentle (clamp-config (apply-preset base 'gentle))])
-  (check-equal? (reminder-config-preset gentle) "gentle")
-  (check-equal? (reminder-config-sit-reminder-minutes gentle) 75)
-  (check-equal? (reminder-config-water-reminder-minutes gentle) 90)
-  (check-equal? (reminder-config-micro-break-interval-minutes gentle) 30)
-  (check-equal? (reminder-config-snooze-minutes gentle) 15)
-  ;; Applying a preset must not silently change unrelated choices.
-  (check-equal? (reminder-config-sound-enabled gentle)
-                (reminder-config-sound-enabled base))
-  (check-equal? (reminder-config-companion-dock gentle)
-                (reminder-config-companion-dock base)))
-
-;; Editing one cadence after a preset makes the label "custom" — the config
-;; can never advertise numbers it does not store.
-(let* ([edited (clamp-config
-                (struct-copy reminder-config
-                             (apply-preset (default-config) 'balanced)
-                             [sit-reminder-minutes 55]))])
-  (check-equal? (reminder-config-preset edited) "custom"))
-
-;; Values that match a preset are reported as that preset even if the stored
-;; label was stale or hand-edited.
-(let* ([stale (clamp-config
-               (struct-copy reminder-config (default-config) [preset "custom"]))])
-  (check-equal? (reminder-config-preset stale) "balanced"))
-
-;; Presets and the new switches survive a save/load round-trip.
-(let* ([dir (make-temp-dir "preset")]
-       [config (clamp-config
-                (struct-copy reminder-config
-                             (apply-preset (default-config) 'active)
-                             [quiet-hours-enabled #t]
-                             [quiet-hours-start-minutes 1230]
-                             [quiet-hours-end-minutes 480]
-                             [water-enabled #f]))])
-  (check-true (save-config dir config))
-  (define loaded (load-config dir))
-  (check-equal? (reminder-config-preset loaded) "active")
-  (check-true (reminder-config-quiet-hours-enabled loaded))
-  (check-equal? (reminder-config-quiet-hours-start-minutes loaded) 1230)
-  (check-equal? (reminder-config-quiet-hours-end-minutes loaded) 480)
-  (check-false (reminder-config-water-enabled loaded))
+;; A v4 file (previous schema) keeps language / sound / auto-update / quiet
+;; hours / placement; the rhythm, preset and companion fields it carries are
+;; intentionally dropped — the product ships one cadence and one presentation.
+(let* ([dir (make-temp-dir "v4-migrate")]
+       [path (build-path dir "config.json")]
+       [v4 (hasheq 'SchemaVersion 4
+                   'SitReminderMinutes 65
+                   'WaterReminderMinutes 55
+                   'AwayResetMinutes 8
+                   'SnoozeMinutes 20
+                   'MicroBreakEnabled #f
+                   'MicroBreakIntervalMinutes 35
+                   'MicroBreakDurationSeconds 25
+                   'MotionEnabled #f
+                   'SoundEnabled #t
+                   'AutoCheckUpdates #f
+                   'WelcomeShown #t
+                   'Language "zh"
+                   'CompanionSize "L"
+                   'CompanionMotion "lively"
+                   'CompanionDock "top-left"
+                   'CompanionLabels "always"
+                   'Preset "gentle"
+                   'SitEnabled #f
+                   'WaterEnabled #f
+                   'QuietHoursEnabled #t
+                   'QuietHoursStartMinutes 1200
+                   'QuietHoursEndMinutes 480
+                   'CompanionFreeX 123
+                   'CompanionFreeY 987)])
+  (call-with-output-file path (lambda (out) (write-json v4 out)))
+  (define migrated (load-config dir))
+  (check-true (reminder-config-sound-enabled migrated))
+  (check-false (reminder-config-auto-check-updates migrated))
+  (check-true (reminder-config-welcome-shown migrated))
+  (check-equal? (reminder-config-language migrated) "zh")
+  (check-true (reminder-config-quiet-hours-enabled migrated))
+  (check-equal? (reminder-config-quiet-hours-start-minutes migrated) 1200)
+  (check-equal? (reminder-config-quiet-hours-end-minutes migrated) 480)
+  (check-equal? (reminder-config-companion-free-x migrated) 123)
+  (check-equal? (reminder-config-companion-free-y migrated) 987)
+  ;; the next save writes the v5 shape
+  (check-true (save-config dir migrated))
+  (check-equal? (hash-ref (call-with-input-file path read-json) 'SchemaVersion)
+                config-schema-version)
   (delete-directory/files dir))
 
-;; --- issue #87: v2 (0.0.1) migration --------------------------------------
+;; A v3 file migrates the same way (identical kept keys).
+(let* ([dir (make-temp-dir "v3-migrate")]
+       [path (build-path dir "config.json")]
+       [v3 (hasheq 'SchemaVersion 3
+                   'SoundEnabled #t
+                   'CompanionDock "top-left"
+                   'QuietHoursEnabled #t
+                   'QuietHoursStartMinutes 1200
+                   'QuietHoursEndMinutes 480)])
+  (call-with-output-file path (lambda (out) (write-json v3 out)))
+  (define migrated (load-config dir))
+  (check-true (reminder-config-sound-enabled migrated))
+  (check-true (reminder-config-quiet-hours-enabled migrated))
+  (check-equal? (reminder-config-companion-free-x migrated) -1)
+  (delete-directory/files dir))
 
-;; A shipped 0.0.1 file keeps the user's cadence, sound and companion choices,
-;; gains the new defaults and leaves a one-time backup behind.
+;; A shipped 0.0.1 (v2) file keeps the same surviving choices and leaves a
+;; one-time backup behind.
 (let* ([dir (make-temp-dir "v2-migrate")]
        [path (build-path dir "config.json")]
        [v2 (hasheq 'SchemaVersion 2
@@ -267,20 +237,10 @@ EOF
   (call-with-output-file path
     (lambda (out) (write-json v2 out)))
   (define migrated (load-config dir))
-  (check-equal? (reminder-config-sit-reminder-minutes migrated) 60)
-  (check-equal? (reminder-config-water-reminder-minutes migrated) 40)
-  (check-equal? (reminder-config-snooze-minutes migrated) 20)
-  (check-false (reminder-config-micro-break-enabled migrated))
-  (check-false (reminder-config-motion-enabled migrated))
   (check-true (reminder-config-sound-enabled migrated))
+  (check-false (reminder-config-auto-check-updates migrated))
   (check-true (reminder-config-welcome-shown migrated))
   (check-equal? (reminder-config-language migrated) "zh")
-  (check-equal? (reminder-config-companion-dock migrated) "top-left")
-  ;; New v3 fields take the safe defaults; the user's old cadence is custom.
-  (check-equal? (reminder-config-preset migrated) "custom")
-  (check-true (reminder-config-sit-enabled migrated))
-  (check-true (reminder-config-water-enabled migrated))
-  (check-false (reminder-config-quiet-hours-enabled migrated))
   ;; Backup written exactly once, and it is the original v2 document.
   (define bak (build-path dir "config.json.v2.bak"))
   (check-true (file-exists? bak))
@@ -292,7 +252,7 @@ EOF
                 60)
   (delete-directory/files dir))
 
-;; --- issue #87: quiet hours ----------------------------------------------
+;; --- quiet hours ------------------------------------------------------------
 
 (define (quiet-config start end)
   (clamp-config (struct-copy reminder-config (default-config)
@@ -330,9 +290,9 @@ EOF
                                      [quiet-hours-enabled #f]))])
   (check-false (quiet-hours-active? c (at 23 0))))
 
-;; --- issue #104: free placement -----------------------------------------
+;; --- free placement ---------------------------------------------------------
 
-;; Free coordinates round-trip as per-mille values; -1 means "named dock".
+;; Free coordinates round-trip as per-mille values; -1 means "default corner".
 (let* ([dir (make-temp-dir "free-pos")]
        [config (clamp-config
                 (struct-copy reminder-config (default-config)
@@ -344,32 +304,10 @@ EOF
   (check-equal? (reminder-config-companion-free-y loaded) 987)
   (delete-directory/files dir))
 
-;; Out-of-range free coordinates normalize to -1 (dock), never off-screen.
+;; Out-of-range free coordinates normalize to -1 (default corner), never
+;; off-screen.
 (let ([c (clamp-config (struct-copy reminder-config (default-config)
                                      [companion-free-x 4000]
                                      [companion-free-y -5]))])
   (check-equal? (reminder-config-companion-free-x c) 1000)
   (check-equal? (reminder-config-companion-free-y c) -1))
-
-;; A v3 file (previous main) migrates additively: settings kept, dock used.
-(let* ([dir (make-temp-dir "v3-free")]
-       [path (build-path dir "config.json")]
-       [v3 (hasheq 'SchemaVersion 3
-                   'SitReminderMinutes 65
-                   'WaterReminderMinutes 55
-                   'Preset "custom"
-                   'SoundEnabled #t
-                   'CompanionDock "top-left"
-                   'QuietHoursEnabled #t
-                   'QuietHoursStartMinutes 1200
-                   'QuietHoursEndMinutes 480)])
-  (call-with-output-file path (lambda (out) (write-json v3 out)))
-  (define migrated (load-config dir))
-  (check-equal? (reminder-config-sit-reminder-minutes migrated) 65)
-  (check-equal? (reminder-config-water-reminder-minutes migrated) 55)
-  (check-true (reminder-config-sound-enabled migrated))
-  (check-equal? (reminder-config-companion-dock migrated) "top-left")
-  (check-true (reminder-config-quiet-hours-enabled migrated))
-  (check-equal? (reminder-config-companion-free-x migrated) -1)
-  (check-equal? (reminder-config-companion-free-y migrated) -1)
-  (delete-directory/files dir))

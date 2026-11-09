@@ -24,7 +24,7 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 12)
             MubiView(state: .idle, message: "", bodySize: 104,
-                     motion: "still", labelsAlways: false)
+                     motion: "still")
                 .frame(height: 150)
                 .accessibilityHidden(true)
 

@@ -8,7 +8,7 @@
          "../movebit/scheduler.rkt")
 
 ;; Away_break_resets_current_session_but_preserves_daily_peak
-(let ([h (make-harness #:sit 300 #:water 300 #:away 5)])
+(let ([h (make-harness)])
   (h-step-minutes! h 30)
   (check-equal? (h-session-ms h) (* 30 minute-ms))
   (check-equal? (h-longest-ms h) (* 30 minute-ms))
@@ -22,7 +22,7 @@
   (check-equal? (h-longest-ms h) (* 30 minute-ms)))
 
 ;; A_self_reported_stand_up_starts_a_new_continuous_session
-(let ([h (make-harness #:sit 300 #:water 300)])
+(let ([h (make-harness)])
   (h-step-minutes! h 25)
   (scheduler-end-session! (h-scheduler h))
   (check-equal? (h-session-ms h) 0)
@@ -31,7 +31,7 @@
   (check-equal? (h-longest-ms h) (* 25 minute-ms)))
 
 ;; Pause_resets_the_continuous_session (PauseFor/Resume both zero the session)
-(let ([h (make-harness #:sit 300 #:water 300)])
+(let ([h (make-harness)])
   (h-step-minutes! h 30)
   (scheduler-pause-for! (h-scheduler h) (* 60 minute-ms))
   (check-equal? (h-session-ms h) 0)

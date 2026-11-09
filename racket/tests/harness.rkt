@@ -1,9 +1,12 @@
 #lang racket/base
 
 ;; Test harness: drives the scheduler with a virtual clock and a fake idle
-;; source. The virtual clock starts
-;; at "today 09:00 local" on 2026-01-01, expressed as epoch ms via the system
-;; timezone, exactly like TimeZoneInfo.ConvertTimeToUtc(...Unspecified).
+;; source. The rhythm is the product's fixed cadence now (issue #140 — sit 50
+;; / water 60 / micro 20 active minutes, away 5, snooze 10), so there are no
+;; interval knobs: tests step the virtual clock against those constants.
+;; The virtual clock starts at "today 09:00 local" on 2026-01-01, expressed
+;; as epoch ms via the system timezone, exactly like
+;; TimeZoneInfo.ConvertTimeToUtc(...Unspecified).
 
 (require racket/contract/base
          "../movebit/config.rkt"
@@ -23,7 +26,6 @@
          h-fired-kinds
          h-day-completed
          h-config
-         h-patch-config!
          h-scheduler
          h-sit-cycle-ms
          h-session-ms
@@ -41,25 +43,13 @@
                  day-completed-box) ; box of reversed archived day-stats
   #:transparent)
 
-(define (make-harness #:sit [sit 45]
-                      #:water [water 30]
-                      #:away [away 5]
-                      #:snooze [snooze 10])
+(define (make-harness)
   (define clock (box (local-ymd->ms 2026 1 1 9 0 0)))
   (define idle-box (box 0))
   (define fired-box (box '()))
   (define day-completed-box (box '()))
-  ;; Tests opt in to micro breaks explicitly; disabled keeps legacy cases clean.
-  (define config (struct-copy reminder-config (default-config)
-                                       [sit-reminder-minutes sit]
-                                       [water-reminder-minutes water]
-                                       [away-reset-minutes away]
-                                       [snooze-minutes snooze]
-                                       [micro-break-enabled #f] ; tests opt in
-                                       [micro-break-interval-minutes 30]
-                                       [preset "custom"]))
   (define s
-    (make-scheduler config
+    (make-scheduler (default-config)
                     (lambda () (unbox clock))
                     (lambda () (unbox idle-box))
                     #:on-reminder
@@ -109,26 +99,6 @@
 
 (define (h-config h) (scheduler-config (harness-scheduler h)))
 
-;; Live-mutate one config field.
-(define (h-patch-config! h #:sit [sit 'unset]
-                             #:water [water 'unset]
-                             #:micro-enabled [micro-enabled 'unset]
-                             #:micro-interval [micro-interval 'unset]
-                             #:sit-enabled [sit-enabled 'unset]
-                             #:water-enabled [water-enabled 'unset])
-  (define base (scheduler-config (harness-scheduler h)))
-  (define (pick value fallback) (if (eq? value 'unset) fallback value))
-  (set-scheduler-config!
-   (harness-scheduler h)
-   (struct-copy reminder-config base
-                [sit-reminder-minutes (pick sit (reminder-config-sit-reminder-minutes base))]
-                [water-reminder-minutes (pick water (reminder-config-water-reminder-minutes base))]
-                [micro-break-enabled (pick micro-enabled (reminder-config-micro-break-enabled base))]
-                [micro-break-interval-minutes (pick micro-interval (reminder-config-micro-break-interval-minutes base))]
-                [sit-enabled (pick sit-enabled (reminder-config-sit-enabled base))]
-                [water-enabled (pick water-enabled (reminder-config-water-enabled base))]
-                [preset "custom"])))
-
 (define (h-scheduler h) (harness-scheduler h))
 (define (h-sit-cycle-ms h) (scheduler-sit-cycle-elapsed-ms (harness-scheduler h)))
 (define (h-session-ms h) (scheduler-current-session-active-time-ms (harness-scheduler h)))
@@ -136,6 +106,3 @@
 (define (h-active-ms h) (day-stats-active-ms (h-stats h)))
 (define (h-longest-ms h) (day-stats-longest-session-ms (h-stats h)))
 (define (h-paused? h) (scheduler-paused? (harness-scheduler h)))
-
-;; used by tests that need raw scheduler access
-(provide h-scheduler)

@@ -1,10 +1,11 @@
 #lang racket/base
 
 ;; The core state machine, an exact port of Services/ReminderScheduler.cs.
-;; Three independent reminder cycles advance on Tick:
+;; Three independent reminder cycles advance on Tick, all on the one product
+;; cadence (issue #140: sit 50 / water 60 / micro 20 active minutes):
 ;;   - sit cycle: accumulates ACTIVE time only, fires "stand up" reminders
 ;;   - water cycle: same accumulation (only meaningful while at the desk)
-;;   - micro cycle: lightweight short-break nudges when enabled
+;;   - micro cycle: lightweight short-break nudges
 ;; When the user goes idle beyond the away threshold, all cycles freeze; when
 ;; they come back the cycles reset — the break already happened, no nagging
 ;; after it. Continuous-session time is tracked separately and resets after a
@@ -24,6 +25,10 @@
          make-scheduler
          scheduler-config
          set-scheduler-config!
+         sit-cycle-ms
+         water-cycle-ms
+         micro-cycle-ms
+         snooze-ms
          scheduler-tick!
          scheduler-pause-for!
          scheduler-resume!
@@ -74,6 +79,21 @@
 
 (define minute-ms 60000)
 
+;; The one product cadence (issue #140): the balanced rhythm IS the product.
+;; Not configurable — "don't want to be bothered right now" is Focus and
+;; pause, not a dial. Keep in sync with the README's stated defaults.
+(define sit-cycle-minutes 50)
+(define water-cycle-minutes 60)
+(define micro-cycle-minutes 20)
+(define away-threshold-minutes 5)
+(define snooze-minutes 10)
+
+(define sit-cycle-ms (* sit-cycle-minutes minute-ms))
+(define water-cycle-ms (* water-cycle-minutes minute-ms))
+(define micro-cycle-ms (* micro-cycle-minutes minute-ms))
+(define away-threshold-seconds (* away-threshold-minutes 60))
+(define snooze-ms (* snooze-minutes minute-ms))
+
 (define (make-scheduler config now idle
                         #:on-reminder [on-reminder #f]
                         #:on-user-returned [on-user-returned #f]
@@ -95,14 +115,6 @@
 
 (define (set-scheduler-config! s config)
   (set-box! (movebit-scheduler-config-box s) (clamp-config config)))
-
-(define (interval-ms minutes) (* minutes minute-ms))
-
-(define (sit-interval s) (interval-ms (reminder-config-sit-reminder-minutes (scheduler-config s))))
-(define (water-interval s) (interval-ms (reminder-config-water-reminder-minutes (scheduler-config s))))
-(define (micro-interval s) (interval-ms (reminder-config-micro-break-interval-minutes (scheduler-config s))))
-(define (away-threshold-seconds s)
-  (* 60 (reminder-config-away-reset-minutes (scheduler-config s))))
 
 (define (scheduler-stats s) (movebit-scheduler-stats s))
 
@@ -196,7 +208,7 @@
     (set-movebit-scheduler-last-tick-ms! s now)
 
     (define idle ((movebit-scheduler-idle s)))
-    (define away (and idle (>= idle (away-threshold-seconds s))))
+    (define away (and idle (>= idle away-threshold-seconds)))
     (cond
       [away
        (unless (movebit-scheduler-was-away s)
@@ -215,41 +227,33 @@
   (void))
 
 (define (accumulate! s delta)
-  (define c (scheduler-config s))
-  (define sit-on? (reminder-config-sit-enabled c))
-  (define water-on? (reminder-config-water-enabled c))
-  (define micro-on? (reminder-config-micro-break-enabled c))
-  ;; A disabled kind neither advances nor fires: its cycle simply stays at
-  ;; zero, so re-enabling it starts a fresh interval instead of dumping a
-  ;; stale reminder.
-  (when sit-on?
-    (set-movebit-scheduler-sit-accum-ms! s (+ (movebit-scheduler-sit-accum-ms s) delta)))
-  (when water-on?
-    (set-movebit-scheduler-water-accum-ms! s (+ (movebit-scheduler-water-accum-ms s) delta)))
-  (when micro-on?
-    (set-movebit-scheduler-micro-accum-ms! s (+ (movebit-scheduler-micro-accum-ms s) delta)))
+  ;; All three cycles are always on (issue #140): per-kind switches were
+  ;; config complexity without a real user story — Focus and pause cover
+  ;; "not now". Every cycle accumulates ACTIVE time only.
+  (set-movebit-scheduler-sit-accum-ms! s (+ (movebit-scheduler-sit-accum-ms s) delta))
+  (set-movebit-scheduler-water-accum-ms! s (+ (movebit-scheduler-water-accum-ms s) delta))
+  (set-movebit-scheduler-micro-accum-ms! s (+ (movebit-scheduler-micro-accum-ms s) delta))
   (set-movebit-scheduler-session-accum-ms! s (+ (movebit-scheduler-session-accum-ms s) delta))
 
   (let* ([stats (stats-add-active (movebit-scheduler-stats s) delta)]
          [stats (stats-with-longest stats (movebit-scheduler-session-accum-ms s))])
     (set-movebit-scheduler-stats! s stats))
 
-  (when (and sit-on? (>= (movebit-scheduler-sit-accum-ms s) (sit-interval s)))
+  (when (>= (movebit-scheduler-sit-accum-ms s) sit-cycle-ms)
     (set-movebit-scheduler-sit-accum-ms! s 0)
     (set-movebit-scheduler-stats! s (stats-count+ (movebit-scheduler-stats s) 'sit))
     (fire-reminder! s 'sit
                     (stats-count (movebit-scheduler-stats s) 'sit)
                     (day-stats-active-ms (movebit-scheduler-stats s))))
 
-  (when (and water-on? (>= (movebit-scheduler-water-accum-ms s) (water-interval s)))
+  (when (>= (movebit-scheduler-water-accum-ms s) water-cycle-ms)
     (set-movebit-scheduler-water-accum-ms! s 0)
     (set-movebit-scheduler-stats! s (stats-count+ (movebit-scheduler-stats s) 'water))
     (fire-reminder! s 'water
                     (stats-count (movebit-scheduler-stats s) 'water)
                     (day-stats-active-ms (movebit-scheduler-stats s))))
 
-  (when (and micro-on?
-             (>= (movebit-scheduler-micro-accum-ms s) (micro-interval s)))
+  (when (>= (movebit-scheduler-micro-accum-ms s) micro-cycle-ms)
     (set-movebit-scheduler-micro-accum-ms! s 0)
     (set-movebit-scheduler-stats! s (stats-count+ (movebit-scheduler-stats s) 'micro))
     (fire-reminder! s 'micro
@@ -283,21 +287,14 @@
   (set-movebit-scheduler-last-tick-ms! s ((movebit-scheduler-now s))))
 
 ;; "Remind me later": NOT a timer delay — push the cycle accumulator to
-;; (interval - snooze) so the reminder re-fires after `snooze` more minutes of
-;; ACTIVE time. The accumulator may go negative when snooze exceeds the
-;; interval; accessors clamp it back to zero.
+;; (interval - snooze) so the reminder re-fires after the fixed 10-minute
+;; snooze of ACTIVE time. The accumulator may go negative when a snooze
+;; exceeds a shorter cycle's interval; accessors clamp it back to zero.
 (define (scheduler-snooze! s kind)
-  (define config (scheduler-config s))
-  (define snooze-ms (interval-ms (reminder-config-snooze-minutes config)))
-  ;; A disabled kind has no live cycle to defer; leaving it at zero keeps a
-  ;; later re-enable from firing early.
   (case kind
-    [(sit) (when (reminder-config-sit-enabled config)
-             (set-movebit-scheduler-sit-accum-ms! s (- (sit-interval s) snooze-ms)))]
-    [(water) (when (reminder-config-water-enabled config)
-               (set-movebit-scheduler-water-accum-ms! s (- (water-interval s) snooze-ms)))]
-    [(micro) (when (reminder-config-micro-break-enabled config)
-               (set-movebit-scheduler-micro-accum-ms! s (- (micro-interval s) snooze-ms)))]))
+    [(sit) (set-movebit-scheduler-sit-accum-ms! s (- sit-cycle-ms snooze-ms))]
+    [(water) (set-movebit-scheduler-water-accum-ms! s (- water-cycle-ms snooze-ms))]
+    [(micro) (set-movebit-scheduler-micro-accum-ms! s (- micro-cycle-ms snooze-ms))]))
 
 ;; Carries a persisted same-day record into a fresh session so a mid-day
 ;; restart keeps the morning's activity (a fresh session would otherwise flush

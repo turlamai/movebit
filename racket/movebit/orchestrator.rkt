@@ -8,25 +8,33 @@
 ;; ordered; snoozing a merged cue defers all of its kinds). Each cue then
 ;; moves through the explicit lifecycle pinned by issue #55:
 ;;
-;;   due → pending → displayed → acknowledged | snoozed | dismissed | expired
+;;   due → pending → displayed → acknowledged | snoozed | dismissed
 ;;
 ;; `pending` = created, not yet confirmed on screen; `displayed` = the host
 ;; reported the cue visible. Done (acknowledge) is SELF-REPORTED — it never
 ;; proves water was drunk or a break taken, and it does not advance stats
 ;; (stats count fired reminders). Later (snooze) defers every merged kind by
-;; the configured snooze via the scheduler's active-time semantics. Hide
-;; (dismiss) and the ten-minute timeout both end the cue without claiming
-;; completion — the reminder's cycle already restarted at fire time, so the
-;; next reminder arrives on the normal schedule and nothing is silently lost.
+;; the fixed snooze via the scheduler's active-time semantics. Hide (dismiss)
+;; ends the cue without claiming completion — the reminder's cycle already
+;; restarted at fire time, so the next reminder arrives on the normal schedule
+;; and nothing is silently lost.
+;;
+;; Since issue #140 an invitation is PERSISTENT: there is no visual expiry and
+;; no pile-up. A reminder that fires while one is still open folds its kinds
+;; into the open invitation via `supersede-into-one!` (kinds union, one merged
+;; cue, fresh id) — the screen keeps exactly one Mubi, waiting for an answer.
+;; The only time-based close is `ledger-expiry-ms` bookkeeping for entries
+;; from stale sessions; a live invitation always waits. Silence STILL never
+;; counts as completion: carried-forward kinds are never settled as Done.
 ;;
 ;; Focus/presentation silence changes PRESENTATION, not completion. It
 ;; retracts an already-displayed open cue (the host now hides Mubi immediately)
 ;; back into 'pending, and queues new cues without emitting them. Pending cues
 ;; do NOT age out during Focus, even in a long meeting; leaving Focus emits one
-;; bounded merged invitation. No interrupted/hidden cue becomes "Done".
-;; Superseded cues (replaced by the post-Focus merged invitation) end as
-;; 'superseded — a bookkeeping status with no outcome event, because their
-;; kinds were already presented and the invitation carries them forward.
+;; bounded merged invitation through the same `supersede-into-one!` path. No
+;; interrupted/hidden cue becomes "Done". Superseded cues end as 'superseded —
+;; a bookkeeping status with no outcome event, because their kinds were
+;; already presented and the invitation carries them forward.
 ;;
 ;; Outcome events (issue #88): every meaningful transition reports one
 ;; (kind status) pair per merged kind through `on-outcome`, so history can
@@ -36,7 +44,6 @@
 ;; neither is proof of a completed break.
 
 (require "companion-cue.rkt"
-         "config.rkt"
          "history.rkt"
          "scheduler.rkt"
          "timeutil.rkt")
@@ -109,14 +116,10 @@
      (collect-reminder! o kind count active-ms)))
   o)
 
-(define (orch-config o)
-  (scheduler-config (movebit-orchestrator-scheduler o)))
-
-;; Effective static-motion input: the OS Reduce Motion report OR the user's
-;; in-app motion preference both force a static cue.
+;; The host-reported OS Reduce Motion state forces a static cue (the
+;; in-app motion switch was cut with the config slim-down, issue #140).
 (define (effective-reduce-motion? o)
-  (or (movebit-orchestrator-reduce-motion? o)
-      (not (reminder-config-motion-enabled (orch-config o)))))
+  (movebit-orchestrator-reduce-motion? o))
 
 (define (plan-for o kinds)
   (plan-companion-cue
@@ -207,19 +210,50 @@
 
 ;; One cue per tick, ever: every kind due this tick merges into ONE cue with
 ;; all meanings preserved (each kind keeps its own Later/snooze semantics).
+;; When a previous invitation is still open and unanswered, the new kinds
+;; fold INTO it (issue #140: one persistent Mubi, never a pile-up).
 (define (flush-tick-reminders! o)
   (define events (take-pending! o))
   (when (pair? events)
     (define kinds (dedupe-kinds events))
     (define planned (plan-for o kinds))
     (when planned
-      (define record
-        (add-to-ledger! o planned ((movebit-orchestrator-now o))))
-      ;; A quiet cue is queued, not shown; the host hears about it when
-      ;; Focus ends (as part of the summary), never as a live interruption.
-      (unless (eq? (companion-cue-delivery planned) 'quiet)
-        (define cb (movebit-orchestrator-on-cue o))
-        (when cb (cb record))))))
+      (cond
+        [(eq? (companion-cue-delivery planned) 'quiet)
+         ;; A quiet cue is queued, not shown; the host hears about it when
+         ;; Focus ends (as part of the summary), never as a live interruption.
+         (add-to-ledger! o planned ((movebit-orchestrator-now o)))]
+        [else
+         (define record
+           (if (pair? (orchestrator-open-cues o))
+               (supersede-into-one! o kinds)
+               (add-to-ledger! o planned ((movebit-orchestrator-now o)))))
+         (when record
+           (define cb (movebit-orchestrator-on-cue o))
+           (when cb (cb record)))]))))
+
+;; Supersede every open cue and emit ONE merged invitation carrying the union
+;; of their kinds plus `extra-kinds`, priority-ordered. Shared by the
+;; new-reminder merge and the post-Focus summary (orchestrator-set-quiet!).
+;; Superseded cues report no outcome: their kinds were presented before and
+;; the new invitation carries them forward — a fabricated not-delivered or
+;; expired entry would be a lie (the user simply hasn't answered yet).
+;; Returns the fresh cue record, or #f when there is nothing to invite.
+(define (supersede-into-one! o extra-kinds)
+  (define open (filter open? (movebit-orchestrator-cues o)))
+  (define kinds
+    (for/list ([kind (in-list known-kinds)]
+               #:when (or (memq kind extra-kinds)
+                          (for/or ([c (in-list open)])
+                            (memq kind (cue-record-kinds c)))))
+      kind))
+  (and (pair? kinds)
+       (let ([planned (plan-for o kinds)])
+         (and planned
+              (begin
+                (for ([c (in-list open)])
+                  (set-status! o c 'superseded))
+                (add-to-ledger! o planned ((movebit-orchestrator-now o))))))))
 
 ;; --- lifecycle actions ------------------------------------------------------
 
@@ -291,24 +325,12 @@
       (when (eq? (cue-record-status c) 'displayed)
         (set-status! o c 'pending))))
   (when (and was (not enabled?))
-    (define summary-kinds
-      (summarize-open-cues
-       (for/list ([c (in-list (filter open? (movebit-orchestrator-cues o)))])
-         (open-cue (cue-record-id c) (cue-record-kinds c)
-                   (cue-record-status c) (cue-record-created-ms c)))))
-    (when summary-kinds
-      ;; 'superseded: the merged re-invitation below carries these kinds
-      ;; forward. No outcome event — their kinds were presented before Focus
-      ;; and a fabricated not-delivered/expired entry would be a lie (the
-      ;; user simply could not answer during the meeting).
-      (for ([c (in-list (filter open? (movebit-orchestrator-cues o)))])
-        (set-status! o c 'superseded))
-      (define planned (plan-for o summary-kinds))
-      (when planned
-        (define record
-          (add-to-ledger! o planned ((movebit-orchestrator-now o))))
-        (define cb (movebit-orchestrator-on-cue o))
-        (when cb (cb record))))))
+    ;; Leaving Focus collapses everything open into ONE merged invitation
+    ;; through the same path the new-reminder merge uses (issue #140).
+    (define record (supersede-into-one! o '()))
+    (when record
+      (define cb (movebit-orchestrator-on-cue o))
+      (when cb (cb record)))))
 
 ;; Host capability report: can this platform render a safe character surface,
 ;; and does the OS currently request reduced motion? Both feed the NEXT
@@ -330,15 +352,17 @@
     (set-movebit-orchestrator-ack-day-key! o today)
     (set-movebit-orchestrator-sit-acks-today! o 0)))
 
-;; Expire open cues past the policy window (timeout, not completion).
+;; Ledger hygiene only (issue #140): invitations are persistent — there is
+;; no visual expiry, a live cue always waits for an answer. An open entry
+;; older than a full day (stale session, long-asleep machine) is closed so
+;; the ledger stays bounded; a long Focus session still cannot erase
+;; deferred reminders.
 (define (expire-stale-cues! o)
   (define now ((movebit-orchestrator-now o)))
   (for ([c (in-list (filter open? (movebit-orchestrator-cues o)))])
-    ;; A long Focus session cannot erase deferred health reminders. Only
-    ;; normal visible pending/displayed cues expire after their policy window.
     (unless (and (movebit-orchestrator-quiet? o)
                  (eq? (cue-record-status c) 'pending))
-      (when (>= (- now (cue-record-created-ms c)) cue-expiry-ms)
+      (when (>= (- now (cue-record-created-ms c)) ledger-expiry-ms)
         (set-status! o c 'expired)))))
 
 ;; Advance one tick: scheduler, same-tick cue merge, expiry, stats flush.

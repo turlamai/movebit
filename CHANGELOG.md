@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Reminders are persistent and topmost** (#140). Mubi walks to the center
+  of the work area — above every window, including fullscreen Spaces — and
+  stays until answered. The 9-second auto-return and the ten-minute silent
+  expiry are gone; clicking outside Mubi does nothing. Answers: pet the
+  character (tap = Done, self-reported), the bubble's Later tag (10 active
+  minutes), or the tray Done / Later / Hide. A reminder firing while one is
+  open merges into the open invitation (kinds union, one Mubi, no pile-up).
+- **Mubi plays by itself between reminders** — rolls, tilts, blinks, little
+  hops near its dock — and begs while an invitation waits: a playful roll,
+  pressing against the glass, teary sniffles with a rate-limited soft chime
+  (one chime per arrival plus at most one per minute, gated by the sound
+  setting and Focus).
+- **Settings slim-down** (config schema v4 → v5): the rhythm presets,
+  per-kind switches, per-kind intervals, snooze length, away threshold and
+  the character size/motion/dock/labels options are product defaults now —
+  the settings window keeps exactly four controls (sound, quiet hours,
+  auto-update, language). The balanced cadence (stand 50 / water 60 / eyes
+  20 active minutes, away 5, snooze 10) lives in the scheduler. Old on-disk
+  configs migrate, keeping language, quiet hours, sound and Mubi's placed
+  position. `ReminderConfig` shrank to the same nine fields on the wire and
+  the `set-rhythm-preset` RPC is gone (regenerated clients committed for
+  all three hosts).
+
+### Windows / Linux hosts
+
+- The shared layer and macOS leg land first (#140); the Windows and Linux
+  legs implement the same contract via #141 / #142. **No release ships
+  until all three legs are green** — the regenerated clients compile the
+  two hosts unchanged in the meantime.
+
 ## 0.0.9 (2026-11-09)
 
 Release-qualification build. No product behaviour changes since 0.0.8: this

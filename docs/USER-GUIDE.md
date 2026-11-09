@@ -2,7 +2,7 @@
 
 **English** · [简体中文](USER-GUIDE.zh-CN.md)
 
-Water, stand-up and eye-rest reminders delivered by Mubi（沐比）, a small original character at the edge of your screen — never a fullscreen cover, never stolen focus, never intercepted input.
+Water, stand-up and eye-rest reminders delivered by Mubi（沐比）, a small original character who walks onto your screen at each break, waits — topmost and unmissable — until you answer, and plays by itself between reminders. It never steals keyboard focus, never covers your work, and everything outside Mubi itself stays click-through.
 
 ## Availability
 
@@ -17,32 +17,26 @@ Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / 
 ## Your first session
 
 1. Install and launch. The one-screen welcome shows Mubi, one sentence and a **Start** button — no cadence questions. The shipped rhythm is Balanced and silent; change it whenever you like in settings.
-2. Meet Mubi. When a cycle is due, the character appears at the screen edge with a clear health suggestion and an actionable label. The card rests after a few seconds; Done / Later / Hide sit right on it.
-3. Respond your way: **Done** (a self-report — never a measurement), **Later** (defers by the snooze interval), **Hide** (puts it away; the next cycle arrives on schedule). All three sit on the reminder card itself — the tray menu (Windows / macOS) reaches them too — and the character and its text stay pointer-through; only the action row accepts clicks.
+2. Meet Mubi. When a cycle is due, the character walks to the center of your work area — above every window — and WAITS with a clear health suggestion until you answer. No timer withdraws it and clicking elsewhere does nothing.
+3. Respond your way: **pet Mubi** (tap the character — a self-report, never a measurement), the **Later** tag on its bubble (defers by 10 active minutes), or the tray's Done / Later / Hide. Outside Mubi itself everything stays pointer-through; the tray menu reaches all actions at any time.
 4. Enable login startup only if you want background reminders. Treat the history charts as usage estimates, not health measurements.
 
 ## Mubi, focus mode and honesty
 
 - The three gestures map to the three reminders: sit → stretch, water → raised cup, eye rest → closed eyes. Several due reminders merge into one cue with every meaning preserved.
 - **Focus mode** (the tray toggle on Windows / macOS, a header button on Linux) queues cues silently during presentations and delivers ONE bounded summary when it ends — never a pile-up. Cues that were already on screen are not re-emitted.
-- Unanswered cues expire after ten minutes and the next reminder arrives on its normal schedule. Silence never counts as completion, and nothing is lost.
+- An unanswered invitation stays on screen — silence is never counted as completion, and nothing is lost. A reminder firing while one is open merges into the same invitation: always exactly one Mubi, every meaning preserved.
 - While a water / stand / eye cue is open, the menu can offer an optional **20 s eye rest** or **2 min stretch** card: nothing counts down until you press Start, Done is your explicit self-report, and Hide/Esc ends it without claiming a break.
-- Personalize Mubi in settings: size S/M/L (body heights 60/78/104), motion (still/subtle/lively), dock position, label visibility. Reduce Motion (or motion "still") renders everything static.
+- Mubi plays by itself between reminders — rolls, tilts, blinks, little hops near its dock — like a pet waiting nearby. System Reduce Motion renders everything static.
 - **Place Mubi…** in the menu (macOS, the Windows tray, and the Linux X11 tray or header) turns the character into a draggable surface for up to 30 seconds; choose **Done placing** (or wait) and the position is remembered per display, scaled and clamped on monitor/DPI changes. On Wayland the compositor owns placement, so the character keeps the notification fallback.
 - There is no fullscreen forced break anywhere in v0.0.1, and no way to opt back into one — that contract was removed on purpose.
 
-## Reminder rhythm, quiet hours and honesty
+## Rhythm, quiet hours and honesty
 
-MoveBit offers three named rhythms. They are product defaults, not medical advice — adjust them to your day:
+There is one balanced cadence, shipped as the product default and not configurable: stand up every 50 active minutes, water every 60, eye rest every 20 (look away 20 s). "Not now" lives in the tray, not in settings — **Focus** defers everything, **Pause** silences an hour, **Later** snoozes one cue.
 
-| Preset | Stand up | Water | Eye rest |
-| --- | --- | --- | --- |
-| **Balanced** (default) | every 50 active min, suggest 5 min away | every 60 active min | every 20 active min, look away 20 s |
-| **Gentle** | every 75 active min | every 90 active min | every 30 active min, look away 20 s |
-| **Frequent** | every 30 active min | every 45 active min | every 15 active min, look away 20 s |
-
-- Countdowns use **active time** at the desk, not wall-clock time: idle past the away threshold (5 minutes by default) counts as a real break and resets the cycles.
-- **Customize** exposes per-kind switches, custom intervals, the snooze length, the away threshold, quiet hours, the character size/motion/dock and the language. Editing a cadence turns the rhythm label into Custom; the app never silently swaps your numbers for a preset.
+- Countdowns use **active time** at the desk, not wall-clock time: idle past the away threshold (5 minutes) counts as a real break and resets the cycles.
+- The settings window keeps exactly four controls: sound (one soft chime per arrival), quiet hours, auto update checks and the language.
 - **Quiet hours** pause all reminders inside a local-time window (for example 22:00 to 07:00, wrapping midnight) and resume at the end; setting the same start and end means off. **Focus** remains the immediate meeting/presentation action.
 - The main window shows the nearest next reminder and, per kind, how many invitations were actually **presented** next to how many you marked **Done**. Done is your own report: it never claims you drank water, stood up or rested your eyes.
 
