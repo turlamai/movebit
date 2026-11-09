@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.8 (2026-11-09)
+
+The AppImage update-fix release, and the clean baseline for the released
+N→N+1 update qualification.
+
+### Fixed
+
+- **AppImage updates no longer report failure after a successful swap.**
+  The verified download replaced the running image and kept `.previous`, then
+  `start-download!` passed the `$APPIMAGE` string to `path->string` and ended
+  in `phase=error`, so the UI offered no relaunch. The path is normalized only
+  when it is a path, and a Linux-only regression test drives `start-download!`
+  end to end against a locally served signed artifact.
+
 ## 0.0.7 (2026-11-08)
 
 Release-qualification build. There are no product behaviour changes since
