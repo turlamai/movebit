@@ -74,6 +74,8 @@ jobs:
       - run: PATH="$FULL_RACKET_BIN:$PATH" dbus-run-session -- raco rivet acceptance --json
       - name: X11 placement acceptance (pointer-through, drag, persistence, timeout)
         run: dbus-run-session -- xvfb-run -a --server-args="-screen 0 1280x900x24" bash scripts/e2e/linux-placement.sh
+      - name: X11 central cue visit acceptance (approach, hold, exact return)
+        run: dbus-run-session -- xvfb-run -a --server-args="-screen 0 1280x900x24" bash scripts/e2e/linux-visit.sh
       - uses: actions/upload-artifact@v7
         if: always()
         with: {name: movebit-acceptance-linux, path: .rivet/acceptance/, if-no-files-found: warn}

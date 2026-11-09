@@ -4269,7 +4269,6 @@ void bootstrap(GtkApplication* app) {
     g_timeout_add(
         2500,
         +[](gpointer) -> int {
-          g_file_set_contents("/tmp/movebit-visit-fired", "1", 1, nullptr);
           mubi::present(1, "Water", g_state.app, 4242);
           return G_SOURCE_REMOVE;
         },
