@@ -80,10 +80,15 @@
 (unless (equal? previous-sha expected-from-sha)
   (fail "previous image sha ~a != expected N ~a" previous-sha expected-from-sha))
 
-(displayln
- (jsexpr->string
+(define result
   (hasheq 'phase phase
           'availableVersion (hash-ref snapshot 'availableVersion #f)
           'downloadedPath (hash-ref snapshot 'downloadedPath #f)
           'replacedSha256 to-sha
-          'previousSha256 previous-sha)))
+          'previousSha256 previous-sha))
+(define output-json (getenv "OUTPUT_JSON"))
+(if output-json
+    (call-with-output-file output-json
+      (lambda (out) (write-json result out) (newline out))
+      #:exists 'truncate)
+    (displayln (jsexpr->string result)))

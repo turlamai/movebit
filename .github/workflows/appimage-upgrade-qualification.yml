@@ -93,7 +93,8 @@ jobs:
           EXPECTED_VERSION="$TO_VERSION" \
           EXPECTED_FROM_SHA="$EXPECTED_FROM_SHA" \
           EXPECTED_TO_SHA="$EXPECTED_TO_SHA" \
-          racket scripts/acceptance/appimage-upgrade.rkt | tee /tmp/qual/upgrade.json
+          OUTPUT_JSON=/tmp/qual/upgrade.json \
+          racket scripts/acceptance/appimage-upgrade.rkt
 
       - name: Relaunch the replaced image and the retained previous image
         run: |
