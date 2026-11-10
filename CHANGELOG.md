@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.0.10 (2026-11-10)
+
+The pet-contract release: reminders become persistent, topmost and
+answerable on every host, and the settings surface shrinks to what a
+user actually needs to touch.
 
 ### Changed
 
@@ -27,12 +31,15 @@
   the `set-rhythm-preset` RPC is gone (regenerated clients committed for
   all three hosts).
 
-### Windows / Linux hosts
-
-- The shared layer and macOS leg land first (#140); the Windows and Linux
-  legs implement the same contract via #141 / #142. **No release ships
-  until all three legs are green** — the regenerated clients compile the
-  two hosts unchanged in the meantime.
+- **All three hosts ship the same interaction contract** (#141 / #142):
+  persistent topmost invitations, pet-to-Done (Windows: cursor-proximity
+  `WS_EX_TRANSPARENT` flip + hit test; Linux: X11 input-region union with
+  tap gestures), the bubble Later tag, the begging repertoire and idle
+  self-play. An X11 scripted-pet e2e verifies approach → hold unanswered
+  → pet → exact home on Linux.
+- **License unified on BUSL-1.1** with MIT change date (2030-09-28), the
+  same construction fulcrum ships — family-wide with taskly (#147).
+  README, pricing page and in-app strings updated together.
 
 ## 0.0.9 (2026-11-09)
 
