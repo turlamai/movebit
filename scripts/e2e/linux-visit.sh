@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# X11 central-visit acceptance for the Mubi companion (issue #104).
+# X11 central-visit acceptance for the Mubi companion (issue #140).
 #
-# A genuine due cue must approach the work-area centre, hold while readable,
-# and return to exactly the persisted home. Movement never acknowledges the
-# cue. Needs Xvfb (or DISPLAY), xdotool.
+# A genuine due cue must approach the work-area centre and HOLD there —
+# the invitation is persistent and never auto-returns (there is no timer
+# that ends it). A click on the character is the pet gesture: it
+# acknowledges (self-reported Done) and Mubi walks back to the exact
+# persisted home. Needs Xvfb (or DISPLAY), xdotool.
 # Usage: DISPLAY=:99 bash scripts/e2e/linux-visit.sh [path-to-RivetHost]
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -64,7 +66,8 @@ read -r idle_x idle_y <<<"$(geometry)"
 [[ "$idle_x" -gt 0 && "$idle_y" -gt 0 ]] || { echo "invalid home geometry" >&2; exit 1; }
 
 # The hook delivers the cue at ~2.5 s; watch until the window has moved left
-# toward the central third, then until it is back at the exact idle home.
+# toward the central third, then verify it HOLDS there — an unanswered
+# invitation never auto-returns (issue #140).
 moved=0; near_center=0; start=$(date +%s)
 while (( $(date +%s) - start < 8 )); do
   read -r x y <<<"$(geometry)"
@@ -76,12 +79,35 @@ done
 (( near_center == 1 )) || { echo "Mubi approached but not near the work-area centre ($x,$y)" >&2; exit 1; }
 echo "approach: home $idle_x,$idle_y -> centre $x,$y"
 
+held=1; start=$(date +%s)
+while (( $(date +%s) - start < 14 )); do
+  read -r x y <<<"$(geometry)"
+  # Still at (or near) the centre: no auto-return, no drift home.
+  if (( x < idle_x - 120 )); then held=0; break; fi
+  sleep .1
+done
+(( held == 1 )) || { echo "Mubi left the centre unanswered ($x,$y) — invitations must persist (issue #140)" >&2; exit 1; }
+read -r hold_x hold_y <<<"$(geometry)"
+echo "hold: still at centre $hold_x,$hold_y after 14 s unanswered"
+
+# Pet = Done: a click on the character acknowledges the cue and Mubi walks
+# back to the exact persisted home. The click lands inside the canvas input
+# region (XShape) — this also proves the pet region is live on X11.
+geo2="$(xdotool getwindowgeometry --shell "$win")"
+px="$(awk -F= '/^X=/{print $2}' <<<"$geo2")"
+py="$(awk -F= '/^Y=/{print $2}' <<<"$geo2")"
+pw="$(awk -F= '/^WIDTH=/{print $2}' <<<"$geo2")"
+ph="$(awk -F= '/^HEIGHT=/{print $2}' <<<"$geo2")"
+click_x=$((px + pw / 2)); click_y=$((py + ph * 35 / 100))
+xdotool mousemove "$click_x" "$click_y" click 1
+echo "pet: clicked character at $click_x,$click_y"
+
 returned=0; start=$(date +%s)
 while (( $(date +%s) - start < 14 )); do
   read -r x y <<<"$(geometry)"
   if (( x == idle_x && y == idle_y )); then returned=1; break; fi
   sleep .1
 done
-(( returned == 1 )) || { echo "Mubi did not return to the exact home ($idle_x,$idle_y); now $x,$y" >&2; exit 1; }
-echo "return: exact home restored ($x,$y)"
+(( returned == 1 )) || { echo "petting did not walk Mubi home ($idle_x,$idle_y); now $x,$y" >&2; exit 1; }
+echo "return: exact home restored after petting ($x,$y)"
 echo "linux central visit PASS"
