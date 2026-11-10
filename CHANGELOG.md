@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Mubi is freely draggable — no placement mode.** Grabbing the character
+  moves it at any time on every desktop; the pointer-through surface turns
+  touchable only while the cursor rests on Mubi itself, and the dropped
+  position is remembered. The tray's corner-cycling **Move Mubi aside** and
+  the 30-second **Place Mubi…** mode are gone, replaced by one **Reset
+  Mubi** action that parks Mubi at its default corner. This also fixes the
+  Windows placement defect where an animation repaint re-homed the window
+  mid-drag, and the silent failure while Focus was on.
+- **The Windows cue card reads properly now.** The message capsule mirrors
+  the macOS stack: up to three wrapped lines of leading-aligned text in a
+  rounded capsule with the Later pill below it. The old single pill drew
+  the message across its full width — straight under the Later tag — and
+  clipped any second line, squeezing the text together.
+- **App icon: water-blue tile.** The warm-dark squircle is replaced by the
+  water gradient from the design tokens (`cue.water.soft` → `cue.water.deep`);
+  the cream character reads clearly in the Dock, taskbar and tray at every
+  size.
+
 ## 0.0.10 (2026-11-10)
 
 The pet-contract release: reminders become persistent, topmost and

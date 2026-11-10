@@ -608,23 +608,20 @@ final class CompanionController: NSObject {
     private let bodySize: CGFloat = 78
     private let motion = "subtle"
     private var quiet = false
-    // Issue #104: a directly placed home position (per-mille of the usable
-    // work area; -1 = the default bottom-right corner). The temporary
-    // placement mode flips the pointer-through panel into a draggable
-    // surface only while active.
+    // Issue #104 + owner decision 2026-11-10: a directly placed home
+    // position (per-mille of the usable work area; -1 = the default
+    // bottom-right corner), written whenever the user drags Mubi — no
+    // placement mode, the pointer-through panel flips pettable/draggable
+    // under the cursor at any time.
     private var freeX: Int64 = -1
     private var freeY: Int64 = -1
-    private var placing = false
-    private var placementTimer: Task<Void, Never>?
     private var placementSaveTask: Task<Void, Never>?
-    /// While an invitation is on screen, polls the pointer to flip the panel
-    /// between click-through and pettable when the cursor is over it.
+    /// Polls the pointer to flip the panel between click-through and
+    /// pettable/draggable whenever the cursor rests on it — free drag, any
+    /// time; petting while a cue waits.
     private var proximityTask: Task<Void, Never>?
-    var isPlacing: Bool { placing }
-    /// Persist the normalized position after a drag (debounced) and on exit.
+    /// Persist the normalized position after a user drag (debounced).
     var onPlacementChanged: ((Int64, Int64) -> Void)?
-    /// The mode ended (Done or the 30 s safety timeout): refresh menu labels.
-    var onPlacementEnded: (() -> Void)?
     /// Petting = Done (self-reported acknowledgement of the open cue).
     var onPet: (() -> Void)?
     /// The bubble's Later tag = snooze the open cue.
@@ -653,21 +650,16 @@ final class CompanionController: NSObject {
         }
     }
 
-    /// One click from the menu bar parks Mubi in the next corner. This is
-    /// an action, not a saved preference: the position persists through the
-    /// same free-coordinate write as dragging, and moving never edits cue
-    /// completion/snooze.
-    func moveAside() {
-        endPlacement()
-        // An explicit Move Aside during a cue's travel wins: cancel the
+    /// One click from the menu bar clears the drag-placed home and parks
+    /// Mubi at the default corner. Dragging is the everyday way to move;
+    /// this recovery action exists so a misplaced pet is never stuck.
+    /// Moving never edits cue completion/snooze.
+    func resetHome() {
+        // An explicit Reset during a cue's travel wins: cancel the
         // in-flight visit so it cannot carry Mubi back to the old home.
         cancelVisit()
-        // Corner order (per-mille, top-left origin): BR -> BL -> TL -> TR.
-        let corners: [(Int64, Int64)] = [(1000, 1000), (0, 1000), (0, 0), (1000, 0)]
-        let index = corners.firstIndex(where: { $0 == (freeX, freeY) }) ?? 0
-        let next = corners[(index + 1) % corners.count]
-        freeX = next.0
-        freeY = next.1
+        freeX = -1
+        freeY = -1
         onPlacementChanged?(freeX, freeY)
         // Moving the pet must not dismiss a health invitation or turn
         // it into an idle pose. Keep the active artwork and cue readable.
@@ -683,7 +675,6 @@ final class CompanionController: NSObject {
     /// (driven by the settled ledger) bring Mubi home.
     func show(state: MubiState, message: String) {
         cancelVisit()
-        endPlacement()
         guard !quiet else { return }
         present(state, message: message)
         let current = generation
@@ -698,7 +689,6 @@ final class CompanionController: NSObject {
 
     func showIdle() {
         cancelVisit()
-        endPlacement()
         returnHomeThen { self.present(self.quiet ? .focus : .idle, message: "") }
     }
 
@@ -726,45 +716,6 @@ final class CompanionController: NSObject {
         }
     }
 
-    /// Temporary explicit placement mode (issue #104): the panel accepts
-    /// mouse events and can be dragged by its background. It is time-bounded,
-    /// never persists as an input-capturing surface, and Hide/Focus/cues end
-    /// it immediately.
-    func beginPlacement() {
-        guard !quiet else { return }
-        cancelVisit()
-        placing = true
-        present(.idle, message: "")
-        panel?.ignoresMouseEvents = false
-        panel?.isMovableByWindowBackground = true
-        panel?.hasShadow = true
-        panel?.delegate = self
-        placementTimer?.cancel()
-        placementTimer = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 30_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.endPlacement()
-        }
-    }
-
-    func endPlacement() {
-        guard placing else { return }
-        placing = false
-        placementTimer?.cancel()
-        placementTimer = nil
-        placementSaveTask?.cancel()
-        placementSaveTask = nil
-        savePlacement()
-        panel?.ignoresMouseEvents = true
-        panel?.isMovableByWindowBackground = false
-        panel?.hasShadow = false
-        panel?.delegate = nil
-        if let panel, panel.isVisible {
-            present(quiet ? .focus : .idle, message: "")
-        }
-        onPlacementEnded?()
-    }
-
     /// Acknowledgment flourish after a pet or tray Done (self-reported):
     /// the happy glint plays where Mubi stands, then it heads home.
     func showAck() {
@@ -783,14 +734,12 @@ final class CompanionController: NSObject {
 
     func setQuiet(_ enabled: Bool) {
         cancelVisit()
-        endPlacement()
         quiet = enabled
         returnHomeThen { self.present(self.quiet ? .focus : .idle, message: "") }
     }
 
     func hide() {
         cancelVisit()
-        endPlacement()
         generation += 1
         panel?.orderOut(nil)
     }
@@ -801,23 +750,24 @@ final class CompanionController: NSObject {
         stopProximityMonitor()
     }
 
-    // MARK: pettable window
+    // MARK: pettable + draggable window
 
-    /// While the invitation waits, flip the panel between click-through and
-    /// pettable based on pointer proximity — the whole surface stays
-    /// pointer-through everywhere except over Mubi itself (issue #140).
+    /// Flip the panel between full pointer-through and pettable/draggable
+    /// based on pointer proximity — the surface stays pointer-through
+    /// everywhere except while the cursor rests on Mubi itself (issue #54).
+    /// Free drag, any time; petting while a cue waits.
     private func startProximityMonitor(_ current: Int) {
         proximityTask?.cancel()
         proximityTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self, let panel = self.panel,
                       self.generation == current else { return }
-                if NSPointInRect(NSEvent.mouseLocation, panel.frame) {
-                    panel.ignoresMouseEvents = false
-                } else if !self.placing {
-                    panel.ignoresMouseEvents = true
-                }
-                do { try await Task.sleep(nanoseconds: 250_000_000) }
+                let hittable = NSPointInRect(NSEvent.mouseLocation, panel.frame)
+                panel.ignoresMouseEvents = !hittable
+                panel.isMovableByWindowBackground = hittable
+                (panel.contentView as? CompanionHostingView)?.allowsWindowDrag
+                    = hittable
+                do { try await Task.sleep(nanoseconds: 100_000_000) }
                 catch { return }
             }
         }
@@ -826,8 +776,10 @@ final class CompanionController: NSObject {
     private func stopProximityMonitor() {
         proximityTask?.cancel()
         proximityTask = nil
-        if let panel, !placing {
+        if let panel {
             panel.ignoresMouseEvents = true
+            panel.isMovableByWindowBackground = false
+            (panel.contentView as? CompanionHostingView)?.allowsWindowDrag = false
         }
     }
 
@@ -860,10 +812,9 @@ final class CompanionController: NSObject {
         }
 
         // Persistent invitation (issue #140): no return timer. Wait here
-        // until the ledger settles (showIdle/showAck) and bring Mubi home;
-        // while waiting, make the character pettable under the cursor.
+        // until the ledger settles (showIdle/showAck) and bring Mubi home.
+        // Petting/dragging is armed by the proximity monitor in present().
         guard !Task.isCancelled, generation == current, !quiet else { return }
-        startProximityMonitor(current)
     }
 
     /// The home-dock frame origin for the current placement (per-mille free
@@ -917,19 +868,14 @@ final class CompanionController: NSObject {
                                  onPet: { [weak self] in self?.onPet?() },
                                  onLater: { [weak self] in self?.onLater?() },
                                  onTearyAct: { [weak self] in self?.onTearyAct?() })
-        let root = placing
-            ? AnyView(character.overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(Color.accentColor,
-                                  style: StrokeStyle(lineWidth: 2, dash: [5, 4]))))
-            : AnyView(character)
-        let host = CompanionHostingView(rootView: root)
-        host.allowsWindowDrag = placing
+        let host = CompanionHostingView(rootView: AnyView(character))
+        host.allowsWindowDrag = false
         panel.contentView = host
         relayout()
-        // NSPanel never becomes key or main; the whole window ignores mouse
-        // events (#54 pointer-through fallback).
+        // NSPanel never becomes key or main; outside the pointer-proximity
+        // flip the whole window ignores mouse events (#54 fallback).
         panel.orderFrontRegardless()
+        startProximityMonitor(generation)
     }
 
     private func makePanel() -> NSPanel {
@@ -948,6 +894,7 @@ final class CompanionController: NSObject {
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = false
+        panel.delegate = self
         return panel
     }
 
@@ -1012,9 +959,11 @@ final class CompanionController: NSObject {
 
 
 extension CompanionController: NSWindowDelegate {
-    /// Debounced persistence while the user drags in placement mode.
+    /// Debounced persistence while the user drags Mubi by its background.
+    /// Programmatic moves (the cue walk, relayout, reset) happen with no
+    /// mouse buttons held — they must never be saved as a new home.
     func windowDidMove(_ notification: Notification) {
-        guard placing else { return }
+        guard NSEvent.pressedMouseButtons & 1 != 0 else { return }
         placementSaveTask?.cancel()
         placementSaveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 350_000_000)

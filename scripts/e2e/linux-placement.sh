@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# X11 placement acceptance for the Mubi companion (issue #104).
+# X11 free-drag acceptance for the Mubi companion (issue #104).
 #
-# Verifies the safety-critical parts of the temporary drag mode without a
-# human at the desktop:
-#   1. outside placement the surface's X11 input shape is empty (pointer-through);
-#   2. placement makes only a bounded region sensitive, a real pointer drag moves
-#      the window, and the normalized position is persisted;
-#   3. the 30 s timeout restores the empty input region.
+# Verifies the safety-critical parts of the free-drag model without a human
+# at the desktop:
+#   1. idle (nothing due, pointer away) the X11 input shape is empty
+#      (pointer-through);
+#   2. resting the pointer on the window arms a bounded input region;
+#   3. a real pointer drag then moves the window and persists the
+#      normalized position;
+#   4. moving the pointer away restores the empty input region.
 #
 # Needs: Xvfb or an X11 display, xdotool, gcc, libX11/libXext headers.
 # Usage: Xvfb :99 & DISPLAY=:99 bash scripts/e2e/linux-placement.sh
@@ -79,7 +81,7 @@ start_app() {
   env HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_DATA_HOME="$home/share" \
       XDG_CACHE_HOME="$home/cache" GDK_BACKEND=x11 GSK_RENDERER=cairo \
       MOVEBIT_DATA_DIR="$data" MOVEBIT_BOOTSTRAP_DIR="$data" \
-      ${1:+MOVEBIT_PLACEMENT_TEST=1} "$exe" >"$out/application.log" 2>&1 &
+      "$exe" >"$out/application.log" 2>&1 &
   app_pid=$!
   win=''
   for _ in $(seq 1 200); do
@@ -92,26 +94,30 @@ start_app() {
 
 # 1. Default: pointer-through.
 start_app
-shipped="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
-stop_app
+shipped=99
+for _ in $(seq 1 40); do
+  shipped="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
+  [[ "$shipped" == "0" ]] && break
+  sleep .05
+done
 [[ "$shipped" == "0" ]] || { echo "pointer-through broken: $shipped input rectangles" >&2; exit 1; }
 
-# 2. Placement: bounded region, drag, persistence.
-start_app placement
+# 2. Resting the pointer on the window arms the bounded region.
+xdotool mousemove --window "$win" 30 40
 active=0
-for _ in $(seq 1 80); do
+for _ in $(seq 1 40); do
   active="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
   [[ "$active" -ge 1 ]] && break
   sleep .05
 done
 [[ "$active" -ge 1 && "$active" -le 2 ]] || {
-  echo "unexpected placement region: $active" >&2
+  echo "unexpected hover region: $active" >&2
   tail -20 "$out/application.log" >&2 || true
   exit 1
 }
+
+# 3. The drag then moves the window and persists the free position.
 before="$(xwininfo -id "$win" | awk '/Absolute upper-left X/{x=$4}/Absolute upper-left Y/{y=$4}END{print x","y}')"
-xdotool mousemove --window "$win" 30 40
-sleep .2
 xdotool mousedown 1
 sleep .2
 xdotool mousemove_relative --sync -- -50 -35
@@ -139,15 +145,19 @@ done
 [[ "$free_x" -ge 0 && "$free_x" -le 1000 && "$free_y" -ge 0 && "$free_y" -le 1000 ]] \
   || { echo "free position not persisted: $free_x,$free_y" >&2; exit 1; }
 
-# 3. Timeout restores pointer-through (the test may shorten it).
-wait_seconds="${MOVEBIT_PLACEMENT_TIMEOUT_SECONDS:-32}"
-sleep "$((wait_seconds > 30 ? 32 : wait_seconds + 2))"
-restored="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
-[[ "$restored" == "0" ]] || { echo "timeout left input captured: $restored" >&2; exit 1; }
+# 4. Leaving the window restores pointer-through (no mode, no timer).
+xdotool mousemove 10 10
+restored=99
+for _ in $(seq 1 40); do
+  restored="$(DISPLAY="$DISPLAY" "$out/xshape" "$win")"
+  [[ "$restored" == "0" ]] && break
+  sleep .05
+done
+[[ "$restored" == "0" ]] || { echo "pointer-away left input captured: $restored" >&2; exit 1; }
 
 cat > "$out/result.json" <<JSON
-{"format":"movebit-placement-acceptance","format-version":1,"platform":"linux-x11",
- "pointer-through-default":true,"placement-region-rectangles":$active,
+{"format":"movebit-placement-acceptance","format-version":2,"platform":"linux-x11",
+ "pointer-through-default":true,"hover-region-rectangles":$active,
  "window-before":"$before","window-after":"$after",
  "free-position":{"x":$free_x,"y":$free_y},
  "pointer-through-restored":true}

@@ -56,7 +56,7 @@ SHADOW="$(jq -r '.colors["mubi.shadow"]' "$TOKENS")"
 # not carry it); same string as the Linux/Windows hosts embed.
 LOWER_SHADE='M 16 96 C 24 118, 42 126, 60 126 C 80 126, 98 116, 105 94 C 100 116, 84 128, 60 128 C 38 128, 20 114, 16 96 Z'
 
-# ---- compose the app icon: warm-dark squircle, Mubi front and center ----
+# ---- compose the app icon: water-blue squircle, Mubi front and center ----
 #
 # emit_icon_svg OUT TILE_XY TILE_SIZE TILE_RX CHAR_SCALE CHAR_TX CHAR_TY
 #                    SHEEN_CY SHEEN_RX SHEEN_RY
@@ -71,8 +71,8 @@ emit_icon_svg() {
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3E3931"/>
-      <stop offset="1" stop-color="#272319"/>
+      <stop offset="0" stop-color="#8FCBFF"/>
+      <stop offset="1" stop-color="#4FA7EE"/>
     </linearGradient>
     <linearGradient id="mubiBody" x1="0.18" y1="0.10" x2="0.78" y2="1.0">
       <stop offset="0" stop-color="$BODY_LIGHT"/>

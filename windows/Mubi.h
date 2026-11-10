@@ -171,18 +171,19 @@ struct MubiCompanion {
   double body_height = 78;   // logical px (S 60 / M 78 / L 104)
   std::string motion = "subtle";
   std::string dock = "bottom-right";
-  bool labels_always = false;
   bool quiet = false;
-  // Issue #104: normalized directly placed home (-1 = named dock) and the
-  // temporary drag surface. The mode never persists: a 30 s timer, Done,
-  // Focus, Hide or a due cue restores full pointer-through.
+  // Free drag (issue #104, owner decision 2026-11-10): Mubi is always
+  // draggable by its opaque pixels. The surface flips out of pointer-through
+  // only while the cursor rests on the character, and the drag-placed home
+  // persists through the normalized per-mille config.
   std::int64_t free_x = -1;
   std::int64_t free_y = -1;
-  bool placing = false;
+  // True while the cursor rests on an opaque Mubi pixel and the surface is
+  // hittable (pointer-through flag dropped); true for the whole span of a
+  // system drag so animations cannot yank the window mid-move.
+  bool pointer_hot = false;
+  bool dragging = false;
   std::function<void(std::int64_t, std::int64_t)> on_placement_changed;
-  std::function<void()> on_placement_ended;
-
-  bool IsPlacing() const { return placing; }
 
   // Persistent invitation + petting + repertoire (issue #140): while a due
   // cue waits, the character is pettable (tap = Done) and a Later tag rides
@@ -228,7 +229,6 @@ struct MubiCompanion {
     body_height = body_height_for("M");
     motion = "subtle";
     dock = "bottom-right";
-    labels_always = false;
     free_x = freeX;
     free_y = freeY;
     if (hwnd != nullptr) {
@@ -237,34 +237,26 @@ struct MubiCompanion {
     }
   }
 
-  // The user can move the floating pet away with one tray action, even
-  // though the transparent surface itself must remain mouse-through.
-  // This changes only the local visual dock, not the Racket user settings
-  // or any still-pending reminder's completion state.
-  void MoveAside() {
-    EndPlacement();
-    // Cancel an in-flight cue visit; Render below re-homes at the new dock.
+  // One tray action for recovery: park Mubi back at its default corner and
+  // clear the drag-placed home. Moving is otherwise a plain mouse drag —
+  // this exists so a misplaced pet is never stuck. Relocation is not a
+  // Hide, Later or Done action and must not erase any pending notice.
+  void ResetHome() {
+    // Cancel an in-flight cue visit; Render below re-homes at the corner.
     StopVisit();
     free_x = -1;
     free_y = -1;
-    if (dock == "bottom-right") dock = "bottom-left";
-    else if (dock == "bottom-left") dock = "top-left";
-    else if (dock == "top-left") dock = "top-right";
-    else dock = "bottom-right";
-    // Keep the current cue/pose and its existing timeout. Relocation is not
-    // a Hide, Later or Done action and must not silently erase the notice.
+    if (on_placement_changed) on_placement_changed(-1, -1);
     if (hwnd != nullptr) Render(anim_state, current_message);
   }
 
   void SetQuiet(bool enabled) {
-    EndPlacement();
     quiet = enabled;
     if (acceptance_mode()) return;
     Show(quiet ? MubiState::Focus : MubiState::Idle, L"");
   }
 
   void Show(MubiState state, std::wstring const& message) {
-    if (placing) EndPlacement();
     if (acceptance_mode()) return;
     mubi_trace("show:enter");
     try {
@@ -279,16 +271,16 @@ struct MubiCompanion {
       StartGesture(state);
       StartVisit(state);
       StartLabelTimer(message, state);
+      // The pettable/draggable proximity flip runs whenever Mubi is on
+      // screen, not only during an open cue: dragging home is always
+      // available, petting only while a cue waits.
+      StartProximity();
       if (attending) {
-        StartProximity();
         SchedulePlay(true);
+      } else if (state == MubiState::Idle) {
+        SchedulePlay(false);
       } else {
-        StopProximity();
-        if (state == MubiState::Idle) {
-          SchedulePlay(false);
-        } else {
-          StopPlay();
-        }
+        StopPlay();
       }
       mubi_trace("show:timers-ok");
     } catch (...) {
@@ -318,35 +310,12 @@ struct MubiCompanion {
     label_timer.Start();
   }
 
-  /// Temporary explicit placement mode (issue #104). Only while active does
-  /// the layered window drop WS_EX_TRANSPARENT; opaque Mubi pixels then act
-  /// as the drag handle (HTCAPTION) and everything else stays click-through.
-  void BeginPlacement() {
-    if (quiet) return;
-    ShowIdle();
-    if (hwnd == nullptr || placing) return;
-    placing = true;
-    StopVisit();
-    ::SetTimer(hwnd, kPlacementTimerId, 30000, nullptr);
-    ApplyPlacementStyle(true);
-  }
-
-  void EndPlacement() {
-    if (!placing) return;
-    placing = false;
-    if (hwnd != nullptr) {
-      ::KillTimer(hwnd, kPlacementTimerId);
-      SavePlacement();
-      ApplyPlacementStyle(false);
-      Render(anim_state, current_message);
-    }
-    if (on_placement_ended) on_placement_ended();
-  }
-
   void Dismiss() {
-    EndPlacement();
+    pointer_hot = false;
+    dragging = false;
     mubi_trace("dismiss:enter");
     StopVisit();
+    StopProximity();
     if (hwnd != nullptr) {
       ::DestroyWindow(hwnd);
       hwnd = nullptr;
@@ -359,26 +328,35 @@ struct MubiCompanion {
   }
 
  private:
-  static constexpr UINT_PTR kPlacementTimerId = 2;
   std::wstring current_message;
 
   static LRESULT CALLBACK PlacementWindowProc(HWND h, UINT msg, WPARAM w,
                                               LPARAM l) {
     auto* self = reinterpret_cast<MubiCompanion*>(
         ::GetWindowLongPtrW(h, GWLP_USERDATA));
-    if (self != nullptr && self->placing) {
-      if (msg == WM_NCHITTEST) return HTCAPTION;
-      if (msg == WM_EXITSIZEMOVE) {
-        self->SavePlacement();
-        return 0;
+    if (self != nullptr && self->pointer_hot) {
+      if (msg == WM_NCHITTEST) {
+        // Opaque Mubi pixels are the drag handle; the rest of the surface
+        // answers nothing (only pet/tag/tray settle an invitation).
+        POINT pt{static_cast<LONG>(static_cast<short>(l & 0xFFFF)),
+                 static_cast<LONG>(static_cast<short>((l >> 16) & 0xFFFF))};
+        ::ScreenToClient(h, &pt);
+        return self->PixelOpaque(pt.x, pt.y) ? HTCAPTION : HTCLIENT;
       }
-      if (msg == WM_TIMER && w == kPlacementTimerId) {
-        self->EndPlacement();
+      if (msg == WM_ENTERSIZEMOVE) {
+        // A drag cancels the in-flight walk and pins the window position:
+        // animation repaints must not re-home it mid-move (the old "Mubi
+        // snaps back while dragging" defect).
+        self->dragging = true;
+        self->StopVisit();
+      } else if (msg == WM_EXITSIZEMOVE) {
+        self->dragging = false;
+        self->SavePlacement();
+        self->Render(self->anim_state, self->current_message);
         return 0;
       }
     }
-    if (self != nullptr && self->attending && !self->placing &&
-        msg == WM_LBUTTONDOWN) {
+    if (self != nullptr && self->attending && msg == WM_LBUTTONDOWN) {
       // Client == window (WS_POPUP): the click lands where the layered
       // content paints. Character = pet/Done, Later tag = snooze.
       LONG const x = static_cast<LONG>(static_cast<short>(l & 0xFFFF));
@@ -390,18 +368,32 @@ struct MubiCompanion {
     return ::DefWindowProcW(h, msg, w, l);
   }
 
-  void ApplyPlacementStyle(bool draggable) {
+  // Toggles pointer-through. True only while the cursor rests on an opaque
+  // pixel (the proximity poll below), so the surface never becomes a broad
+  // invisible hit-catcher (issue #54).
+  void ApplyPlacementStyle(bool hittable) {
     if (hwnd == nullptr) return;
     LONG_PTR ex = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    if (draggable) {
+    if (hittable) {
       ex &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
     } else {
       ex |= static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
     }
+    pointer_hot = hittable;
     ::SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
     ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
                        SWP_FRAMECHANGED);
+  }
+
+  // Alpha plane of the last rendered frame (straight alpha, surface-sized);
+  // the per-pixel hit test reads it without touching GDI+.
+  std::vector<BYTE> alpha_cache;
+  SIZE alpha_size{0, 0};
+
+  bool PixelOpaque(LONG x, LONG y) const {
+    if (x < 0 || y < 0 || x >= alpha_size.cx || y >= alpha_size.cy) return false;
+    return alpha_cache[static_cast<size_t>(y) * alpha_size.cx + x] > 16;
   }
 
   void SavePlacement() {
@@ -444,16 +436,111 @@ struct MubiCompanion {
             anim_state == MubiState::Eyes);
   }
 
-  // 120x140 design grid + capsule row; scaled by the Mubi size and DPI.
-  SIZE pixel_size() const {
+  // ---- cue card layout (one source for painting + hit testing) ------------
+
+  // Mirrors the macOS MubiView stack: character on top, the message capsule
+  // below it (up to 3 wrapped lines, 208 dp of text inside a 240 dp capsule,
+  // min width 200 dp), the Later pill under the capsule while an invitation
+  // waits. The old single 252x54 pill drew the message across the full width
+  // — straight under the Later tag — and clipped any second line: that was
+  // the "text squeezed together" defect. All rects here are physical px in
+  // surface coordinates.
+  struct CueCardLayout {
+    SIZE surface{0, 0};
+    RECT pet{0, 0, 0, 0};      // the character grid (pet = Done, drag handle)
+    RECT capsule{0, 0, 0, 0};  // message capsule (display only)
+    RECT later{0, 0, 0, 0};    // empty when no Later pill is shown
+  };
+
+  CueCardLayout ComputeLayout() const {
     UINT dpi = 96;
     if (hwnd != nullptr) dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
     double const s = body_height / 108.0;
-    bool const due = IsReadableHealthCue();
-    int const w = static_cast<int>(((due ? 252.0 : 120.0 * s) + 8.0) * dp);
-    int const h = static_cast<int>((140.0 * s + 8.0 + (due ? 44.0 : 0.0)) * dp);
-    return SIZE{w, h};
+    CueCardLayout lay;
+    float const margin = 4.0f * static_cast<float>(dp);
+    float const grid_w = static_cast<float>(120.0 * s * dp);
+    float const grid_h = static_cast<float>(140.0 * s * dp);
+    if (current_message.empty()) {
+      // Bare character: the plain 120x140 design grid with a small margin.
+      lay.surface = SIZE{static_cast<int>(grid_w + 2 * margin),
+                         static_cast<int>(grid_h + 2 * margin)};
+      lay.pet = RECT{static_cast<LONG>(margin), static_cast<LONG>(margin),
+                     static_cast<LONG>(margin + grid_w),
+                     static_cast<LONG>(margin + grid_h)};
+      return lay;
+    }
+
+    // Measure the wrapped message with the exact font the painter uses.
+    HDC screen = ::GetDC(nullptr);
+    {
+      Gdiplus::Graphics graphics(screen);
+      Gdiplus::FontFamily family(IsCjkText(current_message)
+                                     ? L"Microsoft YaHei UI"
+                                     : L"Segoe UI");
+      Gdiplus::Font font(&family, static_cast<float>(14 * dp),
+                         Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+      Gdiplus::StringFormat fmt;
+      fmt.SetAlignment(Gdiplus::StringAlignmentNear);
+      fmt.SetLineAlignment(Gdiplus::StringAlignmentNear);
+      fmt.SetTrimming(Gdiplus::StringTrimmingEllipsisWord);
+      float const text_max_w = 208.0f * static_cast<float>(dp);
+      float const text_cap_h = 3.0f * font.GetHeight(&graphics) + 1.0f;
+      Gdiplus::RectF bounds(0, 0, 0, 0);
+      graphics.MeasureString(current_message.c_str(), -1, &font,
+                             Gdiplus::RectF(0, 0, text_max_w, text_cap_h),
+                             &fmt, &bounds);
+      float const gap = 6.0f * static_cast<float>(dp);
+      float const cap_w = std::max(200.0f * static_cast<float>(dp),
+                                   bounds.Width + 32.0f * static_cast<float>(dp));
+      float const cap_h = bounds.Height + 20.0f * static_cast<float>(dp);
+
+      // Later pill: 11.5 dp semibold label with 12 dp side / 4 dp vertical
+      // padding (the macOS laterPill paddings), shown while a cue waits.
+      float const later_h =
+          attending ? (11.5f * static_cast<float>(dp) * 1.3f +
+                       8.0f * static_cast<float>(dp))
+                    : 0.0f;
+      float later_w = 0.0f;
+      if (attending) {
+        Gdiplus::FontFamily tag_family(IsCjkText(later_tag_text)
+                                           ? L"Microsoft YaHei UI"
+                                           : L"Segoe UI");
+        Gdiplus::Font tag_font(&tag_family,
+                               static_cast<float>(11.5 * dp),
+                               Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::RectF tag_bounds(0, 0, 0, 0);
+        graphics.MeasureString(later_tag_text.c_str(), -1, &tag_font,
+                               Gdiplus::RectF(0, 0, 200.0f, 100.0f),
+                               &fmt, &tag_bounds);
+        later_w = tag_bounds.Width + 24.0f * static_cast<float>(dp);
+      }
+
+      float const surface_w = std::max({grid_w, cap_w, later_w}) + 2 * margin;
+      float const y0 = margin;
+      float const y1 = y0 + grid_h;
+      float const y2 = y1 + gap;
+      float const y3 = y2 + cap_h;
+      float const y4 = y3 + gap;
+      float const cx = surface_w / 2.0f;
+      lay.surface = SIZE{static_cast<int>(surface_w),
+                         static_cast<int>(y4 + later_h + margin)};
+      lay.pet = RECT{static_cast<LONG>(cx - grid_w / 2),
+                     static_cast<LONG>(y0), static_cast<LONG>(cx + grid_w / 2),
+                     static_cast<LONG>(y1)};
+      lay.capsule = RECT{static_cast<LONG>(cx - cap_w / 2),
+                         static_cast<LONG>(y2),
+                         static_cast<LONG>(cx + cap_w / 2),
+                         static_cast<LONG>(y3)};
+      if (attending) {
+        lay.later = RECT{static_cast<LONG>(cx - later_w / 2),
+                         static_cast<LONG>(y4),
+                         static_cast<LONG>(cx + later_w / 2),
+                         static_cast<LONG>(y4 + later_h)};
+      }
+    }
+    ::ReleaseDC(nullptr, screen);
+    return lay;
   }
 
   void EnsureWindow() {
@@ -532,7 +619,10 @@ struct MubiCompanion {
     double const s = body_height / 108.0;
     UINT dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
-    SIZE size = pixel_size();
+    CueCardLayout const lay = ComputeLayout();
+    // UpdateLayeredWindow takes a non-const SIZE* (it writes the applied
+    // size back), so the layout surface is copied.
+    SIZE size = lay.surface;
 
     HDC screen = ::GetDC(nullptr);
     BITMAPINFO bi{};
@@ -555,12 +645,9 @@ struct MubiCompanion {
           Gdiplus::TextRenderingHintAntiAliasGridFit);
       graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
 
-      // Design grid 120x140 centered in the surface, scaled.
-      double const grid_w = 120.0 * s * dp;
-      double const grid_h = 140.0 * s * dp;
-      float const ox = static_cast<float>((size.cx - grid_w) / 2.0);
-      float const oy = static_cast<float>((size.cy - grid_h) / 2.0 -
-                                           (IsReadableHealthCue() ? 22.0 * dp : 0));
+      // Design grid 120x140 at its layout slot (top of the card stack).
+      float const ox = static_cast<float>(lay.pet.left);
+      float const oy = static_cast<float>(lay.pet.top);
       graphics.TranslateTransform(ox, oy);
       graphics.ScaleTransform(static_cast<float>(s * dp),
                               static_cast<float>(s * dp));
@@ -745,82 +832,113 @@ struct MubiCompanion {
 
       graphics.ResetTransform();
 
-      // Label capsule: contextual pill during cues (or always, per the
-      // Label setting). Painted into the same alpha surface — no second
-      // window anywhere.
-      bool const show_label = labels_always || !message.empty();
-      if (show_label) {
-        std::wstring const text = message.empty() ? L"MoveBit" : message;
-        float const pill_w = (IsReadableHealthCue() ? 244.0f : 120.0f * s)
-                             * static_cast<float>(dp);
-        float const pill_h = (IsReadableHealthCue() ? 54.0f : 30.0f)
-                             * static_cast<float>(dp);
-        float const px = (static_cast<float>(size.cx) - pill_w) / 2.0f;
-        float const py = static_cast<float>(size.cy) - pill_h - 4.0f * dp;
-        Gdiplus::SolidBrush pill(dark ? argb(230, "#33302B")
-                                      : argb(235, "#FFFDFB"));
-        // GDI+ has no rounded-rect fill: a pill is two half-cap arcs
-        // closed by the top and bottom edges.
-        Gdiplus::GraphicsPath pill_path;
-        float const cap_d = pill_h;
-        pill_path.AddArc(px, py, cap_d, cap_d, 180, 180);
-        pill_path.AddArc(px + pill_w - cap_d, py, cap_d, cap_d, 270,
-                         180);
-        pill_path.CloseFigure();
-        graphics.FillPath(&pill, &pill_path);
-        Gdiplus::FontFamily family(IsCjkText(text) ? L"Microsoft YaHei UI"
-                                                   : L"Segoe UI");
-        Gdiplus::Font font(&family,
-                           static_cast<float>((IsReadableHealthCue() ? 14 : 12) * dp),
-                           Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-        Gdiplus::SolidBrush text_brush(dark ? argb(255, "#F1EEE7")
-                                            : argb(255, "#2D2A28"));
-        Gdiplus::StringFormat format;
-        format.SetAlignment(Gdiplus::StringAlignmentCenter);
-        format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-        Gdiplus::RectF box(px, py, pill_w, pill_h);
-        graphics.DrawString(text.c_str(), -1, &font, box, &format,
-                            &text_brush);
-        if (IsReadableHealthCue()) {
+      // Message capsule + Later pill, stacked under the character exactly
+      // like the macOS MubiView card. Painted into the same alpha surface —
+      // no second window anywhere.
+      if (!message.empty()) {
+        float const dpf = static_cast<float>(dp);
+        // GDI+ has no rounded-rect path primitive: four quarter arcs.
+        // (GraphicsPath cannot be returned by value — its copy ctor is
+        // protected — so the lambda fills a caller-owned path.)
+        auto add_rounded_rect = [](Gdiplus::GraphicsPath& p, float x, float y,
+                                   float w, float h, float r) {
+          float const d = std::min(2.0f * r, 2.0f * std::min(w, h));
+          p.AddArc(x, y, d, d, 180, 90);
+          p.AddArc(x + w - d, y, d, d, 270, 90);
+          p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+          p.AddArc(x, y + h - d, d, d, 90, 90);
+          p.CloseFigure();
+        };
+        Gdiplus::RectF cap_box(
+            static_cast<float>(lay.capsule.left),
+            static_cast<float>(lay.capsule.top),
+            static_cast<float>(lay.capsule.right - lay.capsule.left),
+            static_cast<float>(lay.capsule.bottom - lay.capsule.top));
+        {
+          Gdiplus::SolidBrush cap_brush(dark ? argb(230, "#33302B")
+                                             : argb(235, "#FFFDFB"));
+          Gdiplus::GraphicsPath cap_path;
+          add_rounded_rect(cap_path, cap_box.X, cap_box.Y, cap_box.Width,
+                           cap_box.Height, 12.0f * dpf);
+          graphics.FillPath(&cap_brush, &cap_path);
+          Gdiplus::Pen cap_stroke(dark ? Gdiplus::Color(20, 255, 255, 255)
+                                       : Gdiplus::Color(20, 0, 0, 0),
+                                  1.0f * dpf);
+          graphics.DrawPath(&cap_stroke, &cap_path);
+        }
+        // Message: leading-aligned, up to 3 wrapped lines, ellipsis when
+        // longer — the same contract as the macOS capsule Text.
+        {
+          Gdiplus::FontFamily family(IsCjkText(message) ? L"Microsoft YaHei UI"
+                                                        : L"Segoe UI");
+          Gdiplus::Font font(&family, 14.0f * dpf, Gdiplus::FontStyleBold,
+                             Gdiplus::UnitPixel);
+          Gdiplus::StringFormat fmt;
+          fmt.SetAlignment(Gdiplus::StringAlignmentNear);
+          fmt.SetLineAlignment(Gdiplus::StringAlignmentNear);
+          fmt.SetTrimming(Gdiplus::StringTrimmingEllipsisWord);
+          Gdiplus::SolidBrush text_brush(dark ? argb(255, "#F1EEE7")
+                                              : argb(255, "#2D2A28"));
+          Gdiplus::RectF box(cap_box.X + 16.0f * dpf, cap_box.Y + 10.0f * dpf,
+                             cap_box.Width - 32.0f * dpf,
+                             cap_box.Height - 20.0f * dpf);
+          graphics.DrawString(message.c_str(), -1, &font, box, &fmt,
+                              &text_brush);
+        }
+        if (lay.later.right > lay.later.left) {
           // The Later tag: one click defers every merged kind (issue #140).
-          float const tag_w = 64.0f * dp;
-          float const tag_h = pill_h - 12.0f * dp;
-          float const tag_x = px + pill_w - tag_w - 6.0f * dp;
-          float const tag_y = py + 6.0f * dp;
+          // Its own stadium pill below the capsule, centered like macOS.
+          Gdiplus::RectF tag_box(
+              static_cast<float>(lay.later.left),
+              static_cast<float>(lay.later.top),
+              static_cast<float>(lay.later.right - lay.later.left),
+              static_cast<float>(lay.later.bottom - lay.later.top));
           Gdiplus::GraphicsPath tag_path;
-          float const tag_cap = tag_h;
-          tag_path.AddArc(tag_x, tag_y, tag_cap, tag_cap, 180, 180);
-          tag_path.AddArc(tag_x + tag_w - tag_cap, tag_y, tag_cap, tag_cap,
-                          270, 180);
+          float const tag_cap = tag_box.Height;
+          tag_path.AddArc(tag_box.X, tag_box.Y, tag_cap, tag_cap, 180, 180);
+          tag_path.AddArc(tag_box.X + tag_box.Width - tag_cap, tag_box.Y,
+                          tag_cap, tag_cap, 270, 180);
           tag_path.CloseFigure();
           Gdiplus::SolidBrush tag_brush(dark ? argb(255, "#4A453D")
                                              : argb(255, "#EFE3D2"));
           graphics.FillPath(&tag_brush, &tag_path);
           Gdiplus::FontFamily tag_family(
               IsCjkText(later_tag_text) ? L"Microsoft YaHei UI" : L"Segoe UI");
-          Gdiplus::Font tag_font(
-              &tag_family, static_cast<float>(11 * dp), Gdiplus::FontStyleBold,
-              Gdiplus::UnitPixel);
+          Gdiplus::Font tag_font(&tag_family, 11.5f * dpf,
+                                 Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
           Gdiplus::SolidBrush tag_text_brush(
               dark ? argb(255, "#F1EEE7") : argb(255, "#2D2A28"));
           Gdiplus::StringFormat tag_format;
           tag_format.SetAlignment(Gdiplus::StringAlignmentCenter);
           tag_format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-          Gdiplus::RectF tag_box(tag_x, tag_y, tag_w, tag_h);
           graphics.DrawString(later_tag_text.c_str(), -1, &tag_font, tag_box,
                               &tag_format, &tag_text_brush);
         }
       }
     }
 
+    // Cache the straight-alpha plane for the per-pixel proximity and hit
+    // tests (the alpha byte is untouched by premultiply; copy before it
+    // anyway so the cache stays independent of the DIB lifetime).
+    alpha_cache.resize(static_cast<size_t>(size.cx) * size.cy);
+    {
+      BYTE const* src_bits = static_cast<BYTE*>(bits);
+      int const pixels = size.cx * size.cy;
+      for (int i = 0; i < pixels; ++i) alpha_cache[i] = src_bits[i * 4 + 3];
+    }
+    alpha_size = size;
+
     mubi_detail::premultiply(static_cast<BYTE*>(bits), size.cx * size.cy);
 
-    // Content + dock positioning in one atomic UpdateLayeredWindow.
+    // Content + dock positioning in one atomic UpdateLayeredWindow. While a
+    // user drag is in flight the position is pinned: a NULL pptDst keeps the
+    // dragged coordinates and animation repaints cannot re-home the window.
     POINT dst = visit_phase == VisitPhase::None
                     ? dock_position(size) : visit_position;
     POINT src{0, 0};
     BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-    if (!::UpdateLayeredWindow(hwnd, screen, &dst, &size, mem, &src, 0,
+    POINT* const ppt_dst = dragging ? nullptr : &dst;
+    if (!::UpdateLayeredWindow(hwnd, screen, ppt_dst, &size, mem, &src, 0,
                                &blend, ULW_ALPHA)) {
       mubi_trace("render:ulw-failed");
     }
@@ -876,7 +994,7 @@ struct MubiCompanion {
     if (::SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0,
                                 &client_animation_enabled, 0) &&
         !client_animation_enabled) return;
-    SIZE const size = pixel_size();
+    SIZE const size = ComputeLayout().surface;
     visit_home = dock_position(size);
     HMONITOR const monitor = ::MonitorFromPoint(visit_home, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{sizeof(MONITORINFO)};
@@ -988,68 +1106,50 @@ struct MubiCompanion {
   // ---- petting + repertoire (issue #140) --------------------------------
 
   void HandleCueClick(LONG x, LONG y) {
-    UINT dpi = ::GetDpiForWindow(hwnd);
-    double const dp = static_cast<double>(dpi) / 96.0;
-    double const s = body_height / 108.0;
-    SIZE const size = pixel_size();
-    double const grid_w = 120.0 * s * dp;
-    double const grid_h = 140.0 * s * dp;
-    double const grid_ox = (static_cast<double>(size.cx) - grid_w) / 2.0;
-    double const grid_oy = (static_cast<double>(size.cy) - grid_h) / 2.0 -
-                           22.0 * dp;
-    // Character: pet = Done.
-    RECT const pet{static_cast<LONG>(grid_ox),
-                   static_cast<LONG>(grid_oy),
-                   static_cast<LONG>(grid_ox + grid_w),
-                   static_cast<LONG>(grid_oy + grid_h)};
-    // Later tag: right end of the capsule pill band.
-    double const pill_w = 244.0 * dp;
-    double const pill_h = 54.0 * dp;
-    double const pill_x = (static_cast<double>(size.cx) - pill_w) / 2.0;
-    double const pill_y =
-        static_cast<double>(size.cy) - pill_h - 4.0 * dp;
-    RECT const later{static_cast<LONG>(pill_x + pill_w / 2),
-                     static_cast<LONG>(pill_y),
-                     static_cast<LONG>(pill_x + pill_w),
-                     static_cast<LONG>(pill_y + pill_h)};
+    // Same layout the painter used: character = pet/Done, the Later pill
+    // below the capsule = snooze. A click on the capsule or empty surface
+    // answers nothing — only an explicit answer (pet, tag, tray) ends the
+    // invitation.
+    CueCardLayout const lay = ComputeLayout();
     POINT const point{x, y};
-    if (::PtInRect(&later, point)) {
+    if (::PtInRect(&lay.later, point)) {
       if (on_later) on_later();
-    } else if (::PtInRect(&pet, point)) {
+    } else if (::PtInRect(&lay.pet, point)) {
       if (on_pet) on_pet();
     }
-    // Clicks on empty surface areas do nothing: only an explicit answer
-    // (pet, tag, tray) ends the invitation.
   }
 
+  // Free drag + petting proximity (always on while Mubi is visible): the
+  // surface turns hittable only while the cursor rests on an OPAQUE pixel,
+  // so transparent margins never become an invisible hit-catcher (issue
+  // #54). Outside a drag this also restores pointer-through within one poll
+  // (~100 ms) of the cursor leaving the character.
   void StartProximity() {
     if (proximity_timer) {
       proximity_timer.Start();
       return;
     }
-    proximity_timer = make_timer(std::chrono::milliseconds(250), true,
+    proximity_timer = make_timer(std::chrono::milliseconds(100), true,
                                  [this] {
-      if (hwnd == nullptr || placing || !attending) return;
+      if (hwnd == nullptr || dragging) return;
       POINT cursor{};
       if (!::GetCursorPos(&cursor)) return;
       RECT rect{};
       if (!::GetWindowRect(hwnd, &rect)) return;
-      bool const inside = ::PtInRect(&rect, cursor) != FALSE;
+      bool const on_mubi = ::PtInRect(&rect, cursor) != FALSE &&
+                           PixelOpaque(cursor.x - rect.left,
+                                       cursor.y - rect.top);
       LONG_PTR ex = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-      bool const transparent_now =
-          (ex & static_cast<LONG_PTR>(WS_EX_TRANSPARENT)) != 0;
-      if (inside == transparent_now) {
-        // Cursor over Mubi: the surface becomes pettable; elsewhere it
-        // returns to full pointer-through.
-        ApplyPlacementStyle(!inside);
-      }
+      bool const hittable_now =
+          (ex & static_cast<LONG_PTR>(WS_EX_TRANSPARENT)) == 0;
+      if (on_mubi != hittable_now) ApplyPlacementStyle(on_mubi);
     });
     proximity_timer.Start();
   }
 
   void StopProximity() {
     if (proximity_timer) proximity_timer.Stop();
-    if (!placing && hwnd != nullptr) ApplyPlacementStyle(false);
+    ApplyPlacementStyle(false);
   }
 
   void StartAct(int kind, bool attending) {
@@ -1077,7 +1177,7 @@ struct MubiCompanion {
 
   void SchedulePlay(bool attending) {
     if (play_timer) play_timer.Stop();
-    if (motion == "still" || quiet || placing) return;
+    if (motion == "still" || quiet) return;
     BOOL client_animation_enabled = TRUE;
     if (::SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0,
                                 &client_animation_enabled, 0) &&
@@ -1092,8 +1192,7 @@ struct MubiCompanion {
       play_timer = make_timer(std::chrono::milliseconds(ms), false,
                               [this, attending] {
         if (play_timer) play_timer.Stop();
-        if (motion == "still" || quiet || placing ||
-            attending != this->attending) {
+        if (motion == "still" || quiet || attending != this->attending) {
           return;
         }
         int const kind = attending

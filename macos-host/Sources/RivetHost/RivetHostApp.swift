@@ -171,14 +171,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleReady() {
         guard let model else { return }
         companion = CompanionController()
-        // Issue #104: persist the directly placed position through the same
-        // config RPC, and refresh the menu label when the mode ends.
+        // Issue #104: persist the drag-placed position through the same
+        // config RPC.
         companion?.onPlacementChanged = { [weak self] x, y in
             guard let self, let model = self.model else { return }
             model.saveConfig(model.config.with(companion_free_x: x,
                                                companion_free_y: y))
         }
-        companion?.onPlacementEnded = { [weak self] in self?.rebuildMenuBar() }
         // Petting = Done on the newest open cue (the same gesture the tray's
         // Done offers); the Later tag = snooze. The teary act may chime,
         // rate-limited so begging never becomes noise.
@@ -287,12 +286,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         items.append(contentsOf: [
-            .action(label: L10n.t("tray.moveAside"), identifier: "tray-mubi-move-aside",
-                    handler: { [weak self] in self?.companion?.moveAside() }),
-            .action(label: companion?.isPlacing == true
-                        ? L10n.t("tray.placeMubiDone") : L10n.t("tray.placeMubi"),
-                    identifier: "tray-mubi-place",
-                    handler: { [weak self] in self?.togglePlacement() }),
+            .action(label: L10n.t("tray.resetMubi"), identifier: "tray-mubi-reset",
+                    handler: { [weak self] in self?.companion?.resetHome() }),
             .action(label: model.paused.paused ? L10n.t("tray.resume") : L10n.t("tray.pause"),
                     identifier: "tray-pause",
                     handler: { [weak self] in self?.model?.togglePause() }),
@@ -367,23 +362,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Push the v1 companion presentation settings into the character.
-    /// Enter/leave the temporary placement mode. Nothing here captures input
-    /// outside the character's own panel, and the mode times out on its own.
-    private func togglePlacement() {
-        guard let companion else { return }
-        if companion.isPlacing {
-            companion.endPlacement()
-        } else {
-            companion.beginPlacement()
-            if companion.isPlacing {
-                showToast(title: L10n.t("tray.placeMubi"),
-                          lines: [L10n.t("tray.placeHint")],
-                          accent: .water)
-            }
-        }
-        rebuildMenuBar()
-    }
-
     private func syncCompanionConfig() {
         guard let config = model?.config else { return }
         companion?.applyConfig(freeX: config.companion_free_x,
