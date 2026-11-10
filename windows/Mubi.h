@@ -620,7 +620,9 @@ struct MubiCompanion {
     UINT dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
     CueCardLayout const lay = ComputeLayout();
-    SIZE const size = lay.surface;
+    // UpdateLayeredWindow takes a non-const SIZE* (it writes the applied
+    // size back), so the layout surface is copied.
+    SIZE size = lay.surface;
 
     HDC screen = ::GetDC(nullptr);
     BITMAPINFO bi{};
@@ -836,15 +838,16 @@ struct MubiCompanion {
       if (!message.empty()) {
         float const dpf = static_cast<float>(dp);
         // GDI+ has no rounded-rect path primitive: four quarter arcs.
-        auto rounded_rect = [](float x, float y, float w, float h, float r) {
+        // (GraphicsPath cannot be returned by value — its copy ctor is
+        // protected — so the lambda fills a caller-owned path.)
+        auto add_rounded_rect = [](Gdiplus::GraphicsPath& p, float x, float y,
+                                   float w, float h, float r) {
           float const d = std::min(2.0f * r, 2.0f * std::min(w, h));
-          Gdiplus::GraphicsPath p;
           p.AddArc(x, y, d, d, 180, 90);
           p.AddArc(x + w - d, y, d, d, 270, 90);
           p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
           p.AddArc(x, y + h - d, d, d, 90, 90);
           p.CloseFigure();
-          return p;
         };
         Gdiplus::RectF cap_box(
             static_cast<float>(lay.capsule.left),
@@ -854,8 +857,8 @@ struct MubiCompanion {
         {
           Gdiplus::SolidBrush cap_brush(dark ? argb(230, "#33302B")
                                              : argb(235, "#FFFDFB"));
-          Gdiplus::GraphicsPath cap_path =
-              rounded_rect(cap_box.X, cap_box.Y, cap_box.Width,
+          Gdiplus::GraphicsPath cap_path;
+          add_rounded_rect(cap_path, cap_box.X, cap_box.Y, cap_box.Width,
                            cap_box.Height, 12.0f * dpf);
           graphics.FillPath(&cap_brush, &cap_path);
           Gdiplus::Pen cap_stroke(dark ? Gdiplus::Color(20, 255, 255, 255)
