@@ -10,9 +10,13 @@ permissions:
   attestations: write
 
 env:
-  # Exact rivet pin (released tag). Family policy: rivet is consumed as a
-  # package (this tag install), never as a linked source checkout — keeps
-  # local and release builds reproducible against one revision.
+  # Exact rivet pin, in lockstep with ci.yml and acceptance.yml.
+  # Deliberately an unreleased main commit (v0.15.2-5): carries the
+  # #441/#444 installer fixes movebit needs; re-pin to the next released
+  # tag once one contains it. Family policy: rivet is consumed as a
+  # package (this pin install), never as a linked source checkout — keeps
+  # local and release builds reproducible against one revision, and the
+  # setup-embed-racket action ref must stay in lockstep with this pin.
   RIVET_PIN: a7b3d45e34210722920f7a2099126295c144f444
 jobs:
   validate:
@@ -221,7 +225,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@8ccc95530af43287d1b7e94e1ae69e10279b4db4
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@a7b3d45e34210722920f7a2099126295c144f444
       - name: Install GTK4, a virtual display, and packaging tooling
         run: |
           sudo apt-get update

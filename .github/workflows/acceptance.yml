@@ -8,7 +8,11 @@ on:
 permissions:
   contents: read
 env:
-  RIVET_PIN: 9d766b4acab672844093204cb4845ef4ef933d2c
+  # Exact rivet pin, in lockstep with ci.yml and release.yml. Deliberately
+  # an unreleased main commit (v0.15.2-5): carries the #441/#444 installer
+  # fixes movebit needs; re-pin to the next released tag once one contains
+  # it. The setup-embed-racket action ref must stay in lockstep too.
+  RIVET_PIN: a7b3d45e34210722920f7a2099126295c144f444
 concurrency:
   # Superseded PR runs may be cancelled; main checks must finish for each SHA.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
@@ -70,7 +74,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config libgtk-4-dev libjson-glib-dev libglib2.0-dev libsecret-1-dev liblz4-dev zlib1g-dev libncurses-dev libx11-dev libxtst-dev libxext-dev xvfb xauth xdotool x11-utils weston at-spi2-core python3-pyatspi
       - run: raco pkg install --auto --no-docs "https://github.com/turlamai/rivet.git#${RIVET_PIN}"
       - run: echo "FULL_RACKET_BIN=$(dirname "$(command -v raco)")" >> "$GITHUB_ENV"
-      - uses: turlamai/rivet/.github/actions/setup-embed-racket@8ccc95530af43287d1b7e94e1ae69e10279b4db4
+      - uses: turlamai/rivet/.github/actions/setup-embed-racket@a7b3d45e34210722920f7a2099126295c144f444
       - run: PATH="$FULL_RACKET_BIN:$PATH" dbus-run-session -- raco rivet acceptance --json
       - name: X11 placement acceptance (pointer-through, drag, persistence, timeout)
         run: dbus-run-session -- xvfb-run -a --server-args="-screen 0 1280x900x24" bash scripts/e2e/linux-placement.sh
