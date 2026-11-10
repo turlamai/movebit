@@ -14,7 +14,7 @@ enum GeneratedI18n {
         "about.dataFolder": ["zh": "数据目录", "en": "Data folder"],
         "about.dataFolderApplied": ["zh": "已保存，重启 MoveBit 后生效", "en": "Saved — takes effect after MoveBit restarts"],
         "about.dataFolderHint": ["zh": "指向 Resilio / Syncthing 等同步文件夹后，多设备的活跃时间会自动合并累计；更改在重启后生效。", "en": "Point it at a Resilio / Syncthing synced folder and the active time from every device adds up; applies after a restart."],
-        "about.license": ["zh": "以 MIT 授权发布", "en": "Released under the MIT License"],
+        "about.license": ["zh": "以 BUSL-1.1 授权发布（源码可得）", "en": "Released under BUSL-1.1 (source-available)"],
         "about.reportIssue": ["zh": "问题反馈", "en": "Report an Issue"],
         "about.website": ["zh": "官网", "en": "Website"],
         "app.hourMin": ["zh": "{0} 小时 {1} 分钟", "en": "{0} hr {1} min"],

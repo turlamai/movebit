@@ -1,6 +1,54 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor:            TurLamAI (formerly TuringLambdaAI)
+Licensed Work:       MoveBit (the "Work")
+                     The Work is a desktop work-break and hydration
+                     reminder application whose source is made available
+                     for inspection, contribution to the project, and
+                     non-production use under this license.
+Additional Use Grant: You may make internal production use of the Work, but
+                     you may not distribute the Work or a Derivative Work as
+                     a competing break-reminder, wellbeing-reminder, or
+                     reminder-scheduling product or framework, and you may
+                     not offer the Work or a Derivative Work as a hosted or
+                     commercial service.
+Change Date:         2030-09-28
+Change License:      MIT License
+
+Terms
+
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant, above, permitting limited
+production use.
+
+Effective on the Change Date, or the fourth anniversary of the first publicly
+available distribution of a specific version of the Licensed Work under this
+License, whichever comes first, the Licensor hereby grants you rights under
+the terms of the Change License, and the rights granted in the above section
+terminate.
+
+If your use of the Licensed Work does not comply with the requirements of
+this License, then the rights granted to you under this License terminate
+automatically.
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE WORK OR THE USE OR OTHER DEALINGS IN THE
+WORK.
+
+A copy of the MIT License is reproduced below.
+
+----------------------------------------------------------------------
+
 MIT License
 
-Copyright (c) 2026 turinglambdaai
+Copyright (c) 2026 TurLamAI (formerly TuringLambdaAI)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -17,5 +65,5 @@ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+OUT OF OR IN CONNECTION WITH THE WORK OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.

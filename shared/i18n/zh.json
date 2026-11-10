@@ -7,7 +7,7 @@
   "about.dataFolder": "数据目录",
   "about.dataFolderApplied": "已保存，重启 MoveBit 后生效",
   "about.dataFolderHint": "指向 Resilio / Syncthing 等同步文件夹后，多设备的活跃时间会自动合并累计；更改在重启后生效。",
-  "about.license": "以 MIT 授权发布",
+  "about.license": "以 BUSL-1.1 授权发布（源码可得）",
   "about.reportIssue": "问题反馈",
   "about.website": "官网",
   "app.hourMin": "{0} 小时 {1} 分钟",

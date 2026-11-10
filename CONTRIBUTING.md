@@ -1,8 +1,9 @@
 # Contributing to MoveBit
 
-Thank you for looking under the hood. MoveBit is MIT-licensed
-(see [LICENSE](LICENSE)); by submitting a pull request you agree your
-contribution is licensed under MIT along with the rest of the project.
+Thank you for looking under the hood. MoveBit is source-available
+(BUSL-1.1, see [LICENSE](LICENSE)); by submitting a pull request you
+agree your contribution is licensed under BUSL-1.1, with the same MIT
+change date as the rest of the Work.
 
 ## Ground rules
 
