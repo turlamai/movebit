@@ -28,7 +28,7 @@ Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / 
 - An unanswered invitation stays on screen — silence is never counted as completion, and nothing is lost. A reminder firing while one is open merges into the same invitation: always exactly one Mubi, every meaning preserved.
 - While a water / stand / eye cue is open, the menu can offer an optional **20 s eye rest** or **2 min stretch** card: nothing counts down until you press Start, Done is your explicit self-report, and Hide/Esc ends it without claiming a break.
 - Mubi plays by itself between reminders — rolls, tilts, blinks, little hops near its dock — like a pet waiting nearby. System Reduce Motion renders everything static.
-- **Place Mubi…** in the menu (macOS, the Windows tray, and the Linux X11 tray or header) turns the character into a draggable surface for up to 30 seconds; choose **Done placing** (or wait) and the position is remembered per display, scaled and clamped on monitor/DPI changes. On Wayland the compositor owns placement, so the character keeps the notification fallback.
+- **Drag Mubi anywhere** — grabbing the character moves it at any time, in any state, on every desktop; the pointer-through surface only becomes touchable while the cursor rests on Mubi itself, and the dropped position is remembered (scaled and clamped on monitor/DPI changes). **Reset Mubi** in the menu (macOS, the Windows tray, and the Linux X11 tray or header) parks it back at the default corner. On Wayland the compositor owns placement, so the character keeps the notification fallback.
 - There is no fullscreen forced break anywhere in v0.0.1, and no way to opt back into one — that contract was removed on purpose.
 
 ## Rhythm, quiet hours and honesty

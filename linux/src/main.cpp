@@ -262,8 +262,10 @@ struct AppState {
   // Temporary direct-placement mode (issue #104). Input is captured only on
   // the character's own canvas rectangle while this is true; every exit
   // restores the empty X11 input region.
-  bool mubi_placing = false;
-  guint mubi_place_timer = 0;
+  // Free drag (issue #104): pointer-over-window proximity arms the input
+  // region; there is no placement mode.
+  bool mubi_hover = false;
+  guint mubi_proximity_tick_id = 0;
   // Persistent invitation + petting + repertoire (issue #140): while a due
   // cue waits, the canvas+capsule become pettable/clickable and Mubi
   // rotates small begging acts; between reminders it plays by itself.
@@ -285,7 +287,6 @@ struct AppState {
   guint mubi_visit_tick_id = 0;
   int mubi_drag_origin_x = 0;
   int mubi_drag_origin_y = 0;
-  GtkButton* place_button{nullptr};
   bool mubi_labels_always = false;
   bool mubi_quiet = false;
   bool mubi_x11 = false;
@@ -839,17 +840,8 @@ void refresh_header_buttons() {
   refresh_pause_button();
   refresh_focus_button();
   if (g_state.move_button != nullptr) {
-    gtk_button_set_label(g_state.move_button, l10n::t("tray.moveAside").c_str());
+    gtk_button_set_label(g_state.move_button, l10n::t("tray.resetMubi").c_str());
     gtk_widget_set_sensitive(GTK_WIDGET(g_state.move_button), g_state.mubi_x11);
-  }
-  if (g_state.place_button != nullptr) {
-    gtk_button_set_label(
-        g_state.place_button,
-        l10n::t(g_state.mubi_placing ? "tray.placeMubiDone"
-                                     : "tray.placeMubi")
-            .c_str());
-    gtk_widget_set_sensitive(GTK_WIDGET(g_state.place_button),
-                             g_state.mubi_x11);
   }
   refresh_quit_button();
 }
@@ -1061,9 +1053,7 @@ void reload_history();
 // run before the companion window exists (the pose call no-ops there).
 namespace mubi {
 void set_quiet(bool enabled);
-void move_aside();
-void toggle_placement();
-void begin_placement();
+void reset_home();
 }
 
 void on_pause_clicked(GtkButton*, gpointer) {
@@ -1089,11 +1079,7 @@ void on_quit_clicked(GtkButton*, gpointer) {
 // bounded summary; the character settles into its quiet pose. The pose
 // update is local so the toggle works even while the backend is down (#54).
 void on_move_clicked(GtkButton*, gpointer) {
-  if (g_state.mubi_x11) mubi::move_aside();
-}
-
-void on_place_clicked(GtkButton*, gpointer) {
-  if (g_state.mubi_x11) mubi::toggle_placement();
+  if (g_state.mubi_x11) mubi::reset_home();
 }
 
 void on_focus_clicked(GtkButton*, gpointer) {
@@ -2397,10 +2383,10 @@ void start_anim(int state) {
       nullptr);
 }
 
-void begin_placement();
-void end_placement();
+void reset_home();
 void save_placement();
 void set_interactive(bool interactive);
+void start_proximity_poll();
 
 void present(int state, std::string const& message, GtkApplication* app,
              std::int64_t cue_id);
@@ -2468,7 +2454,7 @@ void schedule_play(bool attending) {
         bool const attending = user != nullptr;
         auto& st = g_state;
         st.mubi_play_tick_id = 0;
-        if (st.mubi_motion == "still" || st.mubi_quiet || st.mubi_placing ||
+        if (st.mubi_motion == "still" || st.mubi_quiet ||
             attending != st.mubi_attending) {
           return G_SOURCE_REMOVE;
         }
@@ -2519,8 +2505,7 @@ void move_visit_window(int x, int y) {
 gboolean on_visit_tick(gpointer) {
   auto& s = g_state;
   bool const returning = s.mubi_visit_phase == 3;
-  if (!s.mubi_x11 || s.mubi_quiet || s.mubi_placing ||
-      s.mubi_window == nullptr ||
+  if (!s.mubi_x11 || s.mubi_quiet || s.mubi_window == nullptr ||
       (s.mubi_visit_phase != 1 && !returning)) {
     s.mubi_visit_tick_id = 0;
     s.mubi_visit_phase = 0;
@@ -2565,11 +2550,6 @@ void begin_visit_return() {
 
 void present(int state, std::string const& message, GtkApplication* app,
              std::int64_t cue_id = 0) {
-  // A real presentation (cue, ack, focus) ends placement; idle repaints and
-  // config refreshes must not silently drop the user's drag mode.
-  if (g_state.mubi_placing && (state != 0 || !message.empty())) {
-    end_placement();
-  }
   if (!g_state.mubi_x11) return;  // Wayland: notification fallback only
   if (g_state.acceptance) return;  // headless probe sees the main window only
   if (app == nullptr) app = g_state.app;
@@ -2715,15 +2695,18 @@ void present(int state, std::string const& message, GtkApplication* app,
   // Do not request window-manager keyboard focus for a floating pet.
   gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
   // Pettable surface while an invitation waits (canvas = pet/Done, capsule
-  // = Later); click-through again the moment it settles. Re-apply shortly
-  // after, once the label's allocation has landed this frame.
-  set_interactive(due || s.mubi_placing);
+  // = Later); click-through again the moment it settles. The proximity
+  // poll additionally arms the region while the cursor rests on the window
+  // (free drag). Re-apply shortly after, once the label's allocation has
+  // landed this frame.
+  set_interactive(due);
+  start_proximity_poll();
   g_timeout_add(
       60,
       +[](gpointer user) -> int {
         bool const due = user != nullptr;
-        if (g_state.mubi_attending == due || g_state.mubi_placing) {
-          set_interactive(due || g_state.mubi_placing);
+        if (g_state.mubi_attending == due) {
+          set_interactive(due || g_state.mubi_hover);
         }
         return G_SOURCE_REMOVE;
       },
@@ -2735,10 +2718,10 @@ void present(int state, std::string const& message, GtkApplication* app,
                    &gtk_animations, nullptr);
     }
     if (due && s.mubi_motion != "still" && !s.mubi_quiet &&
-        !s.mubi_placing && gtk_animations) {
+        gtk_animations) {
       schedule_play(true);
     } else if (state == 0 && s.mubi_motion != "still" && !s.mubi_quiet &&
-               !s.mubi_placing && gtk_animations) {
+               gtk_animations) {
       schedule_play(false);
     } else {
       stop_play();
@@ -2810,7 +2793,7 @@ void present(int state, std::string const& message, GtkApplication* app,
         stop_visit();
         s.mubi_visit_phase = 2;
       } else if (due && s.mubi_motion != "still" && !s.mubi_quiet &&
-          !s.mubi_placing && gtk_animations) {
+          gtk_animations) {
         s.mubi_home_x = x;
         s.mubi_home_y = y;
         s.mubi_target_x = std::clamp(
@@ -2917,60 +2900,62 @@ void set_interactive(bool interactive) {
 #endif
 }
 
-void begin_placement() {
-  if (!g_state.mubi_x11 || g_state.mubi_quiet) return;
-  show_idle();
-  if (g_state.mubi_window == nullptr) return;
-  g_state.mubi_placing = true;
-  set_interactive(true);
-  // Recompute once the window has been allocated this frame.
-  g_timeout_add(
-      60,
-      +[](gpointer) -> int {
-        if (g_state.mubi_placing) set_interactive(true);
-        return G_SOURCE_REMOVE;
-      },
-      nullptr);
-  if (g_state.mubi_place_timer != 0) g_source_remove(g_state.mubi_place_timer);
-  int timeout_seconds = 30;
-  if (char const* test_timeout = g_getenv("MOVEBIT_PLACEMENT_TIMEOUT_SECONDS")) {
-    int const parsed = std::atoi(test_timeout);
-    if (parsed > 0) timeout_seconds = parsed;
+// Free drag (issue #104, owner decision 2026-11-10): the input region
+// follows the pointer instead of a placement mode. While the cursor rests
+// anywhere on the companion window the canvas + capsule region becomes
+// sensitive (taps answer, the drag gesture moves the window); the moment
+// it leaves, the empty region restores pointer-through. The due state keeps
+// its own persistent region (pet = Done, capsule = Later).
+gboolean on_proximity_tick(gpointer) {
+  auto& s = g_state;
+  s.mubi_proximity_tick_id = 0;
+  if (!s.mubi_x11 || s.mubi_window == nullptr ||
+      !gtk_widget_get_visible(GTK_WIDGET(s.mubi_window))) {
+    return G_SOURCE_REMOVE;
   }
-  g_state.mubi_place_timer = g_timeout_add_seconds(
-      timeout_seconds,
-      +[](gpointer) -> int {
-        g_state.mubi_place_timer = 0;
-        end_placement();
-        return G_SOURCE_REMOVE;
-      },
-      nullptr);
-  if (g_state.app != nullptr) {
-    ::show_toast_plain(l10n::t("tray.placeMubi"),
-                       {l10n::t("tray.placeHint")},
-                       rivet_app::ReminderKind::water, g_state.app);
+  bool hover = false;
+#ifdef GDK_WINDOWING_X11
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  auto* surface = gtk_native_get_surface(GTK_NATIVE(s.mubi_window));
+  auto* seat = gdk_display_get_default_seat(
+      gtk_widget_get_display(GTK_WIDGET(s.mubi_window)));
+  if (surface != nullptr && seat != nullptr) {
+    double px = -1.0;
+    double py = -1.0;
+    gdk_surface_get_device_position(surface, gdk_seat_get_pointer(seat), &px,
+                                    &py, nullptr);
+    hover = px >= 0 && py >= 0 && px < gdk_surface_get_width(surface) &&
+            py < gdk_surface_get_height(surface);
   }
-  refresh_header_buttons();
+#pragma GCC diagnostic pop
+#endif
+  if (hover != s.mubi_hover) {
+    s.mubi_hover = hover;
+    set_interactive(hover || s.mubi_attending);
+  }
+  s.mubi_proximity_tick_id = g_timeout_add(100, on_proximity_tick, nullptr);
+  return G_SOURCE_REMOVE;
 }
 
-void end_placement() {
-  if (!g_state.mubi_placing) return;
-  g_state.mubi_placing = false;
-  if (g_state.mubi_place_timer != 0) {
-    g_source_remove(g_state.mubi_place_timer);
-    g_state.mubi_place_timer = 0;
-  }
-  save_placement();
-  set_interactive(false);
-  refresh_header_buttons();
+void start_proximity_poll() {
+  auto& s = g_state;
+  if (!s.mubi_x11 || s.mubi_proximity_tick_id != 0) return;
+  s.mubi_proximity_tick_id = g_timeout_add(100, on_proximity_tick, nullptr);
 }
 
-void toggle_placement() {
-  if (g_state.mubi_placing) {
-    end_placement();
-  } else {
-    begin_placement();
-  }
+// One tray action for recovery: clear the drag-placed home and park Mubi at
+// the default corner. Dragging is the everyday way to move; this exists so
+// a misplaced pet is never stuck. Never edits cue completion/snooze.
+void reset_home() {
+  if (!g_state.mubi_x11) return;
+  g_state.mubi_free_x = -1;
+  g_state.mubi_free_y = -1;
+  g_state.mubi_dock = "bottom-right";
+  // Keep the same due cue and readable text when parking Mubi at the
+  // default corner. Re-presenting is visual only: no backend acknowledge.
+  present(g_state.mubi_state, g_state.mubi_message, nullptr,
+          g_state.mubi_cue_id);
 }
 
 void save_placement() {
@@ -3027,7 +3012,7 @@ void save_placement() {
 }
 
 void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
-  if (!g_state.mubi_placing || g_state.mubi_window == nullptr) return;
+  if (g_state.mubi_window == nullptr) return;
 #ifdef GDK_WINDOWING_X11
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -3054,7 +3039,7 @@ void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
 
 void on_drag_update(GtkGestureDrag*, double offset_x, double offset_y,
                     gpointer) {
-  if (!g_state.mubi_placing || g_state.mubi_window == nullptr) return;
+  if (g_state.mubi_window == nullptr) return;
 #ifdef GDK_WINDOWING_X11
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -3075,23 +3060,7 @@ void on_drag_update(GtkGestureDrag*, double offset_x, double offset_y,
 }
 
 void on_drag_end(GtkGestureDrag*, double, double, gpointer) {
-  if (g_state.mubi_placing) save_placement();
-}
-
-// Cycle a local, temporary corner to get out of the user's way.
-// Do not update persisted settings or the Racket reminder ledger.
-void move_aside() {
-  if (!g_state.mubi_x11) return;
-  g_state.mubi_free_x = -1;
-  g_state.mubi_free_y = -1;
-  if (g_state.mubi_dock == "bottom-right") g_state.mubi_dock = "bottom-left";
-  else if (g_state.mubi_dock == "bottom-left") g_state.mubi_dock = "top-left";
-  else if (g_state.mubi_dock == "top-left") g_state.mubi_dock = "top-right";
-  else g_state.mubi_dock = "bottom-right";
-  // Keep the same due cue and readable text when parking Mubi elsewhere.
-  // Re-presenting is visual only: no backend acknowledge/snooze/dismiss.
-  present(g_state.mubi_state, g_state.mubi_message, nullptr,
-          g_state.mubi_cue_id);
+  save_placement();
 }
 
 void show_ack() {
@@ -3322,12 +3291,8 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
   }
   items.push_back(TrayMenuItem(TrayMenuItem::Type::separator));
   if (g_state.mubi_x11) {
-    items.push_back(menu_item(l10n::t("tray.moveAside"),
-                              [] { mubi::move_aside(); }));
-    items.push_back(menu_item(
-        l10n::t(g_state.mubi_placing ? "tray.placeMubiDone"
-                                     : "tray.placeMubi"),
-        [] { mubi::toggle_placement(); }));
+    items.push_back(menu_item(l10n::t("tray.resetMubi"),
+                              [] { mubi::reset_home(); }));
   }
   items.push_back(menu_item(l10n::t(g_state.model.is_paused() ? "tray.resume"
                                                               : "tray.pause"),
@@ -4067,13 +4032,6 @@ void bootstrap(GtkApplication* app) {
   if (!config.welcome_shown) {
     onboarding_show(app);
   }
-  // Deterministic acceptance hook: packaged tests drive the real placement
-  // mode under Xvfb without hunting for a tray/header button.
-  char const* placement_test = g_getenv("MOVEBIT_PLACEMENT_TEST");
-  if (placement_test != nullptr && std::string(placement_test) == "1" &&
-      g_state.mubi_x11) {
-    mubi::begin_placement();
-  }
   // Deterministic acceptance hook for the central cue visit (#104): deliver
   // one real due cue after startup so the X11 e2e can measure approach and
   // return without waiting for a schedule.
@@ -4298,16 +4256,11 @@ void on_activate(GtkApplication* app, gpointer) {
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), focus);
     g_state.focus_button = GTK_BUTTON(focus);
     // On desktops without an SNI watcher, quick actions live here instead.
-    auto* move = gtk_button_new_with_label(l10n::t("tray.moveAside").c_str());
+    auto* move = gtk_button_new_with_label(l10n::t("tray.resetMubi").c_str());
     gtk_widget_set_sensitive(move, FALSE); // enabled on X11 capability report
     g_signal_connect(move, "clicked", G_CALLBACK(on_move_clicked), nullptr);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), move);
     g_state.move_button = GTK_BUTTON(move);
-    auto* place = gtk_button_new_with_label(l10n::t("tray.placeMubi").c_str());
-    gtk_widget_set_sensitive(place, FALSE);
-    g_signal_connect(place, "clicked", G_CALLBACK(on_place_clicked), nullptr);
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), place);
-    g_state.place_button = GTK_BUTTON(place);
     auto* quit = gtk_button_new_with_label(l10n::t("tray.exit").c_str());
     g_signal_connect(quit, "clicked", G_CALLBACK(on_quit_clicked), nullptr);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), quit);
