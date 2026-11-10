@@ -2778,6 +2778,8 @@ void present(int state, std::string const& message, GtkApplication* app,
           y = work_y + px_clear;
         }
       }
+      g_message("mubi dock state=%d free=%lld,%lld -> %d,%d", state,
+                s.mubi_free_x, s.mubi_free_y, x, y);
       XMoveWindow(xdisplay, xid, x, y);
       XFlush(xdisplay);
       // A real health cue gets one short central-third visit; a quiet,
@@ -3012,6 +3014,7 @@ void save_placement() {
 }
 
 void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
+  g_message("mubi drag-begin hover=%d attending=%d", (int)g_state.mubi_hover, (int)g_state.mubi_attending);
   if (g_state.mubi_window == nullptr) return;
 #ifdef GDK_WINDOWING_X11
 #pragma GCC diagnostic push
@@ -3039,6 +3042,7 @@ void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
 
 void on_drag_update(GtkGestureDrag*, double offset_x, double offset_y,
                     gpointer) {
+  g_message("mubi drag-update %.0f %.0f", offset_x, offset_y);
   if (g_state.mubi_window == nullptr) return;
 #ifdef GDK_WINDOWING_X11
 #pragma GCC diagnostic push
