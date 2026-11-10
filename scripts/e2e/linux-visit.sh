@@ -82,8 +82,8 @@ echo "approach: home $idle_x,$idle_y -> centre $x,$y"
 held=1; start=$(date +%s)
 while (( $(date +%s) - start < 14 )); do
   read -r x y <<<"$(geometry)"
-  # Still at (or near) the centre: no auto-return, no drift home.
-  if (( x < idle_x - 120 )); then held=0; break; fi
+  # Still holding in the central third: no auto-return, no drift home.
+  if (( x < 400 || x > 800 )); then held=0; break; fi
   sleep .1
 done
 (( held == 1 )) || { echo "Mubi left the centre unanswered ($x,$y) — invitations must persist (issue #140)" >&2; exit 1; }
