@@ -265,6 +265,9 @@ struct AppState {
   // Free drag (issue #104): pointer-over-window proximity arms the input
   // region; there is no placement mode.
   bool mubi_hover = false;
+  // True from the first drag-update past the gesture threshold until the
+  // drag ends: the click released after such a drag is a move, not a pet.
+  bool mubi_drag_moved = false;
   guint mubi_proximity_tick_id = 0;
   // Persistent invitation + petting + repertoire (issue #140): while a due
   // cue waits, the canvas+capsule become pettable/clickable and Mubi
@@ -2778,8 +2781,6 @@ void present(int state, std::string const& message, GtkApplication* app,
           y = work_y + px_clear;
         }
       }
-      g_message("mubi dock state=%d free=%lld,%lld -> %d,%d", state,
-                s.mubi_free_x, s.mubi_free_y, x, y);
       XMoveWindow(xdisplay, xid, x, y);
       XFlush(xdisplay);
       // A real health cue gets one short central-third visit; a quiet,
@@ -3014,7 +3015,7 @@ void save_placement() {
 }
 
 void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
-  g_message("mubi drag-begin hover=%d attending=%d", (int)g_state.mubi_hover, (int)g_state.mubi_attending);
+  g_state.mubi_drag_moved = false;
   if (g_state.mubi_window == nullptr) return;
 #ifdef GDK_WINDOWING_X11
 #pragma GCC diagnostic push
@@ -3042,7 +3043,12 @@ void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
 
 void on_drag_update(GtkGestureDrag*, double offset_x, double offset_y,
                     gpointer) {
-  g_message("mubi drag-update %.0f %.0f", offset_x, offset_y);
+  // Past the pet threshold this sequence is a move: suppress the tap that
+  // fires on release, or the pet's return-home would re-dock Mubi before
+  // the drag-end save reads the dropped position.
+  if (std::fabs(offset_x) > 6.0 || std::fabs(offset_y) > 6.0) {
+    g_state.mubi_drag_moved = true;
+  }
   if (g_state.mubi_window == nullptr) return;
 #ifdef GDK_WINDOWING_X11
 #pragma GCC diagnostic push
@@ -3065,6 +3071,7 @@ void on_drag_update(GtkGestureDrag*, double offset_x, double offset_y,
 
 void on_drag_end(GtkGestureDrag*, double, double, gpointer) {
   save_placement();
+  g_state.mubi_drag_moved = false;
 }
 
 void show_ack() {
@@ -3165,6 +3172,9 @@ void on_toast_hide(GtkButton*, gpointer) {
 // issue #140: a tap on the character acknowledges with the happy glint,
 // then Mubi heads home.
 void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer) {
+  // A release that follows a real drag is the end of a move, not a pet:
+  // petting must never yank Mubi back to its dock mid-move.
+  if (g_state.mubi_drag_moved) return;
   on_mubi_done(nullptr, nullptr);
 }
 
