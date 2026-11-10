@@ -13,7 +13,7 @@ env:
   # Exact rivet pin (released tag). Family policy: rivet is consumed as a
   # package (this tag install), never as a linked source checkout — keeps
   # local and release builds reproducible against one revision.
-  RIVET_PIN: 9d766b4acab672844093204cb4845ef4ef933d2c
+  RIVET_PIN: a7b3d45e34210722920f7a2099126295c144f444
 jobs:
   validate:
     name: Validate release tag
