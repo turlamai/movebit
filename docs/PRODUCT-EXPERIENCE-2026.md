@@ -2,7 +2,7 @@
 
 **Status: design proposal dated 2026-10-31, NOT shipped behavior, proven adoption or an offer for sale.**  
 **English** · [简体中文](PRODUCT-EXPERIENCE-2026.zh-CN.md)  
-Parent [#86](https://github.com/turlamai/movebit/issues/86). Workstreams: [#87](https://github.com/turlamai/movebit/issues/87), [#88](https://github.com/turlamai/movebit/issues/88), [#89](https://github.com/turlamai/movebit/issues/89), [#90](https://github.com/turlamai/movebit/issues/90), [#91](https://github.com/turlamai/movebit/issues/91), [#92](https://github.com/turlamai/movebit/issues/92), [#94](https://github.com/turlamai/movebit/issues/94). The #51/#54/#56 safety and original-art contracts still hold. Commercial policy is governed by #81/PR #82; this document does not change published MIT source rights.
+Parent [#86](https://github.com/turlamai/movebit/issues/86). Workstreams: [#87](https://github.com/turlamai/movebit/issues/87), [#88](https://github.com/turlamai/movebit/issues/88), [#89](https://github.com/turlamai/movebit/issues/89), [#90](https://github.com/turlamai/movebit/issues/90), [#91](https://github.com/turlamai/movebit/issues/91), [#92](https://github.com/turlamai/movebit/issues/92), [#94](https://github.com/turlamai/movebit/issues/94). The #51/#54/#56 safety and original-art contracts still hold. Commercial policy is governed by #81/PR #82; this document does not change published source rights under BUSL-1.1.
 
 ## The product in one sentence
 

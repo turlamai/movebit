@@ -4,13 +4,13 @@
 
 A desktop health reminder app: water, stand-up and eye-rest cues delivered by **Mubi（沐比）**, a small original character who walks onto your screen at each break, waits — topmost and unmissable — until you answer, and plays by itself while you work. It never steals keyboard focus, never covers your work, and everything outside Mubi itself stays click-through. One Racket domain core (the canonical reminder state machine) drives first-party native hosts on Windows, macOS, and Linux over [Rivet](https://github.com/turlamai/rivet)'s typed RPC.
 
-[![release](https://img.shields.io/github/v/release/turlamai/movebit)](https://github.com/turlamai/movebit/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-c15f3c) [![CI](https://github.com/turlamai/movebit/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/movebit/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turlamai/movebit)](https://github.com/turlamai/movebit/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-c15f3c) [![CI](https://github.com/turlamai/movebit/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/movebit/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 
 **English** · [中文](README.zh-CN.md)
 
 ## Start here
 
-Current preview is free and licensed under MIT. A Free + Pro commercial edition is planned, but no paid activation, checkout or subscription is shipped or enabled yet; see [pricing policy](PRICING.md). Desktop previews for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time. On Linux, Mubi's companion card docks on X11 sessions — Wayland compositors don't let an app place a click-through card, so cues deliver as in-app reminder cards there.
+Current preview is free and source-available under BUSL-1.1 (each version converts to MIT on its change date). A Free + Pro commercial edition is planned, but no paid activation, checkout or subscription is shipped or enabled yet; see [pricing policy](PRICING.md). Desktop previews for macOS, Windows and Linux. Idle detection depends on the desktop session; unsupported Wayland sessions fall back to elapsed time. On Linux, Mubi's companion card docks on X11 sessions — Wayland compositors don't let an app place a click-through card, so cues deliver as in-app reminder cards there.
 
 [Installation, first use, privacy, backup and recovery](docs/USER-GUIDE.md) · [简体中文](docs/USER-GUIDE.zh-CN.md)
 
@@ -137,4 +137,4 @@ Linux packaging scripts (deb / rpm / AppImage) live under `packaging/linux/` and
 
 ## License
 
-[MIT](LICENSE)
+[BUSL-1.1](LICENSE)

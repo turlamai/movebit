@@ -7,7 +7,7 @@
   "about.dataFolder": "Data folder",
   "about.dataFolderApplied": "Saved — takes effect after MoveBit restarts",
   "about.dataFolderHint": "Point it at a Resilio / Syncthing synced folder and the active time from every device adds up; applies after a restart.",
-  "about.license": "Released under the MIT License",
+  "about.license": "Released under BUSL-1.1 (source-available)",
   "about.reportIssue": "Report an Issue",
   "about.website": "Website",
   "app.hourMin": "{0} hr {1} min",

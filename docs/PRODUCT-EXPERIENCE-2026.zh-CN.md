@@ -2,7 +2,7 @@
 
 **状态：2026-10-31 产品评审提案；不代表功能已经实现、用户测试已经通过或 Pro 已售卖。**  
 [English](PRODUCT-EXPERIENCE-2026.md) · **简体中文**  
-总任务 [#86](https://github.com/turlamai/movebit/issues/86)，执行 [#87](https://github.com/turlamai/movebit/issues/87) · [#88](https://github.com/turlamai/movebit/issues/88) · [#89](https://github.com/turlamai/movebit/issues/89) · [#90](https://github.com/turlamai/movebit/issues/90) · [#91](https://github.com/turlamai/movebit/issues/91) · [#92](https://github.com/turlamai/movebit/issues/92) · [#94](https://github.com/turlamai/movebit/issues/94)。基础安全规范仍见 #51、#54、#56；商业决策见 #81 / PR #82。本提案**不**覆盖安全、隐私、离线或 MIT 许可。
+总任务 [#86](https://github.com/turlamai/movebit/issues/86)，执行 [#87](https://github.com/turlamai/movebit/issues/87) · [#88](https://github.com/turlamai/movebit/issues/88) · [#89](https://github.com/turlamai/movebit/issues/89) · [#90](https://github.com/turlamai/movebit/issues/90) · [#91](https://github.com/turlamai/movebit/issues/91) · [#92](https://github.com/turlamai/movebit/issues/92) · [#94](https://github.com/turlamai/movebit/issues/94)。基础安全规范仍见 #51、#54、#56；商业决策见 #81 / PR #82。本提案**不**覆盖安全、隐私、离线或 BUSL-1.1 源码许可。
 
 ## 一句话产品定位
 
@@ -88,7 +88,7 @@
 
 **Pro 价值假设（待验证）：** 额外的可选原创姿态/表现、更多可编排工作节奏和日程配置、具体而诚实的周度自报行动洞察、深度外观/场景个性化。每一项必须提供「对用户有什么用」及三端真实 demo，不是只换个主题颜色或消除 Free 的人为限制。
 
-**定价假设，不是公开价格：** 优先验证一次性买断（可考虑未来大版本有偿升级），只有持续产生昂贵服务时才评估订阅。先做愿付费访谈和产品演示；**不在已发布构建开启真实收费/销售**，直到 #81 / PR #82、Permit 权益验证、Commerce 交易核验与恢复/退款、商户准入和跨端验收全部通过。MIT 源码授权永不被付费文件撤销。
+**定价假设，不是公开价格：** 优先验证一次性买断（可考虑未来大版本有偿升级），只有持续产生昂贵服务时才评估订阅。先做愿付费访谈和产品演示；**不在已发布构建开启真实收费/销售**，直到 #81 / PR #82、Permit 权益验证、Commerce 交易核验与恢复/退款、商户准入和跨端验收全部通过。已发布版本的源码授权（BUSL-1.1，变更日转 MIT）永不被付费文件追溯撤销。
 
 ## 交付阶段与量化门禁
 

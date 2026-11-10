@@ -4,13 +4,13 @@
 
 一款桌面健康提醒应用：喝水、起身、护眼三类提醒，由原创小角色**沐比（Mubi）**交付——每次休息它都会走到你的工作区中央，置顶等你回应；你不工作时它就在旁边自己玩耍。它从不抢键盘焦点、从不遮挡你的工作，除了沐比本体以外的屏幕全部鼠标穿透。一份 Racket 领域核心（唯一的提醒状态机）通过 [Rivet](https://github.com/turlamai/rivet) 的类型化 RPC 驱动 Windows、macOS、Linux 上的第一方原生宿主。
 
-[![release](https://img.shields.io/github/v/release/turlamai/movebit)](https://github.com/turlamai/movebit/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-c15f3c) [![CI](https://github.com/turlamai/movebit/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/movebit/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/turlamai/movebit)](https://github.com/turlamai/movebit/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-c15f3c) [![CI](https://github.com/turlamai/movebit/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/movebit/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 
 [English](README.md) · **中文**
 
 ## 开始使用
 
-当前预览版免费且采用 MIT 源码许可。未来计划提供 Free + Pro 商业版本，但目前尚未交付或启用付费激活、结账及订阅；详见[收费政策](PRICING.zh-CN.md)。 提供 macOS、Windows、Linux 桌面预览。空闲检测依赖桌面会话；不支持的 Wayland 会话会回退为经过时间计时。Linux 上沐比角色卡在 X11 会话停靠——Wayland 合成器不允许应用放置穿透卡片，提醒在该类会话改为应用内提醒卡投递。
+当前预览版免费，源码以 BUSL-1.1 提供（每个版本在其变更日转为 MIT）。未来计划提供 Free + Pro 商业版本，但目前尚未交付或启用付费激活、结账及订阅；详见[收费政策](PRICING.zh-CN.md)。 提供 macOS、Windows、Linux 桌面预览。空闲检测依赖桌面会话；不支持的 Wayland 会话会回退为经过时间计时。Linux 上沐比角色卡在 X11 会话停靠——Wayland 合成器不允许应用放置穿透卡片，提醒在该类会话改为应用内提醒卡投递。
 
 [安装、首次使用、隐私与备份恢复](docs/USER-GUIDE.zh-CN.md) · [English](docs/USER-GUIDE.md)
 

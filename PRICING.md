@@ -17,7 +17,7 @@ Policy revision: `2026-10-commercial-1` (2026-10-30). This supersedes the 2026-1
 - Use [Permit](https://github.com/turlamai/permit) Protocol v1 for signed local rights in the **shared Racket domain core**. Windows/macOS/Linux hosts display typed entitlement states; they do not replicate cryptographic or policy logic.
 - Use [Commerce](https://github.com/turlamai/commerce) for optional hosted checkout, verified payment-to-rights issuance and claim/restore. No payment-provider secret or Permit issuer private key ships inside applications. A successful browser redirect is not proof of payment.
 - Free mode needs neither a login nor a network connection. Purchased rights should be offline-verifiable under the selected policy. Signed update verification and product-license verification use separate trust and keys.
-- Paid entitlements govern only official product features/services, not rights already granted by the MIT [source license](LICENSE). Keep source use, modification and distribution terms truthful and independent of paid binaries or services.
+- Paid entitlements govern only official product features/services, not rights already granted by the BUSL-1.1 [source license](LICENSE). Keep source use, modification and distribution terms truthful and independent of paid binaries or services.
 
 ## Rollout gates
 
