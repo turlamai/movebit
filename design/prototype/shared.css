@@ -1,0 +1,80 @@
+/* ==== MoveBit 原型共享壳层 — tokens 与组件，见 design/DESIGN.md ====
+   壳层 tokens 提取自 macos-host MainView.swift Palette / linux main.cpp / windows MainWindow.xaml；
+   沐比角色 tokens 提取自 assets/mubi/tokens.json（双主题独立艺术指导，角色色恒定）。 */
+:root {
+  --bg: #F5F2EB; --surface: #FFFFFF; --line: #EAE2D6;
+  --ink: #26241F; --ink-2: #6E6A5E; --ink-3: #A39B8D;
+  --accent: #C25E3E; --accent-soft: #FBEFE2;
+  --track: #EAE6DC; --chart: #D2C8B2;
+  --running: #16A34A; --paused: #EA580C; --water: #3E7EC2;
+  --mubi-body: #F6EEDF; --mubi-light: #FBF5E9; --mubi-deep: #E8D7BE;
+  --mubi-shadow: #D8C8B5; --mubi-ink: #2D2A28; --mubi-fin: #F1E4CC;
+  --mubi-capsule: #FFFDFB; --mubi-capsule-ink: #2D2A28; --mubi-rim: .45;
+  --cue-water: #62B6FF; --cue-move: #FF8C6B; --cue-eyes: #65C8B8;
+  --cue-done: #F2C96B; --cue-focus: #8DA1B5;
+}
+.dark {
+  --bg: #201D1A; --surface: #2A2622; --line: #3A352E;
+  --ink: #EDE7DA; --ink-2: #B0A696; --ink-3: #7A7264;
+  --accent: #D97B54; --accent-soft: #3A2A20;
+  --track: #38332D; --chart: #4E4638;
+  --water: #7AB0E8;
+  --mubi-capsule: #33302B; --mubi-capsule-ink: #F1EEE7; --mubi-rim: .3;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  min-height: 100vh; display: grid; place-items: center; padding: 40px 24px;
+  background: radial-gradient(1200px 800px at 20% 0%, #efece6, #e4e0d8 60%, #d9d4ca);
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased; color: var(--ink);
+}
+.window {
+  position: relative;
+  width: 1120px; max-width: 100%; height: 740px; border-radius: 12px; overflow: hidden;
+  display: flex; flex-direction: column;
+  background: var(--bg); color: var(--ink);
+  box-shadow: 0 1px 2px rgba(31,29,26,.10), 0 12px 32px rgba(31,29,26,.18), 0 32px 80px rgba(31,29,26,.22);
+  transition: background .12s ease, color .12s ease;
+}
+.titlebar {
+  height: 44px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 14px;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.lights { display: flex; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.titlebar .t { font-size: 13px; font-weight: 600; color: var(--ink-2); letter-spacing: .2px; }
+.titlebar .sp { flex: 1; }
+.iconbtn {
+  width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--line); background: var(--track);
+  color: var(--ink-2); display: grid; place-items: center; cursor: pointer; font-size: 13px;
+}
+/* 卡片 = surface 层；图块 = track 层；层级三层封顶，line 分隔 */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+.tile { background: var(--track); border-radius: 12px; padding: 12px; }
+.section { font-size: 13px; color: var(--ink-2); }
+.caption { font-size: 11px; color: var(--ink-2); }
+.foot-note { font-size: 11px; color: var(--ink-3); }
+.row-label { font-size: 13px; color: var(--ink); }
+.row-strong { font-size: 14px; font-weight: 600; color: var(--ink); }
+.big-number { font-size: 44px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.metric-value { font-size: 20px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.accent-label { font-size: 11.5px; font-weight: 600; color: var(--accent); }
+.btn {
+  height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 7px;
+  font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--running); } .dot.paused { background: var(--paused); }
+kbd {
+  font-family: inherit; font-size: 10.5px; color: var(--ink-2);
+  background: var(--track); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+}
+/* 原型注释条（非产品 UI）：亮暗切换提示与状态说明；普通流式子元素，不遮内容 */
+.proto-note {
+  height: 30px; flex: none;
+  display: flex; align-items: center; gap: 14px; padding: 0 20px;
+  border-top: 1px solid var(--line); background: var(--surface); font-size: 11px; color: var(--ink-3);
+}
+.proto-note .sp { flex: 1; }

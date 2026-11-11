@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MoveBit — 多显示器桌面（英雄屏）</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* ==== 桌面场景：沐比在指针所在工作区发出合并邀请 ==== */
+  .desktop { position: relative; width: 1240px; max-width: 100%; height: 780px; border-radius: 14px; overflow: hidden;
+    display: flex; flex-direction: column; background: var(--bg); color: var(--ink);
+    box-shadow: 0 1px 2px rgba(31,29,26,.10), 0 12px 32px rgba(31,29,26,.18), 0 32px 80px rgba(31,29,26,.22);
+    transition: background .12s ease; }
+  .menubar { height: 26px; flex: none; display: flex; align-items: center; gap: 18px; padding: 0 14px;
+    background: rgba(24,24,26,.78); color: rgba(255,255,255,.92); font-size: 12px; }
+  .menubar .sp { flex: 1; }
+  .tray-zone { position: relative; display: flex; align-items: center; }
+  .tray-tip { position: absolute; right: -6px; top: 34px; z-index: 30; white-space: nowrap;
+    background: var(--mubi-capsule); color: var(--mubi-capsule-ink); font-size: 11.5px; font-weight: 600;
+    padding: 6px 10px; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+  .wall { flex: 1; position: relative; display: flex; align-items: flex-end; justify-content: center;
+    gap: 34px; padding: 0 40px 64px;
+    background: radial-gradient(1100px 700px at 24% 0%, var(--accent-soft), var(--bg) 55%, var(--track)); }
+  .monitor { background: #1c1c1e; border-radius: 12px; padding: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.18); }
+  .monitor .screen { position: relative; border-radius: 6px; overflow: hidden; background: var(--bg); color: var(--ink); }
+  .monitor.primary { width: 720px; } .monitor.primary .screen { height: 400px; }
+  .monitor.secondary { width: 400px; } .monitor.secondary .screen { height: 250px; }
+  .stand { width: 74px; height: 16px; margin: 0 auto; background: #1c1c1e; border-radius: 0 0 6px 6px; opacity: .9; }
+  /* 编辑器假内容（主屏）：chrome 退后，内容只是氛围 */
+  .editor { height: 100%; display: flex; }
+  .editor .gutter { width: 34px; border-right: 1px solid var(--line); padding-top: 34px; }
+  .editor .ln { height: 8px; border-radius: 4px; background: var(--track); margin: 9px 8px; }
+  .editor .code { flex: 1; padding: 34px 18px 0; }
+  .editor .cl { height: 9px; border-radius: 4px; background: var(--track); margin-bottom: 12px; }
+  .editor .cl.w1 { width: 52%; } .editor .cl.w2 { width: 38%; } .editor .cl.w3 { width: 64%; } .editor .cl.w4 { width: 45%; } .editor .cl.w5 { width: 30%; }
+  .editor .bar { position: absolute; top: 0; left: 0; right: 0; height: 26px; display: flex; align-items: center; gap: 7px;
+    padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .editor .bar i { width: 9px; height: 9px; border-radius: 50%; }
+  .editor .bar i:nth-child(1) { background: #ff5f57; } .editor .bar i:nth-child(2) { background: #febc2e; } .editor .bar i:nth-child(3) { background: #28c840; }
+  /* 副屏：文档假内容 */
+  .doc { height: 100%; padding: 44px 26px 0; }
+  .doc .p { height: 8px; border-radius: 4px; background: var(--track); margin-bottom: 11px; }
+  .doc .p.w1 { width: 72%; } .doc .p.w2 { width: 88%; } .doc .p.w3 { width: 58%; } .doc .p.w4 { width: 80%; } .doc .p.w5 { width: 40%; }
+  /* 沐比与合并邀请：身体高度 M 78；胶囊至多三行、左对齐 */
+  .companion { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 10;
+    display: flex; flex-direction: column; align-items: center; gap: 7px; }
+  .capsule { max-width: 380px; background: var(--mubi-capsule); color: var(--mubi-capsule-ink);
+    border-radius: 12px; padding: 10px 14px; font-size: 12px; font-weight: 600; line-height: 1.55;
+    text-align: left; box-shadow: 0 1px 0 rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.14); }
+  .capsule .kind { display: flex; align-items: baseline; gap: 6px; }
+  .capsule .kind + .kind { margin-top: 3px; }
+  .later { align-self: center; background: color-mix(in srgb, var(--mubi-capsule) 92%, transparent);
+    color: var(--mubi-capsule-ink); font-size: 11.5px; font-weight: 600; padding: 4px 12px;
+    border-radius: 999px; border: 1px solid rgba(0,0,0,.08); box-shadow: 0 3px 10px rgba(0,0,0,.16); }
+  .mubi { display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,.10)); cursor: pointer; }
+  .companion .pet-hint { font-size: 10.5px; color: var(--mubi-capsule-ink); opacity: .62; letter-spacing: .3px; }
+  /* 图例：交互契约速览（原型注释，非产品 UI） */
+  .legend { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 10px 20px;
+    border-top: 1px solid var(--line); background: var(--surface); font-size: 11px; color: var(--ink-2); }
+  .legend b { font-weight: 600; color: var(--ink); }
+  .legend .sep { color: var(--ink-3); opacity: .6; }
+  .legend .sp { flex: 1; }
+</style>
+</head>
+<body>
+  <div class="desktop" id="app">
+    <div class="menubar">
+      <span>沐比的工作台</span><span>文件</span><span>编辑</span><span>显示</span>
+      <span class="sp"></span>
+      <span class="tray-zone">
+        <span class="tray-tip">MoveBit · 今日活跃 3 小时 12 分钟 · 久坐 34/50 分钟</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="#8FCBFF" stroke="#4FA7EE" stroke-width="1.2"><path d="M12 3c3.4 4.2 6 7.6 6 11a6 6 0 0 1-12 0c0-3.4 2.6-6.8 6-11z"/></svg>
+      </span>
+      <span>10:47</span>
+    </div>
+    <div class="wall">
+      <div>
+        <div class="monitor primary">
+          <div class="screen">
+            <div class="editor">
+              <div class="gutter"><div class="ln"></div><div class="ln"></div><div class="ln"></div><div class="ln"></div><div class="ln"></div><div class="ln"></div><div class="ln"></div><div class="ln"></div></div>
+              <div class="code"><div class="cl w1"></div><div class="cl w3"></div><div class="cl w2"></div><div class="cl w4"></div><div class="cl w3"></div><div class="cl w5"></div><div class="cl w2"></div></div>
+              <div class="bar"><i></i><i></i><i></i></div>
+            </div>
+            <div class="companion">
+              <div class="capsule">
+                <div class="kind">🚶 该起身动一动了 · 已连续工作 52 分钟，今天第 2 次提醒。</div>
+                <div class="kind">💧 喝口水吧 · 今天第 1 次提醒。</div>
+              </div>
+              <div class="later">稍后再说</div>
+              <svg class="mubi" width="90" height="105" viewBox="0 0 120 140" role="img" aria-label="沐比正在等待回答">
+                <defs>
+                  <linearGradient id="mubiBodyA" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="var(--mubi-light)"/>
+                    <stop offset=".55" stop-color="var(--mubi-body)"/>
+                    <stop offset="1" stop-color="var(--mubi-deep)"/>
+                  </linearGradient>
+                </defs>
+                <ellipse cx="60" cy="131" rx="26" ry="4" fill="var(--mubi-shadow)" opacity=".55"/>
+                <path d="M 52 24 C 47 13, 40 7, 32 6 C 30 14, 36 23, 45 27 C 48 28.2, 51 26.5, 52 24 Z" fill="var(--mubi-fin)"/>
+                <path d="M 74 23 C 71 14, 66.5 8, 60.5 6 C 58.5 13, 62.5 21.5, 70 25 C 72.3 25.9, 73.8 25, 74 23 Z" fill="var(--mubi-fin)"/>
+                <path d="M 58 16 C 82 18, 106 46, 109 82 C 111 104, 92 124, 60 124 C 33 124, 12.5 106, 11 84 C 9.5 52, 34 14, 58 16 Z" fill="url(#mubiBodyA)"/>
+                <ellipse cx="42" cy="34" rx="20" ry="14" fill="#fff" opacity="var(--mubi-rim)"/>
+                <ellipse cx="46.5" cy="65" rx="3" ry="3.6" fill="var(--mubi-ink)"/>
+                <ellipse cx="73.5" cy="65" rx="3" ry="3.6" fill="var(--mubi-ink)"/>
+                <path d="M 79 71 C 79.6 74, 77.8 76, 76.4 76 C 75 76, 74.4 74, 75.4 72 C 76.2 70.6, 77.6 69.4, 79 71 Z" fill="var(--cue-water)" opacity=".85"/>
+              </svg>
+              <div class="pet-hint">摸摸沐比 = 做到了</div>
+            </div>
+          </div>
+        </div>
+        <div class="stand"></div>
+      </div>
+      <div>
+        <div class="monitor secondary">
+          <div class="screen">
+            <div class="doc"><div class="p w2"></div><div class="p w1"></div><div class="p w3"></div><div class="p w4"></div><div class="p w2"></div><div class="p w5"></div><div class="p w4"></div><div class="p w1"></div></div>
+          </div>
+        </div>
+        <div class="stand" style="width:56px"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <b>合并邀请</b>（久坐 + 喝水，一条沐比）<span class="sep">·</span>topmost 等待、不抢焦点<span class="sep">·</span>点击外部无反应、外部全穿透<span class="sep">·</span>「稍后再说」= 每类延后 10 活跃分钟<span class="sep">·</span>托盘常备 做到了 / 稍后再说 / 隐藏
+      <span class="sp"></span>
+      <button class="iconbtn" id="themeBtn" title="切换亮暗主题">◐</button>
+    </div>
+  </div>
+  <script>
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.getElementById('app').classList.toggle('dark');
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MoveBit — 首次见面（onboarding）</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* ==== 一屏、一句话、一个开始（#90 less is more）：无向导、无可配置项 ==== */
+  .window { width: 460px; height: 520px; }
+  .ob { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center;
+    padding: 28px 32px 24px; position: relative; }
+  .ob .mubi-slot { height: 150px; display: grid; place-items: end center; }
+  .ob h1 { font-size: 26px; font-weight: 700; margin-top: 10px; }
+  .ob .line { font-size: 14.5px; color: var(--ink-2); margin-top: 8px; line-height: 1.6; }
+  .ob .grow { flex: 1; }
+  .ob .privacy { font-size: 11.5px; color: var(--ink-3); }
+  .ob .start { width: 100%; height: 36px; margin-top: 12px; border-radius: 8px; border: none;
+    background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; }
+  .ob .hint { font-size: 11px; color: var(--ink-3); margin-top: 8px; }
+  .ob .themebtn { position: absolute; top: 10px; right: 10px; }
+  .ob .proto { position: absolute; bottom: 6px; right: 12px; font-size: 10px; color: var(--ink-3); opacity: .7; }
+</style>
+</head>
+<body>
+  <div class="window" id="app">
+    <div class="ob">
+      <button class="iconbtn themebtn" id="themeBtn" title="切换亮暗主题">◐</button>
+      <div class="mubi-slot">
+        <svg class="mubi" width="115" height="135" viewBox="0 0 120 140" role="img" aria-label="沐比">
+          <defs>
+            <linearGradient id="mubiBodyB" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="var(--mubi-light)"/>
+              <stop offset=".55" stop-color="var(--mubi-body)"/>
+              <stop offset="1" stop-color="var(--mubi-deep)"/>
+            </linearGradient>
+          </defs>
+          <ellipse cx="60" cy="131" rx="26" ry="4" fill="var(--mubi-shadow)" opacity=".55"/>
+          <path d="M 52 24 C 47 13, 40 7, 32 6 C 30 14, 36 23, 45 27 C 48 28.2, 51 26.5, 52 24 Z" fill="var(--mubi-fin)"/>
+          <path d="M 74 23 C 71 14, 66.5 8, 60.5 6 C 58.5 13, 62.5 21.5, 70 25 C 72.3 25.9, 73.8 25, 74 23 Z" fill="var(--mubi-fin)"/>
+          <path d="M 58 16 C 82 18, 106 46, 109 82 C 111 104, 92 124, 60 124 C 33 124, 12.5 106, 11 84 C 9.5 52, 34 14, 58 16 Z" fill="url(#mubiBodyB)"/>
+          <ellipse cx="42" cy="34" rx="20" ry="14" fill="#fff" opacity="var(--mubi-rim)"/>
+          <ellipse cx="46.5" cy="65" rx="3" ry="3.6" fill="var(--mubi-ink)"/>
+          <ellipse cx="73.5" cy="65" rx="3" ry="3.6" fill="var(--mubi-ink)"/>
+        </svg>
+      </div>
+      <h1>你好，我是沐比</h1>
+      <div class="line">到点了我会走过来，提醒你喝水、起身或看看远处。</div>
+      <div class="grow"></div>
+      <div class="privacy">所有数据只留在本机。</div>
+      <button class="start">开始</button>
+      <div class="hint">默认节奏随时可以调整。</div>
+      <div class="proto">原型 v0.1 · 按 ◐ 切换亮暗</div>
+    </div>
+  </div>
+  <script>
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.getElementById('app').classList.toggle('dark');
+    });
+  </script>
+</body>
+</html>
