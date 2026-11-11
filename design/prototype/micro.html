@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MoveBit — 微休息卡三态</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* ==== 微休息卡：顶部居中浮层、不激活不抢焦点；细进度条收缩；显式 opt-in 才计时 ==== */
+  .body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; padding: 24px; background:
+    radial-gradient(900px 600px at 50% 0%, var(--accent-soft), var(--bg) 60%); }
+  .state-chip { align-self: flex-start; }
+  .row { display: flex; align-items: center; gap: 14px; width: 560px; max-width: 100%; }
+  .row > .state-chip { width: 76px; flex: none; text-align: right; font-size: 11px; font-weight: 600; color: var(--ink-3); }
+  .microcard { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    padding: 16px 20px; box-shadow: 0 8px 24px rgba(31,29,26,.10); }
+  .microcard .title { font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .microcard .title .icon { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--cue-eyes) 18%, transparent); color: var(--cue-eyes); font-size: 12px; }
+  .microcard .title .icon.move { background: color-mix(in srgb, var(--cue-move) 18%, transparent); color: var(--cue-move); }
+  .microcard .hint { font-size: 12.5px; color: var(--ink-2); margin-top: 5px; line-height: 1.5; }
+  .microcard .actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .microcard .sp { flex: 1; }
+  .count { font-size: 12px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .shrink { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-top: 12px; }
+  .shrink > i { display: block; height: 100%; background: var(--cue-eyes); border-radius: 2px; }
+  .shrink.move > i { background: var(--cue-move); }
+  .btn.go { background: var(--accent); border-color: transparent; color: #fff; height: 30px; }
+  .btn.done { background: var(--accent-soft); border-color: transparent; color: var(--accent); height: 30px; }
+  .finishtext { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+  .foot-note { font-size: 11px; color: var(--ink-3); margin-top: 8px; }
+</style>
+</head>
+<body>
+  <div class="window" id="app">
+    <div class="titlebar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="t">MoveBit — 微休息（护眼 / 引导活动）</div>
+      <div class="sp"></div>
+      <button class="iconbtn" id="themeBtn" title="切换亮暗主题">◐</button>
+    </div>
+    <div class="body">
+      <div class="row">
+        <div class="state-chip">邀请态</div>
+        <div class="microcard">
+          <div class="title"><span class="icon">👀</span>站 20 秒，看看远处</div>
+          <div class="hint">20 秒看远，点「开始」后计时；随时可以停。</div>
+          <div class="actions"><button class="btn go">开始</button></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="state-chip">进行态</div>
+        <div class="microcard">
+          <div class="title"><span class="icon">👀</span>站 20 秒，看看远处<span class="sp"></span><span class="count">还剩 12 秒</span></div>
+          <div class="hint">休息好了就点「做好了」；不点不会算完成。</div>
+          <div class="actions"><button class="btn done">做好了</button><span class="sp"></span><span class="caption">Esc / 点击卡片外 = 隐藏（不算完成）</span></div>
+          <div class="shrink"><i style="width: 60%"></i></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="state-chip">结束态</div>
+        <div class="microcard">
+          <div class="finishtext">时间到了。休息好了就点托盘里的「做到了」；不点不会自动算完成。</div>
+          <div class="foot-note">卡片随即收起；倒计时走完 ≠ 完成，完成永远自我报告。</div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="state-chip">引导活动</div>
+        <div class="microcard">
+          <div class="title"><span class="icon move">🚶</span>跟沐比一起动一动</div>
+          <div class="hint">用 2 分钟：站起来，肩膀向后绕两圈，再原地走几步；不舒服就停。</div>
+          <div class="actions"><button class="btn go">开始</button></div>
+          <div class="shrink move"><i style="width: 8%"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="proto-note">
+      <span>同一张卡的三态（顶部居中、视线内）· 逐秒倒计时显式 opt-in · 永不锁定、静音、可随时停</span>
+      <span class="sp"></span>
+      <span>语义色 --cue-eyes / --cue-move 只做小面积点缀 · 原型 v0.1 · 按 ◐ 切换亮暗</span>
+    </div>
+  </div>
+  <script>
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.getElementById('app').classList.toggle('dark');
+    });
+  </script>
+</body>
+</html>
