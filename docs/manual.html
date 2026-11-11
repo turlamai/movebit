@@ -84,13 +84,13 @@
         <h2 class="manual-h2"><span class="h2-emoji">🚀</span><span data-i18n="qs.title">五分钟上手</span></h2>
         <p data-i18n="qs.lead">安装、打开、让沐比送出第一条提醒。教程到这里就结束了——本页其余内容都是可选的。</p>
         <ol>
-          <li data-i18n="qs.s1"><strong>安装。</strong>到 <a href="https://github.com/turlamai/movebit/releases/latest">Releases</a> 页下载：Windows 双击 .msi，macOS 把 .dmg 里的 MoveBit 拖进「应用程序」，Linux 用 .deb / .rpm / .AppImage。</li>
-          <li data-i18n="qs.s2"><strong>首次启动。</strong>一个小巧的首启流程：定喝水间隔（30 / 45 / 60 分钟）、久坐间隔（45 / 60 / 90 分钟）、要不要提示音。选完点「开始使用」。不想选就点「跳过」，全部用默认值。</li>
-          <li data-i18n="qs.s3"><strong>认识沐比。</strong>屏幕边缘的小家伙就是提醒本身：到点它举杯、起身、闭眼，配一句明确的健康建议。卡片几秒后收起，「做到了 / 稍后 / 隐藏」就在卡片上等你处理。</li>
+          <li data-i18n="qs.s1"><strong>安装。</strong>到 <a href="https://github.com/turlamai/movebit/releases/latest">Releases</a> 页下载：Windows 双击 .msi，macOS 把 .dmg 里的 MoveBit 拖进「应用程序」，Linux 用 .deb / .rpm / .AppImage，也有 Flatpak 包。</li>
+          <li data-i18n="qs.s2"><strong>首次启动。</strong>一个见面屏：沐比自我介绍，点「开始使用」即可。均衡节奏与提示音默认都已备好；之后想调，设置里恰好四个控件。</li>
+          <li data-i18n="qs.s3"><strong>认识沐比。</strong>走到屏幕中央的小家伙就是提醒本身：到点它举杯、起身、闭眼，配一句明确的健康建议，邀请会一直等你——点别处它也不走。抚摸它算做到了；托盘里有做到了 / 稍后再说 / 隐藏。</li>
           <li data-i18n="qs.s4"><strong>完成。</strong>关掉主窗口（Windows / macOS 缩进托盘继续计时，Linux 关窗即结束会话）。到点沐比会来找你——看一眼就懂，做不做由你。</li>
         </ol>
         
-        <p class="manual-hint" data-i18n="qs.hint">预期结果：设置提醒间隔后，等待第一条提醒，选择“做到了”或“稍后”；再检查提醒状态是否记录。若没有提醒，检查应用运行状态和系统通知权限。</p>
+        <p class="manual-hint" data-i18n="qs.hint">预期结果：等第一条邀请出现，抚摸沐比或在托盘点「做到了」；再到主窗口看今日记录是否如实。若没有提醒，检查应用是否在运行、是否处于免打扰时段或专注模式。</p>
       </section>
 
       <!-- =================== 工作计时 =================== -->
@@ -104,19 +104,19 @@
         </ul>
         <div class="callout">
           <div class="callout-title">🚶 <span data-i18n="timing.callout.title">离开就是休息</span></div>
-          <span data-i18n="timing.callout.body">键鼠空闲超过「离开多久算休息」（默认 5 分钟），这段时间算作真正的休息，久坐计时自动重置。</span>
+          <span data-i18n="timing.callout.body">键鼠空闲超过产品默认的离席判定（5 分钟），这段时间算作真正的休息，久坐计时自动重置。</span>
         </div>
       </section>
 
       <!-- =================== 强制休息锁屏 =================== -->
       <section class="manual-section" id="breaks">
         <h2 class="manual-h2"><span class="h2-emoji">🐹</span><span data-i18n="breaks.title">沐比角色（提醒的交付方式）</span></h2>
-        <p data-i18n="breaks.lead">到点的提醒由沐比在屏幕边缘交付：喝水举杯、起身拉伸、护眼闭眼，配一句明确的建议文字。它不锁屏、不抢焦点、不拦截输入——面板整体鼠标穿透。</p>
+        <p data-i18n="breaks.lead">到点的提醒由沐比亲自交付：它走到屏幕中央，喝水举杯、起身拉伸、护眼闭眼，配一句明确的建议文字。它不锁屏、不抢焦点、不拦截输入——除沐比本体与「稍后再说」标签外，其余全部鼠标穿透。</p>
         <ul>
           <li data-i18n="breaks.u1"><strong>三种手势。</strong>久坐→起身拉伸、喝水→举小蓝杯、护眼→闭眼远眺；多个提醒同时到期会合并成一条，含义与操作全部保留。</li>
-          <li data-i18n="breaks.u2"><strong>三种回应。</strong>「做到了」是自我报告（不代表实测完成），「稍后」把提醒按设定延后，「隐藏」只是收起——下个周期照常来。</li>
-          <li data-i18n="breaks.u3"><strong>专注模式。</strong>演示、会议时开「专注」——托盘菜单（Windows / macOS）或主窗口头栏按钮（全平台）：提醒安静排队，退出专注后合并成一条有界汇总，绝不堆积轰炸。</li>
-          <li data-i18n="breaks.u4"><strong>个性可选。</strong>「提醒设置」里可调沐比尺寸（S/M/L）、动效（静止 / 轻柔 / 活泼）、停靠位置（右下 / 左下 / 右上）与标签显示。</li>
+          <li data-i18n="breaks.u2"><strong>三种回应。</strong>「做到了」是自我报告（不代表实测完成），「稍后再说」延后 10 活跃分钟，「隐藏」只是收起——下个周期照常来。</li>
+          <li data-i18n="breaks.u3"><strong>专注模式。</strong>演示、会议时开「专注」——托盘菜单（全平台；无托盘环境用主窗口头栏按钮）：提醒安静排队，退出专注后合并成一条有界汇总，绝不堆积轰炸。</li>
+          <li data-i18n="breaks.u4"><strong>默认即刚好。</strong>沐比的尺寸、动效与停靠位置都是产品默认；「提醒设置」恰好四个控件：提示音、免打扰时段、开机自启、语言。</li>
         </ul>
         <div class="callout">
           <div class="callout-title">✅ <span data-i18n="breaks.callout.title">没有全屏强制休息</span></div>
@@ -129,8 +129,8 @@
         <h2 class="manual-h2"><span class="h2-emoji">💧</span><span data-i18n="water.title">护眼与喝水</span></h2>
         <p data-i18n="water.lead">两个轻量提醒：喝水按独立周期循环，护眼建议你看向远处。它们都由沐比交付，从不打断操作。</p>
         <ul>
-          <li data-i18n="water.u1"><strong>喝水。</strong>「喝水提醒间隔」默认 30 分钟，到点沐比举杯；「做到了」自我报告，「稍后 N 分钟」延后，「隐藏」收起。</li>
-          <li data-i18n="water.u2"><strong>护眼。</strong>「微休息」默认每 30 分钟一次，沐比闭上眼睛提醒你看向远处；卡片自然走完即算回应，点击或按 Esc 提前收起。</li>
+          <li data-i18n="water.u1"><strong>喝水。</strong>喝水默认每 60 活跃分钟，到点沐比举杯；抚摸算做到了，「稍后再说」延后，托盘可「隐藏」。</li>
+          <li data-i18n="water.u2"><strong>护眼。</strong>护眼默认每 20 活跃分钟，沐比闭眼提醒你看远 20 秒；托盘里也有「20 秒护眼」随时开一轮。倒计时走完只是结束提示——不点托盘「做到了」，不算完成。</li>
           <li data-i18n="water.u3"><strong>提示音。</strong>「提示音」只作用于提醒出现的一刻；专注模式下一切静默。</li>
         </ul>
       </section>
@@ -138,22 +138,22 @@
       <!-- =================== 托盘行为 =================== -->
       <section class="manual-section" id="tray">
         <h2 class="manual-h2"><span class="h2-emoji">🫗</span><span data-i18n="tray.title">托盘与主窗口</span></h2>
-        <p data-i18n="tray.lead">Windows 上 MoveBit 缩在系统托盘，macOS 住在菜单栏；Linux 没有托盘，主窗口就是中心。</p>
+        <p data-i18n="tray.lead">Windows 上 MoveBit 缩在系统托盘，macOS 住在菜单栏；Linux 走 StatusNotifier 托盘（GNOME 需 AppIndicator 扩展），没有托盘环境时主窗口头栏按钮兜底。</p>
         <ul>
-          <li data-i18n="tray.u1"><strong>打开设置。</strong>Windows / macOS：点托盘水滴图标打开主窗口；Linux：直接打开主窗口即可。</li>
-          <li data-i18n="tray.u2"><strong>提醒动作常在。</strong>有提醒待处理时，「做到了 / 稍后 N 分钟 / 隐藏」直接出现在提醒卡上——Windows / macOS 也可从托盘菜单触达；沐比角色与文字本身保持鼠标穿透。</li>
-          <li data-i18n="tray.u3"><strong>专注开关。</strong>「开启 / 关闭专注」随时可用：托盘菜单（Windows / macOS）或主窗口头栏按钮（全平台）；托盘菜单里也有「检查更新」和「退出 MoveBit」。</li>
+          <li data-i18n="tray.u1"><strong>打开设置。</strong>三平台都点托盘沐比图标打开主窗口；无托盘环境直接打开主窗口即可。</li>
+          <li data-i18n="tray.u2"><strong>提醒动作常在。</strong>有邀请等待时，抚摸沐比算做到了，气泡上有「稍后再说」；做到了 / 稍后再说 / 隐藏也都在托盘菜单里。只有沐比本体和「稍后再说」标签可点，其余鼠标穿透。</li>
+          <li data-i18n="tray.u3"><strong>专注开关。</strong>「开启 / 关闭专注」随时可用：托盘菜单（全平台；无托盘环境用主窗口头栏按钮）；托盘菜单里也有「检查更新」和「退出 MoveBit」。</li>
         </ul>
         <div class="callout">
           <div class="callout-title">💡 <span data-i18n="tray.callout.title">关窗口 ≠ 退出</span></div>
-          <span data-i18n="tray.callout.body">Windows / macOS：关闭主窗口只是最小化到托盘，提醒继续，真正退出走托盘菜单的「退出 MoveBit」。Linux：没有托盘，关闭主窗口即结束本次会话，数据已即时保存。</span>
+          <span data-i18n="tray.callout.body">Windows / macOS / Linux：关闭主窗口只是最小化到托盘，提醒继续，真正退出走托盘菜单的「退出 MoveBit」。无托盘的 Linux 环境：关闭主窗口即结束本次会话，数据已即时保存。</span>
         </div>
       </section>
 
       <!-- =================== 在线更新 =================== -->
       <section class="manual-section" id="updates">
         <h2 class="manual-h2"><span class="h2-emoji">↻</span><span data-i18n="upd.title">在线更新</span></h2>
-        <p data-i18n="upd.lead">更新检查默认开启：启动时一次，之后约每 6 小时一次。发现新版本后，下载、校验都由 MoveBit 完成，换新只等你一次点击。</p>
+        <p data-i18n="upd.lead">更新检查默认开启：启动时静默检查，至多每 4 小时一次。发现新版本后，下载、校验都由 MoveBit 完成，换新只等你一次点击。</p>
         <ul>
           <li data-i18n="upd.u1"><strong>手动检查。</strong>主窗口「关于」卡片 →「检查更新」（Windows / macOS 也可从托盘菜单）。</li>
           <li data-i18n="upd.u2"><strong>确认换新。</strong>发现新版本后点「更新并重启」——下载、SHA-256 校验自动完成后，MoveBit 退出、替换文件、重新启动。</li>
@@ -198,7 +198,7 @@
         <span>MoveBit</span>
       </a>
       <div class="footer-links"><a href="index.html" data-i18n="footer.home">首页</a><a href="https://github.com/turlamai/movebit" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/turlamai/movebit/releases" target="_blank" rel="noopener" data-i18n="footer.releases">Releases</a><a href="https://github.com/turlamai/movebit/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-i18n="footer.changelog">更新日志</a></div>
-      <small>© <span id="year">2026</span> turlamai · MIT</small>
+      <small>© <span id="year">2026</span> TuringLambda AI · BUSL-1.1</small>
     </div>
   </footer>
 
@@ -217,38 +217,38 @@
         "qs.title": "五分钟上手",
         "qs.lead": "安装、打开、让沐比送出第一条提醒。教程到这里就结束了——本页其余内容都是可选的。",
         "qs.s1": "<strong>安装。</strong>到 <a href='https://github.com/turlamai/movebit/releases/latest'>Releases</a> 页下载：Windows 双击 .msi，macOS 把 .dmg 里的 MoveBit 拖进「应用程序」，Linux 用 .deb / .rpm / .AppImage。",
-        "qs.s2": "<strong>首次启动。</strong>一个小巧的首启流程：定喝水间隔（30 / 45 / 60 分钟）、久坐间隔（45 / 60 / 90 分钟）、要不要提示音。选完点「开始使用」。不想选就点「跳过」，全部用默认值。",
-        "qs.s3": "<strong>认识沐比。</strong>屏幕边缘的小家伙就是提醒本身：到点它举杯、起身、闭眼，配一句明确的健康建议。卡片几秒后收起，「做到了 / 稍后 / 隐藏」就在卡片上等你处理。",
+        "qs.s2": "<strong>首次启动。</strong>一个见面屏：沐比自我介绍，点「开始使用」即可。均衡节奏与提示音默认都已备好；之后想调，设置里恰好四个控件。",
+        "qs.s3": "<strong>认识沐比。</strong>走到屏幕中央的小家伙就是提醒本身：到点它举杯、起身、闭眼，配一句明确的健康建议，邀请会一直等你——点别处它也不走。抚摸它算做到了；托盘里有做到了 / 稍后再说 / 隐藏。",
         "qs.s4": "<strong>完成。</strong>关掉主窗口（Windows / macOS 缩进托盘继续计时，Linux 关窗即结束会话）。到点沐比会来找你——看一眼就懂，做不做由你。",
-        "qs.hint": "预期结果：设置提醒间隔后，等待第一条提醒，选择“做到了”或“稍后”；再检查提醒状态是否记录。若没有提醒，检查应用运行状态和系统通知权限。",
+        "qs.hint": "预期结果：等第一条邀请出现，抚摸沐比或在托盘点「做到了」；再到主窗口看今日记录是否如实。若没有提醒，检查应用是否在运行、是否处于免打扰时段或专注模式。",
         "timing.title": "工作计时",
         "timing.lead": "MoveBit 统计你真正在操作电脑的活跃时间——键盘鼠标一停，计时就不再增长。",
         "timing.u1": "<strong>看今天。</strong>主窗口左上角「今日活跃」给出今天的活跃总时长，下方是本轮久坐进度（如 12 / 45 分钟）。",
         "timing.u2": "<strong>看趋势。</strong>「最近 7 天 / 30 天」图表显示每天的活跃分钟和休息次数，鼠标悬停看单日详情。",
         "timing.u3": "<strong>看模式。</strong>「工作模式洞察」卡片给出当前连续工作、今日最长连续和近 30 天概况。",
         "timing.callout.title": "离开就是休息",
-        "timing.callout.body": "键鼠空闲超过「离开多久算休息」（默认 5 分钟），这段时间算作真正的休息，久坐计时自动重置。",
+        "timing.callout.body": "键鼠空闲超过产品默认的离席判定（5 分钟），这段时间算作真正的休息，久坐计时自动重置。",
         "breaks.title": "沐比角色（提醒的交付方式）",
-        "breaks.lead": "到点的提醒由沐比在屏幕边缘交付：喝水举杯、起身拉伸、护眼闭眼，配一句明确的建议文字。它不锁屏、不抢焦点、不拦截输入——面板整体鼠标穿透。",
+        "breaks.lead": "到点的提醒由沐比亲自交付：它走到屏幕中央，喝水举杯、起身拉伸、护眼闭眼，配一句明确的建议文字。它不锁屏、不抢焦点、不拦截输入——除沐比本体与「稍后再说」标签外，其余全部鼠标穿透。",
         "breaks.u1": "<strong>三种手势。</strong>久坐→起身拉伸、喝水→举小蓝杯、护眼→闭眼远眺；多个提醒同时到期会合并成一条，含义与操作全部保留。",
-        "breaks.u2": "<strong>三种回应。</strong>「做到了」是自我报告（不代表实测完成），「稍后」把提醒按设定延后，「隐藏」只是收起——下个周期照常来。",
-        "breaks.u3": "<strong>专注模式。</strong>演示、会议时开「专注」——托盘菜单（Windows / macOS）或主窗口头栏按钮（全平台）：提醒安静排队，退出专注后合并成一条有界汇总，绝不堆积轰炸。",
+        "breaks.u2": "<strong>三种回应。</strong>「做到了」是自我报告（不代表实测完成），「稍后再说」延后 10 活跃分钟，「隐藏」只是收起——下个周期照常来。",
+        "breaks.u3": "<strong>专注模式。</strong>演示、会议时开「专注」——托盘菜单（全平台；无托盘环境用主窗口头栏按钮）：提醒安静排队，退出专注后合并成一条有界汇总，绝不堆积轰炸。",
         "breaks.callout.title": "没有全屏强制休息",
         "breaks.callout.body": "v0.0.1 起全屏强制休息已从产品移除：无论何时，提醒都不会遮盖屏幕、抢夺焦点或拦截输入。应用内提醒卡是角色卡不可用时的诚实回退（如 Wayland）。",
         "water.title": "护眼与喝水",
         "water.lead": "两个轻量提醒：喝水按独立周期循环，护眼建议你看向远处。它们都由沐比交付，从不打断操作。",
-        "water.u1": "<strong>喝水。</strong>「喝水提醒间隔」默认 30 分钟，到点沐比举杯；「做到了」自我报告，「稍后 N 分钟」延后，「隐藏」收起。",
-        "water.u2": "<strong>护眼。</strong>「微休息」默认每 30 分钟一次，沐比闭上眼睛提醒你看向远处；卡片自然走完即算回应，点击或按 Esc 提前收起。",
+        "water.u1": "<strong>喝水。</strong>喝水默认每 60 活跃分钟，到点沐比举杯；抚摸算做到了，「稍后再说」延后，托盘可「隐藏」。",
+        "water.u2": "<strong>护眼。</strong>护眼默认每 20 活跃分钟，沐比闭眼提醒你看远 20 秒；托盘里也有「20 秒护眼」随时开一轮。倒计时走完只是结束提示——不点托盘「做到了」，不算完成。",
         "water.u3": "<strong>提示音。</strong>「提示音」只作用于提醒出现的一刻；专注模式下一切静默。",
         "tray.title": "托盘与主窗口",
-        "tray.lead": "Windows 上 MoveBit 缩在系统托盘，macOS 住在菜单栏；Linux 没有托盘，主窗口就是中心。",
-        "tray.u1": "<strong>打开设置。</strong>Windows / macOS：点托盘水滴图标打开主窗口；Linux：直接打开主窗口即可。",
-        "tray.u2": "<strong>提醒动作常在。</strong>有提醒待处理时，「做到了 / 稍后 N 分钟 / 隐藏」直接出现在提醒卡上——Windows / macOS 也可从托盘菜单触达；沐比角色与文字本身保持鼠标穿透。",
-        "tray.u3": "<strong>专注开关。</strong>「开启 / 关闭专注」随时可用：托盘菜单（Windows / macOS）或主窗口头栏按钮（全平台）；托盘菜单里也有「检查更新」和「退出 MoveBit」。",
+        "tray.lead": "Windows 上 MoveBit 缩在系统托盘，macOS 住在菜单栏；Linux 走 StatusNotifier 托盘（GNOME 需 AppIndicator 扩展），没有托盘环境时主窗口头栏按钮兜底。",
+        "tray.u1": "<strong>打开设置。</strong>三平台都点托盘沐比图标打开主窗口；无托盘环境直接打开主窗口即可。",
+        "tray.u2": "<strong>提醒动作常在。</strong>有邀请等待时，抚摸沐比算做到了，气泡上有「稍后再说」；做到了 / 稍后再说 / 隐藏也都在托盘菜单里。只有沐比本体和「稍后再说」标签可点，其余鼠标穿透。",
+        "tray.u3": "<strong>专注开关。</strong>「开启 / 关闭专注」随时可用：托盘菜单（全平台；无托盘环境用主窗口头栏按钮）；托盘菜单里也有「检查更新」和「退出 MoveBit」。",
         "tray.callout.title": "关窗口 ≠ 退出",
-        "tray.callout.body": "Windows / macOS：关闭主窗口只是最小化到托盘，提醒继续，真正退出走托盘菜单的「退出 MoveBit」。Linux：没有托盘，关闭主窗口即结束本次会话，数据已即时保存。",
+        "tray.callout.body": "Windows / macOS / Linux：关闭主窗口只是最小化到托盘，提醒继续，真正退出走托盘菜单的「退出 MoveBit」。无托盘的 Linux 环境：关闭主窗口即结束本次会话，数据已即时保存。",
         "upd.title": "在线更新",
-        "upd.lead": "更新检查默认开启：启动时一次，之后约每 6 小时一次。发现新版本后，下载、校验都由 MoveBit 完成，换新只等你一次点击。",
+        "upd.lead": "更新检查默认开启：启动时静默检查，至多每 4 小时一次。发现新版本后，下载、校验都由 MoveBit 完成，换新只等你一次点击。",
         "upd.u1": "<strong>手动检查。</strong>主窗口「关于」卡片 →「检查更新」（Windows / macOS 也可从托盘菜单）。",
         "upd.u2": "<strong>确认换新。</strong>发现新版本后点「更新并重启」——下载、SHA-256 校验自动完成后，MoveBit 退出、替换文件、重新启动。",
         "upd.u4": "<strong>可中途取消。</strong>下载中可点「取消下载」停止本次下载；当前版本不受影响，可以稍后重试。",
@@ -267,7 +267,7 @@
         "faq.q.updfail": "更新失败怎么办？",
         "faq.a.updfail": "先重试一次：检查失败多半是网络问题。下载或校验失败时，MoveBit 会清掉半成品，当前版本不受影响。若提示「应用目录不可写」，说明安装位置没有写权限——装到用户目录，或改用便携版。实在不行，直接去 <a href='https://github.com/turlamai/movebit/releases/latest'>Releases</a> 页手动下载安装，用户数据不会丢。",
         "footer.home": "首页", "footer.releases": "Releases", "footer.changelog": "更新日志",
-        "breaks.u4": "<strong>个性可选。</strong>「提醒设置」里可调沐比尺寸（S/M/L）、动效（静止 / 轻柔 / 活泼）、停靠位置（右下 / 左下 / 右上）与标签显示。",
+        "breaks.u4": "<strong>默认即刚好。</strong>沐比的尺寸、动效与停靠位置都是产品默认；「提醒设置」恰好四个控件：提示音、免打扰时段、开机自启、语言。",
         "faq.q.wayland": "沐比会在 Wayland 上出现吗？",
         "faq.a.wayland": "不会——Wayland 合成器不提供可靠的窗口定位与穿透保证，MoveBit 不假装能做到。Wayland 会话的提醒以应用内提醒卡交付；X11 会话角色卡正常停靠。"
       };
@@ -283,39 +283,39 @@
         "toc.faq": "Questions", "faq.title.toc": "FAQ",
         "qs.title": "Five-minute start",
         "qs.lead": "Install, open, let Mubi deliver the first cue. That's the whole tutorial — everything else on this page is optional.",
-        "qs.s1": "<strong>Install.</strong> Grab the latest build from the <a href='https://github.com/turlamai/movebit/releases/latest'>Releases</a> page: run the .msi on Windows, drag MoveBit from the .dmg into Applications on macOS, or use the .deb / .rpm / .AppImage on Linux.",
-        "qs.s2": "<strong>First launch.</strong> A compact first-run flow: pick a water interval (30 / 45 / 60 min), a sit interval (45 / 60 / 90 min) and whether cues make a sound. Click Start — or Skip for the defaults.",
-        "qs.s3": "<strong>Meet Mubi.</strong> The little character at the screen edge IS the reminder: it raises a cup, stands up or closes its eyes with clear advice text. The card rests after a few seconds; Done / Later / Hide sit right on it.",
+        "qs.s1": "<strong>Install.</strong> Grab the latest build from the <a href='https://github.com/turlamai/movebit/releases/latest'>Releases</a> page: run the .msi on Windows, drag MoveBit from the .dmg into Applications on macOS, or use the .deb / .rpm / .AppImage — or Flatpak — on Linux.",
+        "qs.s2": "<strong>First launch.</strong> One meeting screen: Mubi says hello and you click Start. The balanced cadence and sound defaults are already in place; later tuning lives in exactly four settings.",
+        "qs.s3": "<strong>Meet Mubi.</strong> The little character at the center of your screen IS the reminder: it raises a cup, stands up or closes its eyes with clear advice text, and the invitation stays open — clicking elsewhere changes nothing. Pet Mubi to mark it done; the tray carries Done / Later / Hide.",
         "qs.s4": "<strong>Done.</strong> Close the main window (Windows / macOS keep counting in the tray; on Linux closing ends the session). When a cycle is due, Mubi comes to you — readable at a glance, yours to act on.",
-        "qs.hint": "Expected result: after setting intervals, wait for a reminder, choose Done or Later, and check that the action is recorded. If no reminder appears, verify that the app is running and notifications are permitted.",
+        "qs.hint": "Expected result: wait for the first invitation, pet Mubi or pick Done in the tray, then check Today in the main window. If nothing arrives, verify the app is running and not in quiet hours or Focus.",
         "timing.title": "Work timing",
         "timing.lead": "MoveBit counts the time you're actually using the computer — stop typing and moving the mouse, and the clock stops growing.",
         "timing.u1": "<strong>Today.</strong> “Active today” in the top-left shows your total, with the current sit cycle underneath (e.g. 12 / 45 min).",
         "timing.u2": "<strong>Trends.</strong> The “Last 7 / 30 days” chart shows daily active minutes and break counts; hover a day for details.",
         "timing.u3": "<strong>Patterns.</strong> The “Work pattern” card tracks your current session, longest today, and 30-day stats.",
         "timing.callout.title": "Away counts as rest",
-        "timing.callout.body": "Once keyboard and mouse idle past “Away counts as rest” (default 5 minutes), that time counts as a real break and the sit timer resets.",
+        "timing.callout.body": "Once keyboard and mouse idle past the product's default away threshold (5 minutes), that time counts as a real break and the sit timer resets.",
         "breaks.title": "Mubi — how reminders are delivered",
-        "breaks.lead": "Due reminders are delivered by Mubi at the screen edge: a raised cup, a stretch, closed eyes, always with clear advice text. No lock screen, no focus theft, no input interception — the panel is fully click-through.",
+        "breaks.lead": "Due reminders are delivered by Mubi in person: it walks to the center of your screen with a raised cup, a stretch or closed eyes, always with clear advice text. No lock screen, no focus theft, no input interception — only Mubi itself and the Later tag accept clicks; everything else stays pointer-through.",
         "breaks.u1": "<strong>Three gestures.</strong> Sit → stretch, water → raised cup, eyes → closed; several due reminders merge into one cue with every meaning and action preserved.",
-        "breaks.u2": "<strong>Three responses.</strong> Done is a self-report (not a measurement), Later defers by your snooze setting, Hide just puts it away — the next cycle arrives on schedule.",
-        "breaks.u3": "<strong>Focus.</strong> During presentations, switch Focus on from the tray: cues queue quietly and return as one bounded summary when it ends — never a pile-up.",
+        "breaks.u2": "<strong>Three responses.</strong> Done is a self-report (not a measurement), Later defers by 10 active minutes, Hide just puts it away — the next cycle arrives on schedule.",
+        "breaks.u3": "<strong>Focus.</strong> During presentations, switch Focus on from the tray (tray-less environments use the main-window header buttons): cues queue quietly and return as one bounded summary when it ends — never a pile-up.",
         "breaks.callout.title": "No fullscreen forced break",
         "breaks.callout.body": "As of v0.0.1 the fullscreen forced break is removed from the product. Reminders never cover the screen, steal focus or intercept input. An in-app reminder card is the honest fallback when the character card is unavailable (e.g. Wayland).",
         "water.title": "Eye rest & water",
         "water.lead": "Two lightweight reminders: water on its own cycle, eye rest to look far away. Both delivered by Mubi, never interrupting.",
-        "water.u1": "<strong>Water.</strong> The water interval defaults to 30 minutes; Mubi raises the cup. Done self-reports, Later defers by N minutes, Hide puts it away.",
-        "water.u2": "<strong>Eye rest.</strong> Micro breaks default to every 30 minutes; Mubi closes its eyes. Letting the card finish counts as the response; click or press Esc to end early.",
+        "water.u1": "<strong>Water.</strong> Water is due every 60 active minutes by default; Mubi raises the cup. Petting marks it done, Later defers, the tray offers Hide.",
+        "water.u2": "<strong>Eye rest.</strong> Eye rest is due every 20 active minutes by default: Mubi closes its eyes and suggests looking away for 20 seconds; the tray carries a manual 20-second eye rest too. A finished countdown is only a finish notice — nothing counts as done until you pick Done in the tray.",
         "water.u3": "<strong>Sound.</strong> The sound option only covers the moment a cue appears; Focus mode is fully silent.",
         "tray.title": "Tray and the main window",
-        "tray.lead": "On Windows MoveBit sits in the system tray, on macOS in the menu bar; Linux has no tray — the main window is the hub.",
-        "tray.u1": "<strong>Open settings.</strong> Windows / macOS: click the tray droplet to bring the main window back; Linux: just open the main window.",
-        "tray.u2": "<strong>Cue actions live in the tray.</strong> With a cue open, Done / Later / Hide sit directly on the reminder card — Windows / macOS also reach them from the tray menu; the character and its text stay pointer-through.",
-        "tray.u3": "<strong>Focus toggle.</strong> Focus on/off works anytime: the tray menu (Windows / macOS) or the main-window header button (every platform); the tray menu also carries Check for updates and Quit MoveBit.",
+        "tray.lead": "On Windows MoveBit sits in the system tray, on macOS in the menu bar; Linux uses a StatusNotifier tray (GNOME needs the AppIndicator extension), and tray-less environments fall back to the main-window header buttons.",
+        "tray.u1": "<strong>Open settings.</strong> On all three platforms, click the Mubi tray icon to bring the main window back; in tray-less environments, just open the main window.",
+        "tray.u2": "<strong>Cue actions are always within reach.</strong> With an invitation open, pet Mubi for Done or tap the bubble's Later tag; Done / Later / Hide also live in the tray menu. Only Mubi itself and the Later tag accept clicks — everything else stays pointer-through.",
+        "tray.u3": "<strong>Focus toggle.</strong> Focus on/off works anytime: the tray menu on every platform (tray-less environments use the main-window header buttons); the tray menu also carries Check for updates and Quit MoveBit.",
         "tray.callout.title": "Closing ≠ quitting",
-        "tray.callout.body": "Windows / macOS: closing the main window only minimizes to the tray and reminders continue; to truly quit, use “Quit MoveBit” in the tray menu. Linux: there is no tray — closing the main window ends the session, with data saved as it goes.",
+        "tray.callout.body": "Windows / macOS / Linux: closing the main window only minimizes to the tray and reminders continue; to truly quit, use “Quit MoveBit” in the tray menu. On tray-less Linux environments, closing the main window ends the session, with data saved as it goes.",
         "upd.title": "Online updates",
-        "upd.lead": "Update checks are on by default: once at startup, then about every 6 hours. MoveBit downloads and verifies in the background; switching versions takes one click.",
+        "upd.lead": "Update checks are on by default: silently at launch, at most once every 4 hours. MoveBit downloads and verifies in the background; switching versions takes one click.",
         "upd.u1": "<strong>Check manually.</strong> The About card → “Check for updates” (Windows / macOS also from the tray menu).",
         "upd.u2": "<strong>Apply.</strong> When a new version is found, click “Update & restart” — MoveBit downloads, verifies the SHA-256, exits, swaps the files and relaunches.",
         "upd.u4": "<strong>Cancel a download.</strong> Use Cancel download while it is running; the installed version remains unchanged and you can retry later.",
@@ -334,7 +334,7 @@
         "faq.q.updfail": "The update failed — now what?",
         "faq.a.updfail": "Retry once: check failures are usually network. If a download or verification fails, MoveBit cleans up the partial files and your current version stays untouched. If it says the app folder isn't writable, reinstall into a user-writable location or switch to the portable build. Worst case, download the new version manually from the <a href='https://github.com/turlamai/movebit/releases/latest'>Releases</a> page — your data won't be lost.",
         "footer.home": "Home", "footer.releases": "Releases", "footer.changelog": "Changelog",
-        "breaks.u4": "<strong>Optional personality.</strong> Settings offers Mubi's size (S/M/L), motion (still / subtle / lively), dock position (bottom-right / bottom-left / top-right) and label visibility.",
+        "breaks.u4": "<strong>Defaults are the design.</strong> Mubi's size, motion and dock are product decisions; Reminder settings keeps exactly four controls — sound, quiet hours, autostart, language.",
         "faq.q.wayland": "Does Mubi appear on Wayland?",
         "faq.a.wayland": "No — Wayland compositors provide no reliable window-placement or click-through guarantees, and MoveBit does not pretend otherwise. On Wayland sessions reminders are delivered as in-app reminder cards; on X11 sessions the character card docks normally."
       };
