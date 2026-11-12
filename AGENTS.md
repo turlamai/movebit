@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## 实现路由（agent 按任务读真源）
+
+- 实现界面以 `design/prototype/` 为准：对照 HTML/CSS/JS 与实物截图验收，不依赖散文复述。
+- Token/几何值真源 = `design/prototype/shared.css`（亮暗成对；无 shared.css 的仓 = design/prototype/ 各页样式）；`design/DESIGN.md` 只记语义名、用途与决策。
+- 行为边界与跨平台一致性以 `design/DESIGN.md` 的不变式与平台差异节为准。
+- 改界面先改原型再改实现（tlai-prototype-flow）；动共享层（design/、shared/）先 issue 声明，同 commit 落契约。
+
 ## Owner-approved interaction simplification — 2026-11-01
 
 **Less is more.** Stop proposing a dashboard of attention strengths, motion levels, dock pickers and separate "meeting" modes as the main product. The user wants a lovable Mubi that comes to the central work area **at a genuine scheduled water, movement or eye-rest break** and WAITS there — topmost, above every window — until answered (owner decision #140: reminders that auto-retreat or get covered have no effect); then it returns to its home position. Between breaks it plays by itself near its dock (rolls, tilts, blinks, hops), never roaming. Petting Mubi is the Done gesture; the bubble's Later tag snoozes; no fullscreen mask, no forced input interception, no focus theft, no click-outside dismissal. Outside breaks, avoid uncontrolled roaming. Users must be able to move/quickly hide Mubi without studying Settings. **Existing Focus doubles as meeting defer**: cancel any approach and audio immediately, and present only one merged missed-cue invitation when Focus ends. Use the original Racket cue ledger; never infer completed behavior. No fullscreen mask, forced input interception, focus stealing, risky window controls, unsupported Wayland positioning or hidden meeting surveillance. System Reduce Motion gets readable static advice.

@@ -25,38 +25,28 @@ Tokens 逐值提取自现行实现：`macos-host/Sources/RivetHost/MainView.swif
 - **反馈及时**：状态点（运行/暂停）、下一条提醒倒计时、配置保存时间戳，全部即时可见；暂停/专注是即时动作，不是新模式。
 - **角色是载体不是商品**：沐比是健康提醒的载体（charter #51），健康节奏比角色定制优先；设置只有四个控件，其余皆产品默认。
 
-## Tokens（与实现 1:1）
+## Tokens（语义；值不在此复制）
 
 ### 壳层（窗口 UI）
 
-| Token | Light | Dark | 用途 |
-|---|---|---|---|
-| `--bg` | `#F5F2EB` | `#201D1A` | 窗口画布（暖纸色） |
-| `--surface` | `#FFFFFF` | `#2A2622` | 卡片/菜单/浮层 |
-| `--line` | `#EAE2D6` | `#3A352E` | 分隔/描边 |
-| `--ink` | `#26241F` | `#EDE7DA` | 主文字 |
-| `--ink-2` | `#6E6A5E` | `#B0A696` | 次级文字（节标题/说明） |
-| `--ink-3` | `#A39B8D` | `#7A7264` | 辅助文字（脚注/hint） |
-| `--accent` | `#C25E3E` | `#D97B54` | 交互与状态：主按钮/链接/进行态/下一条提醒 |
-| `--accent-soft` | `#FBEFE2` | `#3A2A20` | accent 弱底 |
-| `--track` | `#EAE6DC` | `#38332D` | 进度条槽/图块底 |
-| `--chart` | `#D2C8B2` | `#4E4638` | 历史图非今日柱 |
-| `--running` | `#16A34A`（双态同值） | — | 运行状态点 |
-| `--paused` | `#EA580C`（双态同值） | — | 暂停状态点（也是久坐类 accent） |
-| `--water` | `#3E7EC2` | `#7AB0E8` | 喝水类 accent（图表/计数） |
+值类 token 真源 = 现行实现（`macos-host/Sources/RivetHost/MainView.swift` 的 `Palette`——唯一成对的亮暗源 · `linux/src/main.cpp` 的 `apply_global_css` · `windows/MainWindow.xaml`）；原型 `design/prototype/shared.css` 与其一一对应，本表只记语义。
 
-### 沐比角色（`assets/mubi/tokens.json`，双主题独立艺术指导、永不自动反相）
+| Token | 语义 |
+|---|---|
+| `--bg --surface --line` | 暖纸画布 / 卡片菜单浮层 / 分隔描边 |
+| `--ink --ink-2 --ink-3` | 主/次级/辅助文字三档 |
+| `--accent --accent-soft` | 交互与状态：主按钮/链接/进行态/下一条提醒 + 弱底 |
+| `--track --chart` | 进度条槽图块底 / 历史图非今日柱 |
+| `--running --paused --water` | 状态点：运行（双态同值）/ 暂停（双态同值，兼久坐类 accent）/ 喝水类 accent（图表/计数） |
 
-| Token | 值 | 用途 |
-|---|---|---|
-| `--mubi-body` | `#F6EEDF` | 身体主色（暗色保持暖象牙，不减饱和） |
-| `--mubi-light` / `--mubi-deep` | `#FBF5E9` / `#E8D7BE` | 体积渐变（左上光 → 右下沉） |
-| `--mubi-shadow` | `#D8C8B5` | 形体/接触阴影（永不做深色描边） |
-| `--mubi-ink` | `#2D2A28` | 眼睛与必要面部细节 |
-| `--mubi-fin` | `#F1E4CC` | 叶鳍 |
-| `--mubi-capsule` | `#FFFDFB` / `#33302B` | 提示胶囊面（低眩光暗面） |
-| `--mubi-capsule-ink` | `#2D2A28` / `#F1EEE7` | 提示胶囊文字 |
-| `--cue-water` / `--cue-move` / `--cue-eyes` / `--cue-done` / `--cue-focus` | `#62B6FF` / `#FF8C6B` / `#65C8B8` / `#F2C96B` / `#8DA1B5` | 健康语义色：只出现在沐比小面积元素（杯、拉伸提示、远眺、完成微光、专注环） |
+### 沐比角色（值真源 = `assets/mubi/tokens.json`，#56 设计冻结；双主题独立艺术指导、永不自动反相）
+
+| Token | 语义 |
+|---|---|
+| `--mubi-body --mubi-light --mubi-deep --mubi-shadow` | 身体暖象牙主色 + 体积渐变（左上光→右下沉）+ 形体接触阴影（永不做深色描边；暗色保持暖象牙不减饱和） |
+| `--mubi-ink --mubi-fin` | 眼睛与必要面部细节 / 叶鳍 |
+| `--mubi-capsule --mubi-capsule-ink` | 提示胶囊低眩光面与文字（亮暗各值） |
+| `--cue-water --cue-move --cue-eyes --cue-done --cue-focus` | 健康语义色：只出现在沐比小面积元素（杯/拉伸提示/远眺/完成微光/专注环），绝不作背景或图表主色 |
 
 - **字体**：系统栈 `system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei"`。字号取自 GTK `apply_global_css`：大数字 44px/700 · 计数与行 14px/600 · 正文 13px · 次级 12.5–11.5px · 脚注 11px · 胶囊 12px/600 · 提醒标题 17px/600。
 - **圆角**：卡片 16px · 图块 12px · 胶囊 12px · 微休息卡 18px · 控件 6–8px · 药丸全圆。**间距节奏**：6/10/14/20。**动效**：标签淡入 160–220ms、可见 4–6s、淡出 180–240ms；每条邀请只配一个表达手势；Reduce Motion → 实际到点类型的静态姿势 + 同文案同操作。
