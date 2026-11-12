@@ -43,7 +43,7 @@ change date as the rest of the Work.
    `racket/tests/update-test.rkt` green (signed-feed verification,
    attacker-negative fixtures, rollback). Changes to the commercial
    boundary (`commercial-policy.rkt`, `permit-adapter.rkt`,
-   `license-store.rkt`) must keep `integration-tests/` green — CI runs
+   `license-store.rkt`) must keep `tests/` green — CI runs
    them on Linux against a pinned Permit package, and ordinary Free
    builds must keep working with no Permit dependency.
 7. **Keep the product slim.** The settings window holds sound, quiet
@@ -71,7 +71,7 @@ packaged app locally. Product-facing slices owe packaged acceptance
 (`raco rivet acceptance --json`): a green unit suite or a screenshot
 alone is not completion evidence. The Permit integration contract is a
 Linux CI step (`.github/workflows/ci.yml`) that installs the pinned
-Permit package and runs `raco test integration-tests/`; replicate it
+Permit package and runs `raco test tests/`; replicate it
 when you touch those files.
 
 ## Reporting issues

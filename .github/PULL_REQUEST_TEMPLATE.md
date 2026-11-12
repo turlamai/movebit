@@ -23,7 +23,7 @@ regenerated in the same commit.
 ## Tests
 
 How this is covered: `raco test racket/`, `racket/tests/update-test.rkt`,
-`integration-tests/` (Permit boundary), platform host builds, packaged
+`tests/` (Permit boundary), platform host builds, packaged
 acceptance (`raco rivet acceptance --json`), or a new test added in the same
 commit — say which ran and on which platform.
 

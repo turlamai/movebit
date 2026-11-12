@@ -109,7 +109,7 @@ jobs:
           set -euo pipefail
           raco pkg install --auto --no-docs --name permit \
             'https://github.com/turlamai/permit.git#df47436013c5e3929c58dd809a97db77b2cfd423'
-          raco test integration-tests/
+          raco test tests/
   # The Linux host needs an embeddable static libracketcs, which the standard
   # Racket installers do not ship; rivet's own composite action builds and
   # caches it (docs/ci.md — product workflows should not copy the recipe).
