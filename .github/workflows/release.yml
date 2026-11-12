@@ -65,6 +65,16 @@ jobs:
           - arch: x64
             runner: macos-15-intel
             racket-arch: x64
+    env:
+      # Production signing lights up as soon as the account-level secrets
+      # exist (Developer ID p12 + App Store Connect API key) and applies to
+      # every workflow run that has them. Credential contract:
+      # DEVELOPER_ID_P12_B64 / DEVELOPER_ID_P12_PASSWORD / ASC_KEY_ID /
+      # ASC_ISSUER_ID / ASC_KEY_P8_B64; see rivet docs/production-signing.md.
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.DEVELOPER_ID_P12_B64 != '' && secrets.ASC_KEY_P8_B64 != '' }}
+      # A tag push is a release: without credentials it must fail closed
+      # instead of silently shipping ad-hoc signed artifacts.
+      IS_TAG_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - uses: actions/checkout@v7
       - name: Install Racket
@@ -76,7 +86,64 @@ jobs:
       - name: Install pinned Rivet (tag package install)
         run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
         shell: bash
-      - name: Package + branded DMG (rivet release, development signing)
+      - name: Provision Developer ID certificate
+        if: env.MACOS_SIGNING_CONFIGURED == 'true'
+        env:
+          DEVELOPER_ID_P12_B64: ${{ secrets.DEVELOPER_ID_P12_B64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          P12="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          printf '%s' "$DEVELOPER_ID_P12_B64" | base64 --decode > "$P12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -s "$KEYCHAIN" $(security list-keychains | tr -d '"')
+          rm -f "$P12"
+          IDENTITY_NAME="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep 'Developer ID Application' | head -1 | sed -E 's/^[^"]*"(.*)"$/\1/')"
+          test -n "$IDENTITY_NAME"
+          # rivet reads exactly these two (rivet docs/production-signing.md);
+          # release defaults to production mode, so exporting them alone
+          # flips packaging over once --development is dropped below.
+          {
+            echo "RIVET_MACOS_SIGN_IDENTITY=$IDENTITY_NAME"
+            echo "RIVET_MACOS_NOTARY_PROFILE=ASC_NOTARY"
+          } >> "$GITHUB_ENV"
+      - name: Store notarytool keychain profile
+        if: env.MACOS_SIGNING_CONFIGURED == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_B64: ${{ secrets.ASC_KEY_P8_B64 }}
+        run: |
+          set -euo pipefail
+          P8="$RUNNER_TEMP/asc-api-key.p8"
+          printf '%s' "$ASC_KEY_P8_B64" | base64 --decode > "$P8"
+          xcrun notarytool store-credentials ASC_NOTARY \
+            --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --key "$P8"
+          rm -f "$P8"
+      # `raco rivet release` defaults to production packaging: with the
+      # credentials exported above it Developer ID-signs, notarizes,
+      # staples, and re-verifies inside rivet itself.
+      - name: Package + branded DMG (rivet release, Developer ID + notarized)
+        if: env.MACOS_SIGNING_CONFIGURED == 'true'
+        env:
+          RIVET_UPDATE_BASE_URL: https://github.com/turlamai/movebit/releases/download/${{ github.ref_name }}
+          RIVET_UPDATE_KEY_ID: movebit-2026-10
+          RIVET_UPDATE_PRIVATE_KEY_B64: ${{ secrets.UPDATE_ED25519_PRIVATE_KEY_B64 }}
+        run: |
+          KEY_DER="$(mktemp -d)/update-ed25519-private.der"
+          printf '%s' "$RIVET_UPDATE_PRIVATE_KEY_B64" | base64 -d > "$KEY_DER"
+          export RIVET_UPDATE_PRIVATE_KEY="$KEY_DER"
+          raco rivet release
+          rm -f "$KEY_DER"
+        shell: bash
+      - name: Package + branded DMG (rivet release, ad-hoc dispatch smoke)
+        if: env.MACOS_SIGNING_CONFIGURED != 'true' && env.IS_TAG_RELEASE != 'true'
         env:
           RIVET_UPDATE_BASE_URL: https://github.com/turlamai/movebit/releases/download/${{ github.ref_name }}
           RIVET_UPDATE_KEY_ID: movebit-2026-10
@@ -88,6 +155,11 @@ jobs:
           raco rivet release --development
           rm -f "$KEY_DER"
         shell: bash
+      - name: Release requires signing credentials
+        if: env.MACOS_SIGNING_CONFIGURED != 'true' && env.IS_TAG_RELEASE == 'true'
+        run: |
+          echo "::error::Tag releases must be production-signed: set the macOS signing secrets (DEVELOPER_ID_P12_B64, DEVELOPER_ID_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_B64) on this repository before tagging."
+          exit 1
       - name: Collect DMG + portable zip + checksums
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
