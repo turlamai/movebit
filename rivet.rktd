@@ -8,12 +8,12 @@
         (file-associations . ())
         (macos-min-version . "14.0")
         (windows-min-version . "10.0.19041.0")
-        (macos-icon . "Assets/movebit.icns")
-        (windows-icon . "Assets/icon.ico")
+        (macos-icon . "assets/movebit.icns")
+        (windows-icon . "assets/icon.ico")
         ;; The AppImage format requires a top-level icon PNG (rivet errors
         ;; out without it); project-relative like windows-icon.
-        (linux-icon . "Assets/icon.png")
+        (linux-icon . "assets/icon.png")
         (backend . "app/backend.rkt")
         (module . "backend")
         (entry . "start")
-        (protocol . 1) (dmg-background . "Assets/dmg-background.png") (windows-installer-bitmaps . #hasheq((banner . "Assets/wizard-banner.bmp") (dialog . "Assets/wizard-dialog.bmp")))))
+        (protocol . 1) (dmg-background . "assets/dmg-background.png") (windows-installer-bitmaps . #hasheq((banner . "assets/wizard-banner.bmp") (dialog . "assets/wizard-dialog.bmp")))))

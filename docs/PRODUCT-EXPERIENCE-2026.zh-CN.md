@@ -43,7 +43,7 @@
 | ack / snooze | 轻点头 / 收回动作 | 只表达用户操作成功，不声称已经检测到真实行为 |
 | focus / hidden / reduced-motion | 安静静止或不可见 | 优先于所有装饰性动效 |
 
-动效要有生命感而非全天循环的跳跃。保留 `Assets/mubi/source/mubi-master.svg` 和 `Assets/mubi/tokens.json` 作为原创可编辑源，三端变形应来自同一语义状态与令牌。禁止付费前故意让免费角色难看；禁止喂食、掉心情、签到焦虑、失去连胜之类强迫机制。验收必须包含空闲 CPU/GPU/唤醒次数、暗色与缩放测试、辅助功能、命中区域和焦点安全。原有 #56 的安全和原创视觉规范持续有效。
+动效要有生命感而非全天循环的跳跃。保留 `assets/mubi/source/mubi-master.svg` 和 `assets/mubi/tokens.json` 作为原创可编辑源，三端变形应来自同一语义状态与令牌。禁止付费前故意让免费角色难看；禁止喂食、掉心情、签到焦虑、失去连胜之类强迫机制。验收必须包含空闲 CPU/GPU/唤醒次数、暗色与缩放测试、辅助功能、命中区域和焦点安全。原有 #56 的安全和原创视觉规范持续有效。
 
 ## 健康提醒：预设是用户体验，不是医学结论
 
@@ -104,6 +104,6 @@
 - `racket/movebit/{config,scheduler,orchestrator,history}.rkt`：唯一真实提醒与事件统计来源。
 - `app/backend.rkt` 与 `rivet-schema.json`：唯一 RPC 和功能权限面；宿主不自建第二套调度。
 - `macos-host/`、`windows/`、`linux/`：原创角色渲染、无障碍、输入安全、原生窗口/托盘。
-- `shared/i18n/`：唯一文案来源；中英同步。素材在 `Assets/mubi/`。
+- `shared/i18n/`：唯一文案来源；中英同步。素材在 `assets/mubi/`。
 - `PRICING*.md`：由 #81/PR #82 所属工作线维护；本提案 PR **不修改它们**。
 - 开发用独立小 PR；不直接抢写主分支，不宣称已验收或已商业化；打包后实测优先于想象中的 UI。

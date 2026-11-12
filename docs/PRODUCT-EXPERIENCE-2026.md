@@ -41,7 +41,7 @@ MoveBit is neither a bare timer nor a pet game. It makes drinking water, moving 
 | ack / snooze | Small nod / settling pose | Acknowledge remains a self-report, never sensed compliance |
 | focus / hidden / reduce-motion | Static or absent | Higher priority than all decorative motion |
 
-Keep `Assets/mubi/source/mubi-master.svg` and `Assets/mubi/tokens.json` as editable, original, MIT-compatible canonical source. Animation states are shared across native hosts, not unrelated pictures. The *still pose must already look premium*. No feeding, mood punishment, guilt streaks, random loot, compulsive play or advertisement. Test dark/light, 60/78/104 optical sizes, focus and mouse-through, accessibility, CPU/GPU/wakeups and battery impact on packaged native builds.
+Keep `assets/mubi/source/mubi-master.svg` and `assets/mubi/tokens.json` as editable, original, MIT-compatible canonical source. Animation states are shared across native hosts, not unrelated pictures. The *still pose must already look premium*. No feeding, mood punishment, guilt streaks, random loot, compulsive play or advertisement. Test dark/light, 60/78/104 optical sizes, focus and mouse-through, accessibility, CPU/GPU/wakeups and battery impact on packaged native builds.
 
 ## Timing proposals — product hypotheses, not medical prescriptions
 
@@ -103,6 +103,6 @@ Proposed acceptance research: 5 fresh users performing common tasks (choose a pr
 - Racket `config/scheduler/orchestrator/history`: canonical health timing and event truth.
 - `app/backend.rkt` + `rivet-schema.json`: shared contract; hosts cannot invent independent schedulers.
 - macOS / Windows / Linux native host directories: precise safe rendering, accessible actions, OS capability fallback.
-- `shared/i18n`: single localized content source; `Assets/mubi`: original artwork.
+- `shared/i18n`: single localized content source; `assets/mubi`: original artwork.
 - #81 / PR #82 own `PRICING.md` and `PRICING.zh-CN.md`. **This docs PR deliberately does not touch those paths.**
 - Use small non-overlapping PRs, preserve concurrent checkout work, and never label untested UI or commerce as shipped.

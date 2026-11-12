@@ -41,7 +41,7 @@ mkdir -p "$staged/opt/movebit" "$staged/usr/bin" \
 cp -R "$payload"/. "$staged/opt/movebit/"
 chmod +x "$staged/opt/movebit/RivetHost"
 ln -s /opt/movebit/RivetHost "$staged/usr/bin/movebit"
-cp "$root/Assets/icon.png" "$staged/usr/share/pixmaps/movebit.png"
+cp "$root/assets/icon.png" "$staged/usr/share/pixmaps/movebit.png"
 
 cat > "$staged/usr/share/applications/movebit.desktop" <<'EOF'
 [Desktop Entry]

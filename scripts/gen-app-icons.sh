@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Regenerate the app icon family from the canonical Mubi art (Assets/mubi/
+# Regenerate the app icon family from the canonical Mubi art (assets/mubi/
 # tokens.json — the same master data every host embeds). Never hand-edit the
 # outputs; rerun this script after touching the character art.
 #
 #   scripts/gen-app-icons.sh
 #
-# Outputs: Assets/movebit.icns, Assets/icon.ico, Assets/icon.png
+# Outputs: assets/movebit.icns, assets/icon.ico, assets/icon.png
 # Requires: jq, rsvg-convert, iconutil (macOS), python3 (stdlib only — the
 # ICO container is assembled by hand, no Pillow).
 #
@@ -25,7 +25,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE}[0]")/.." && pwd)"
-TOKENS="$ROOT/Assets/mubi/tokens.json"
+TOKENS="$ROOT/assets/mubi/tokens.json"
 OUT="$ROOT/Assets"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

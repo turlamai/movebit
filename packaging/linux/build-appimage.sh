@@ -74,7 +74,7 @@ StartupNotify=false
 X-AppImage-Version=${version}
 EOF
 
-cp "$root/Assets/icon.png" "$appdir/movebit.png"
+cp "$root/assets/icon.png" "$appdir/movebit.png"
 ln -s movebit.png "$appdir/.DirIcon"
 
 if command -v desktop-file-validate >/dev/null 2>&1; then

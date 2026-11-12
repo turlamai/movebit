@@ -63,7 +63,7 @@ Categories=Utility;
 StartupNotify=false
 EOF
 
-cp "$root/Assets/icon.png" "$pkg/usr/share/icons/hicolor/256x256/apps/movebit.png"
+cp "$root/assets/icon.png" "$pkg/usr/share/icons/hicolor/256x256/apps/movebit.png"
 
 case "$out_dir" in
   /*) dest="$out_dir" ;;

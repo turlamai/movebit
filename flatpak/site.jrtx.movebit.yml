@@ -71,7 +71,7 @@ modules:
         path: movebit-__VERSION__-linux-__ARCH__.tar.gz
         sha256: __SHA256__
       - type: file
-        path: Assets/icon.png
+        path: assets/icon.png
       - type: file
         path: flatpak/site.jrtx.movebit.desktop
     build-commands:
