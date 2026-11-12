@@ -1,7 +1,7 @@
 #lang racket/base
 
 ;; MoveBit config schema v5 tests (issue #140): the slim nine-field surface,
-;; version gate, clamping, tolerance, legacy migrations and the clean-install
+;; version gate, clamping, tolerance, foreign-schema rejection and the clean-install
 ;; contract (a foreign file is defaults, never guessed at).
 
 (require rackunit
@@ -148,108 +148,26 @@ EOF
   (check-equal? (reminder-config-companion-free-y actual) -1)
   (delete-directory/files dir))
 
-;; --- legacy migrations: only the kept fields survive ------------------------
+;; --- pre-v5 schemas are foreign, not migrated --------------------------------
 
-;; A v4 file (previous schema) keeps language / sound / auto-update / quiet
-;; hours / placement; the rhythm, preset and companion fields it carries are
-;; intentionally dropped — the product ships one cadence and one presentation.
-(let* ([dir (make-temp-dir "v4-migrate")]
+;; No shipped install ever carried a v2/v3/v4 profile (the pre-v5 schemas
+;; predate the first public release), so an old-schema file is foreign data:
+;; defaults, never a guess. The next save overwrites it with the v5 shape.
+(let* ([dir (make-temp-dir "v4-foreign")]
        [path (build-path dir "config.json")]
        [v4 (hasheq 'SchemaVersion 4
-                   'SitReminderMinutes 65
-                   'WaterReminderMinutes 55
-                   'AwayResetMinutes 8
-                   'SnoozeMinutes 20
-                   'MicroBreakEnabled #f
-                   'MicroBreakIntervalMinutes 35
-                   'MicroBreakDurationSeconds 25
-                   'MotionEnabled #f
                    'SoundEnabled #t
                    'AutoCheckUpdates #f
                    'WelcomeShown #t
                    'Language "zh"
-                   'CompanionSize "L"
-                   'CompanionMotion "lively"
-                   'CompanionDock "top-left"
-                   'CompanionLabels "always"
-                   'Preset "gentle"
-                   'SitEnabled #f
-                   'WaterEnabled #f
-                   'QuietHoursEnabled #t
-                   'QuietHoursStartMinutes 1200
-                   'QuietHoursEndMinutes 480
-                   'CompanionFreeX 123
-                   'CompanionFreeY 987)])
-  (call-with-output-file path (lambda (out) (write-json v4 out)))
-  (define migrated (load-config dir))
-  (check-true (reminder-config-sound-enabled migrated))
-  (check-false (reminder-config-auto-check-updates migrated))
-  (check-true (reminder-config-welcome-shown migrated))
-  (check-equal? (reminder-config-language migrated) "zh")
-  (check-true (reminder-config-quiet-hours-enabled migrated))
-  (check-equal? (reminder-config-quiet-hours-start-minutes migrated) 1200)
-  (check-equal? (reminder-config-quiet-hours-end-minutes migrated) 480)
-  (check-equal? (reminder-config-companion-free-x migrated) 123)
-  (check-equal? (reminder-config-companion-free-y migrated) 987)
-  ;; the next save writes the v5 shape
-  (check-true (save-config dir migrated))
-  (check-equal? (hash-ref (call-with-input-file path read-json) 'SchemaVersion)
-                config-schema-version)
-  (delete-directory/files dir))
-
-;; A v3 file migrates the same way (identical kept keys).
-(let* ([dir (make-temp-dir "v3-migrate")]
-       [path (build-path dir "config.json")]
-       [v3 (hasheq 'SchemaVersion 3
-                   'SoundEnabled #t
-                   'CompanionDock "top-left"
                    'QuietHoursEnabled #t
                    'QuietHoursStartMinutes 1200
                    'QuietHoursEndMinutes 480)])
-  (call-with-output-file path (lambda (out) (write-json v3 out)))
-  (define migrated (load-config dir))
-  (check-true (reminder-config-sound-enabled migrated))
-  (check-true (reminder-config-quiet-hours-enabled migrated))
-  (check-equal? (reminder-config-companion-free-x migrated) -1)
-  (delete-directory/files dir))
-
-;; A shipped 0.0.1 (v2) file keeps the same surviving choices and leaves a
-;; one-time backup behind.
-(let* ([dir (make-temp-dir "v2-migrate")]
-       [path (build-path dir "config.json")]
-       [v2 (hasheq 'SchemaVersion 2
-                   'SitReminderMinutes 60
-                   'WaterReminderMinutes 40
-                   'AwayResetMinutes 8
-                   'SnoozeMinutes 20
-                   'MicroBreakEnabled #f
-                   'MicroBreakIntervalMinutes 35
-                   'MicroBreakDurationSeconds 25
-                   'MotionEnabled #f
-                   'SoundEnabled #t
-                   'AutoCheckUpdates #f
-                   'WelcomeShown #t
-                   'Language "zh"
-                   'CompanionSize "L"
-                   'CompanionMotion "lively"
-                   'CompanionDock "top-left"
-                   'CompanionLabels "always")])
-  (call-with-output-file path
-    (lambda (out) (write-json v2 out)))
-  (define migrated (load-config dir))
-  (check-true (reminder-config-sound-enabled migrated))
-  (check-false (reminder-config-auto-check-updates migrated))
-  (check-true (reminder-config-welcome-shown migrated))
-  (check-equal? (reminder-config-language migrated) "zh")
-  ;; Backup written exactly once, and it is the original v2 document.
-  (define bak (build-path dir "config.json.v2.bak"))
-  (check-true (file-exists? bak))
-  (check-equal? (hash-ref (call-with-input-file bak read-json) 'SchemaVersion) 2)
-  (check-true (save-config dir migrated))
+  (call-with-output-file path (lambda (out) (write-json v4 out)))
+  (check-equal? (load-config dir) (default-config))
+  (check-true (save-config dir (default-config)))
   (check-equal? (hash-ref (call-with-input-file path read-json) 'SchemaVersion)
                 config-schema-version)
-  (check-equal? (hash-ref (call-with-input-file bak read-json) 'SitReminderMinutes)
-                60)
   (delete-directory/files dir))
 
 ;; --- quiet hours ------------------------------------------------------------

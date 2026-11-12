@@ -8,13 +8,11 @@
 ;; companion presentation, per-kind reminders always on. "Don't want to be
 ;; bothered" is Focus (tray) and pause, not config.
 ;;
-;; A file without a known schema marker is foreign and falls back to
-;; defaults. Legacy on-disk formats migrate by keeping only the fields that
-;; still exist: v3/v4 files keep language / sound / auto-update / quiet
-;; hours / placement; a v2 file — the format shipped with 0.0.1 — is
-;; migrated once and left a .v2.bak copy behind. The rhythm, companion and
-;; per-kind fields of older schemas are intentionally NOT carried over: the
-;; product now ships exactly one rhythm and one presentation.
+;; A file without the v5 schema marker is foreign and falls back to
+;; defaults — pre-v5 formats predate the first public release, so no
+;; shipped install ever carried one and nothing migrates. The rhythm,
+;; companion and per-kind fields of older schemas are gone by design: the
+;; product ships exactly one rhythm and one presentation.
 ;;
 ;; Numeric settings are clamped on load AND save; a corrupt or unreadable file
 ;; silently falls back to defaults — a tray app must never crash on config.
@@ -39,7 +37,7 @@
          quiet-hours-seconds-remaining)
 
 ;; v5 (issue #140) is the slim surface. Bump only for a breaking on-disk
-;; change; readers migrate v2/v3/v4 and reject everything else.
+;; change; readers reject every other schema version outright.
 (define config-schema-version 5)
 
 (struct reminder-config
@@ -104,29 +102,18 @@
           'CompanionFreeX (reminder-config-companion-free-x clamped)
           'CompanionFreeY (reminder-config-companion-free-y clamped)))
 
-;; Tolerant reader with a hard version gate: a file written by an unknown
-;; schema (v0.x PascalCase, future versions) is foreign — use defaults, never
-;; guess. Within a known version, missing keys keep defaults, wrong-typed
-;; values keep defaults, numerics are clamped.
+;; Tolerant reader with a hard version gate: a file written by any other
+;; schema (pre-v5 formats are gone — no shipped install ever carried them;
+;; a v0.x PascalCase or future-version file is foreign) uses defaults,
+;; never guesses. Within v5, missing keys keep defaults, wrong-typed values
+;; keep defaults, numerics are clamped.
 (define (jsexpr->config js)
-  (cond
-    ;; v5: the current shape.
-    [(and (hash? js) (eq? (hash-ref js 'SchemaVersion #f) config-schema-version))
-     (migrate-kept-fields js)]
-    ;; v3/v4 (issue #87 era): same kept keys, plus rhythm/preset/companion
-    ;; fields this schema deliberately drops. The rhythm and presentation
-    ;; choices do not survive the slim-down by design — the product now ships
-    ;; exactly one of each.
-    [(and (hash? js) (memq (hash-ref js 'SchemaVersion #f) (list 3 4)))
-     (migrate-kept-fields js)]
-    ;; The format shipped with 0.0.1: keep the same surviving fields and
-    ;; leave a .v2.bak copy behind (see load-config).
-    [(and (hash? js) (eq? (hash-ref js 'SchemaVersion #f) 2))
-     (migrate-kept-fields js)]
-    [else (default-config)]))
+  (if (and (hash? js) (eq? (hash-ref js 'SchemaVersion #f) config-schema-version))
+      (read-kept-fields js)
+      (default-config)))
 
-;; Shared legacy/v5 reader: kept fields only, tolerant types, clamped numbers.
-(define (migrate-kept-fields js)
+;; v5 reader: kept fields only, tolerant types, clamped numbers.
+(define (read-kept-fields js)
   (define (int-field key default lo hi)
     (define v (hash-ref js key default))
     (if (exact-integer? v) (clamp v lo hi) default))
@@ -149,22 +136,12 @@
 (define (config-path directory)
   (build-path directory "config.json"))
 
-;; Back up a pre-v3 config exactly once, before this build can overwrite it.
-(define (backup-v2-config! directory js)
-  (with-handlers ([exn:fail? void])
-    (define target (build-path directory "config.json.v2.bak"))
-    (unless (file-exists? target)
-      (with-output-to-file target #:exists 'error
-        (lambda () (write-json js) (newline))))))
-
 ;; Load config.json from the given directory. Any read/parse problem falls
-;; back to defaults (same failure posture as v0.x: a tray app keeps working).
+;; back to defaults (a tray app keeps working).
 (define (load-config directory)
   (with-handlers ([exn:fail? (lambda (_) (default-config))])
     (define js
       (call-with-input-file (config-path directory) read-json))
-    (when (and (hash? js) (eq? (hash-ref js 'SchemaVersion #f) 2))
-      (backup-v2-config! directory js))
     (jsexpr->config js)))
 
 ;; Atomic write: config.json.tmp -> rename. Returns #t when the file reached
