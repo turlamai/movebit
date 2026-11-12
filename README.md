@@ -115,7 +115,7 @@ raco test racket/        # domain core tests
 raco rivet build         # generate the client, compile the backend, build this platform's host
 ```
 
-Linux packaging scripts (deb / rpm / AppImage) live under `packaging/linux/` and operate on rivet's staged `dist/` payload.
+Linux packaging scripts (deb / rpm / AppImage) live under `linux/` and operate on rivet's staged `dist/` payload.
 
 ## Release process
 

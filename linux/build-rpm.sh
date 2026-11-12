@@ -16,7 +16,7 @@ version="${1:?usage: build-rpm.sh <version> <payload-dir> <arch> [output-dir]}"
 payload="${2:?usage: build-rpm.sh <version> <payload-dir> <arch> [output-dir]}"
 arch="${3:?usage: build-rpm.sh <version> <payload-dir> <arch> [output-dir]}"
 out_dir="${4:-dist}"
-root="$(cd "$(dirname "$0")/../.." && pwd)"
+root="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "$arch" in
   x64) rpm_arch=x86_64 ;;

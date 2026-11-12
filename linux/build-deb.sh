@@ -15,7 +15,7 @@ version="${1:?usage: build-deb.sh <version> <payload-dir> <arch> [output-dir]}"
 payload="${2:?usage: build-deb.sh <version> <payload-dir> <arch> [output-dir]}"
 arch="${3:?usage: build-deb.sh <version> <payload-dir> <arch> [output-dir]}"
 out_dir="${4:-dist}"
-root="$(cd "$(dirname "$0")/../.." && pwd)"
+root="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "$arch" in
   x64) deb_arch=amd64 ;;

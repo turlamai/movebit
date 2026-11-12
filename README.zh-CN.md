@@ -115,7 +115,7 @@ raco test racket/        # 领域核心测试
 raco rivet build         # 生成客户端、编译后端、构建本平台宿主
 ```
 
-Linux 打包脚本（deb / rpm / AppImage）在 `packaging/linux/` 下，作用于 rivet stage 出的 `dist/` 产物。
+Linux 打包脚本（deb / rpm / AppImage）在 `linux/` 下，作用于 rivet stage 出的 `dist/` 产物。
 
 ## 发布流程
 

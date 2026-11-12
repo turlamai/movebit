@@ -51,6 +51,6 @@ Software Foundation; see the `COPYING` file in the source archive).
 `.AppImage` release artifacts contain the type-2 AppImage runtime from
 [AppImage/AppImageKit](https://github.com/AppImage/AppImageKit),
 licensed MIT. The build tool is the pinned official `appimagetool` 1.9.1
-release, checksum-verified in `packaging/linux/build-appimage.sh`.
+release, checksum-verified in `linux/build-appimage.sh`.
 AppImageKit's license does not apply to the contents of the AppImage:
 those are MoveBit's MIT payload plus the entries above.

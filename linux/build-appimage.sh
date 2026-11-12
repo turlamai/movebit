@@ -18,7 +18,7 @@ version="${1:?usage: build-appimage.sh <version> <payload-dir> <arch> [output-di
 payload="${2:?usage: build-appimage.sh <version> <payload-dir> <arch> [output-dir]}"
 arch="${3:?usage: build-appimage.sh <version> <payload-dir> <arch> [output-dir]}"
 out_dir="${4:-dist}"
-root="$(cd "$(dirname "$0")/../.." && pwd)"
+root="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Pinned toolchain: AppImage/appimagetool release 1.9.1 (official, static,
 # type-2 AppImage). Checksums captured from the release downloads.
