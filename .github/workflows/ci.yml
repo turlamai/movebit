@@ -14,7 +14,7 @@ env:
   # tag once one contains it. Family policy: rivet is consumed as a
   # package (this pin install), never as a linked source checkout — keeps
   # local and CI builds reproducible against one revision.
-  RIVET_PIN: a7b3d45e34210722920f7a2099126295c144f444
+  RIVET_PIN: d6e98896fffa3f484e9ea0162d807ad2518c1538
 concurrency:
   # Superseded PR runs may be cancelled; main checks must finish for each SHA.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
@@ -120,7 +120,7 @@ jobs:
       - name: Verify native Mubi input pass-through before expensive builds
         run: python3 scripts/check-mubi-input-safety.py --self-test
       - name: Set up embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@a7b3d45e34210722920f7a2099126295c144f444
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@d6e98896fffa3f484e9ea0162d807ad2518c1538
       - name: Install GTK4 and a virtual display
         run: |
           sudo apt-get update

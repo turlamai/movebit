@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  RIVET_PIN: 9d766b4acab672844093204cb4845ef4ef933d2c
+  RIVET_PIN: d6e98896fffa3f484e9ea0162d807ad2518c1538
   FROM_VERSION: "0.0.8"
   TO_VERSION: "0.0.9"
 
@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: raco pkg install --auto --no-docs "https://github.com/turlamai/rivet.git#${RIVET_PIN}"
 
-      - uses: turlamai/rivet/.github/actions/setup-embed-racket@8ccc95530af43287d1b7e94e1ae69e10279b4db4
+      - uses: turlamai/rivet/.github/actions/setup-embed-racket@d6e98896fffa3f484e9ea0162d807ad2518c1538
 
       - name: Fetch both published AppImages through the authenticated API
         env:
