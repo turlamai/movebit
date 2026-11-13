@@ -327,6 +327,8 @@
                     "available")
       (upd:start-download! image-dir)
       (wait-for-terminal-phase! 60))
+    (define (dir-files)
+      (sort (map path->string (directory-list image-dir)) string<?))
     (call-with-output-file image-path #:exists 'truncate
       (lambda (out) (write-bytes original out)))
     (putenv "APPIMAGE" (path->string image-path))
@@ -338,26 +340,31 @@
         ;; image.
         (check-equal? (run! "tampered" digest (bytes-length payload)) "error")
         (check-equal? (file->bytes image-path) original)
+        ;; a rejected download leaves no staging/partial residue
+        (check-equal? (dir-files) (list (path->string image-path)))
         (check-equal? (run! "valid" digest (sub1 (bytes-length payload)))
                       "error")
         (check-equal? (file->bytes image-path) original)
+        (check-equal? (dir-files) (list (path->string image-path)))
         (check-equal? (run! "valid" digest (bytes-length payload))
                       "downloaded")
         (check-equal? (hash-ref (upd:update-state-snapshot) 'downloadedPath)
                       (path->string image-path))
         (check-equal? (sha256-file/hex image-path) digest)
         (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
-        ;; the previous runnable image stays for recovery
+        ;; the previous runnable image stays for recovery; nothing else does
         (check-equal? (file->bytes (string-append (path->string image-path) ".previous"))
                       original)
+        (check-equal? (dir-files)
+                      (sort (list (path->string image-path)
+                                  (string-append (path->string image-path)
+                                                 ".previous"))
+                            string<?))
         (check-not-false
          (memq 'execute (file-or-directory-permissions image-path))))
       (lambda ()
         (putenv "APPIMAGE" (or old-appimage ""))
-        (when (file-exists? image-path) (delete-file image-path))
-        (let ([previous (string-append (path->string image-path) ".previous")])
-          (when (file-exists? previous) (delete-file previous)))
-        (delete-directory image-dir)
+        (delete-directory/files image-dir #:must-exist? #f)
         (stop-server!)))))
 
 ;; ---- persistent silent-check throttle ------------------------------------------

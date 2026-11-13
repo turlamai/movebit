@@ -349,7 +349,8 @@
 (define (install-appimage! verified self)
   (define backup-temp
     (make-temporary-file "movebit-backup-~a.AppImage" #f (path-only self)))
-  (define backup (string-append self ".previous"))
+  (define backup
+    (string-append (path->string self) ".previous"))
   (with-handlers ([exn?
                    (lambda (e)
                      (when (file-exists? backup-temp) (delete-file backup-temp))
