@@ -14,14 +14,13 @@
 #   1. the private key path
 #   2. the DER base64 to paste into the GitHub secret (gh secret set
 #      UPDATE_ED25519_PRIVATE_KEY_B64)
-#   3. the raw 32-byte public key base64 to embed in
-#      Services/UpdateService.cs (PinnedPublicKey)
+#   3. the SPKI hex replacement for racket/movebit/update.rkt
+#      (current-update-public-key-hex)
 #
 # Rotate = ship a build that trusts the next key before releases stop
-# being signed with the old one (see the family UPDATE spec). When the
-# in-app verifier landed (v1.6.1, 2026-10-10) no shipped client verified
-# signatures yet, so that release rotated to the key this script now
-# manages without an overlap build.
+# being signed with the old one (see the family UPDATE spec). Current
+# clients verify signatures, so a rotation needs an overlap release: there
+# is no "no shipped client verifies yet" shortcut.
 
 set -euo pipefail
 
@@ -58,11 +57,13 @@ umask 077
 "$OPENSSL_BIN" genpkey -algorithm ed25519 -out "$KEY_PATH"
 
 DER_B64="$("$OPENSSL_BIN" pkey -in "$KEY_PATH" -outform DER 2>/dev/null | base64 | tr -d '\n')"
-PUB_B64="$("$OPENSSL_BIN" pkey -in "$KEY_PATH" -pubout -outform DER 2>/dev/null | tail -c 32 | base64)"
+PUB_HEX="$("$OPENSSL_BIN" pkey -in "$KEY_PATH" -pubout -outform DER 2>/dev/null | tail -c 32 | od -An -tx1 | tr -d ' \n')"
 
 echo "Private key: $KEY_PATH  (back this up)"
 echo "key-id: $KEY_ID"
 echo "GitHub secret (gh secret set UPDATE_ED25519_PRIVATE_KEY_B64):"
 echo "  $DER_B64"
-echo "Public key (base64, embed in Services/UpdateService.cs):"
-echo "  $PUB_B64"
+echo "Public key: replace current-update-public-key-hex in"
+echo "racket/movebit/update.rkt with these two literals:"
+echo "  \"302a300506032b6570032100\""
+echo "  \"$PUB_HEX\""
