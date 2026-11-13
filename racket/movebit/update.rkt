@@ -436,8 +436,13 @@
   (unless (and self-string (non-empty-string? self-string))
     (error 'start-download "APPIMAGE is not set; not running as an AppImage"))
   (define self (string->path self-string))
-  (values self
-          (make-temporary-file "movebit-update-~a.AppImage" #f (path-only self))))
+  ;; Reserve a unique name, then remove the file: a failed verification
+  ;; must not strand an empty staging file beside the running image
+  ;; (rivet's managed download cleans only its own .partial).
+  (define staged
+    (make-temporary-file "movebit-update-~a.AppImage" #f (path-only self)))
+  (delete-file staged)
+  (values self staged))
 
 (define (download-running?)
   (define instance (unbox updater-box))
