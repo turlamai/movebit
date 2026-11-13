@@ -4,6 +4,13 @@
 
 ### Changed
 
+- **The updater runs on the shared managed state machine.** Candidate
+  selection, the download worker, the stall/total watchdog, cancellation
+  and the terminal state now come from `rivet/distribution`'s
+  `make-updater`; MoveBit supplies the install-kind policy, staging paths
+  and the AppImage in-place swap (chmod → `.previous` backup → atomic
+  rename) through `#:destination`/`#:after-download`. The
+  `get-update-state` wire shape and the start/cancel toggle are unchanged.
 - **Mubi is freely draggable — no placement mode.** Grabbing the character
   moves it at any time on every desktop; the pointer-through surface turns
   touchable only while the cursor rests on Mubi itself, and the dropped

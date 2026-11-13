@@ -13,6 +13,9 @@
          openssl
          rackunit/text-ui
          rivet/distribution
+         ;; The managed updater exposes its transport parameters to tests
+         ;; only; this acceptance script is the updater's test harness.
+         (submod (lib "rivet/distribution/managed-updater.rkt") test-support)
          racket/file
          racket/path
          racket/string
@@ -87,36 +90,44 @@
 
 (define priv (generate-private-key 'eddsa '((curve ed25519))))
 (define pub (datum->pk-key (pk-key->datum priv 'rkt-public) 'rkt-public))
-(define component-tail
-  (if (equal? (procedure-arity updater-config) 10) (list #f) '()))
-(define config
-  (apply updater-config "site.jrtx.movebit" "0.1.0" 'stable
-         'linux (upd:architecture-symbol) pub "movebit-native-test" 0
-         (* 512 1024 1024) component-tail))
 
-(define (signed-candidate digest size)
+;; A manifest over the loopback artifact URL, signed with the throwaway key
+;; and verified through the same wrapper the live feed uses. The managed
+;; check then selects its appimage artifact.
+(define (signed-manifest digest size)
   (define artifact
-    (apply update-artifact 'linux (upd:architecture-symbol)
-           (format "https://127.0.0.1:~a/release.AppImage" port)
-           digest size 'appimage '() component-tail))
+    (update-artifact 'linux (upd:architecture-symbol)
+                     (format "https://127.0.0.1:~a/release.AppImage" port)
+                     digest size 'appimage '() #f))
   (define inner
     (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
                      "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
                      (list artifact)))
   (define output (open-output-bytes))
   (write-signed-manifest inner priv "movebit-native-test" output)
-  (define verified
-    (verify-signed-manifest (open-input-bytes (get-output-bytes output))
-                            pub #:key-id "movebit-native-test"))
-  (define selected (select-update config verified #:install-kind 'appimage))
-  (check-true (update-candidate? selected))
-  selected)
+  (verify-signed-manifest (open-input-bytes (get-output-bytes output))
+                          pub #:key-id "movebit-native-test"))
 
-;; Preserve normal certificate-chain and hostname verification while
-;; trusting only this ephemeral test certificate, never a production key.
-(define (download-local! candidate)
-  (parameterize ([current-https-protocol client-context])
-    (upd:download-appimage-with-progress! candidate)))
+;; Drive the shipped managed check/download/install path against the signed
+;; manifest and the loopback HTTPS server. Returns the terminal phase.
+(define (run-download! digest size)
+  (parameterize ([current-https-protocol client-context]
+                 [current-managed-fetch-manifest
+                  (lambda (_url _key
+                          #:key-id [_key-id #f]
+                          #:trusted-keys [_trusted-keys '()]
+                          #:maximum-bytes [_maximum-bytes (* 4 1024 1024)])
+                    (signed-manifest digest size))])
+    (upd:reset-update-state!)
+    (define checked (upd:perform-check! "https://dl.example/movebit"))
+    (check-equal? (hash-ref checked 'status "error") "available")
+    (upd:start-download! scratch)
+    (let loop ([deadline (+ (current-seconds) 120)])
+      (define phase (hash-ref (upd:update-state-snapshot) 'phase "error"))
+      (cond
+        [(member phase '("downloaded" "error")) phase]
+        [(> (current-seconds) deadline) phase]
+        [else (sleep 0.05) (loop deadline)]))))
 
 ;; run-tests reports a nonzero failure count; a raw top-level rackunit
 ;; check can print FAILURE but leave the process exit code at zero.
@@ -131,33 +142,27 @@
     (define original-digest (sha256-file/hex installed))
     (check-equal? original-digest source-digest)
     ;; Both rejection paths must leave the original launchable image intact.
-    (check-exn exn:fail?
-               (lambda ()
-                 (download-local!
-                  (signed-candidate (make-string 64 #\0) source-size))))
+    (check-equal? (run-download! (make-string 64 #\0) source-size) "error")
     (check-equal? (sha256-file/hex installed) original-digest)
-    (check-exn exn:fail?
-               (lambda ()
-                 (download-local!
-                  (signed-candidate source-digest (sub1 source-size)))))
+    (check-equal? (run-download! source-digest (sub1 source-size)) "error")
     (check-equal? (sha256-file/hex installed) original-digest)
     (check-false (file-exists? (string-append (path->string installed) ".previous")))
 
-    (let ([updated (download-local!
-                    (signed-candidate source-digest source-size))]
-          [backup (string-append (path->string installed) ".previous")])
-      (check-equal? updated (path->string installed))
-      (check-equal? (sha256-file/hex installed) source-digest)
-      (check-equal? (file-size installed) source-size)
-      (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
-      (check-true (file-exists? backup))
-      (check-equal? (sha256-file/hex backup) original-digest)
-      (check-not-false (memq 'execute (file-or-directory-permissions installed #f)))
-      ;; The installed path itself still executes a valid AppImage runtime.
-      (unless (zero? (system*/exit-code installed "--appimage-version"))
-        (error 'appimage-release-acceptance "updated AppImage failed runtime launch"))
-      (printf "native ~a AppImage: signed real-byte download, tamper/size rejection, atomic swap, backup, relaunch PASS~%"
-              (upd:architecture-symbol))))
+    (check-equal? (run-download! source-digest source-size) "downloaded")
+    (define snapshot (upd:update-state-snapshot))
+    (define backup (string-append (path->string installed) ".previous"))
+    (check-equal? (hash-ref snapshot 'downloadedPath) (path->string installed))
+    (check-equal? (sha256-file/hex installed) source-digest)
+    (check-equal? (file-size installed) source-size)
+    (check-equal? (hash-ref snapshot 'percent) 100)
+    (check-true (file-exists? backup))
+    (check-equal? (sha256-file/hex backup) original-digest)
+    (check-not-false (memq 'execute (file-or-directory-permissions installed #f)))
+    ;; The installed path itself still executes a valid AppImage runtime.
+    (unless (zero? (system*/exit-code installed "--appimage-version"))
+      (error 'appimage-release-acceptance "updated AppImage failed runtime launch"))
+    (printf "native ~a AppImage: signed real-byte download, tamper/size rejection, atomic swap, backup, relaunch PASS~%"
+            (upd:architecture-symbol)))
   (lambda ()
     (putenv "APPIMAGE" (or old-appimage ""))
     (void)))))))

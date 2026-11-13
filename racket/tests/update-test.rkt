@@ -20,6 +20,9 @@
          json
          rackunit
          rivet/distribution
+         ;; Transport injection for the loopback feed: the managed updater
+         ;; provides these parameters to tests only.
+         (submod (lib "rivet/distribution/managed-updater.rkt") test-support)
          racket/file
          racket/list
          racket/path
@@ -39,11 +42,17 @@
 
 (define download-limit (* 512 1024 1024))
 
-;; Rivet main grew a trailing `component` discriminator on updater-config and
-;; update-artifact; the release pin (v0.11.0) predates it. Fixtures carry the
-;; plain component-less artifact (#f) either way (see movebit/update.rkt).
-(define component-tail
-  (if (equal? (procedure-arity updater-config) 10) (list #f) '()))
+;; The managed check over a crafted manifest: the transport parameter is
+;; captured when perform-check! builds the updater, so the real download
+;; worker and verification still run.
+(define (check-with-manifest! manifest)
+  (parameterize ([current-managed-fetch-manifest
+                  (lambda (_url _key
+                          #:key-id [_key-id #f]
+                          #:trusted-keys [_trusted-keys '()]
+                          #:maximum-bytes [_maximum-bytes (* 4 1024 1024)])
+                    manifest)])
+    (upd:perform-check! "https://dl.example/movebit")))
 
 ;; ---- platform identity ------------------------------------------------------
 
@@ -100,12 +109,11 @@
   (update-manifest
    "site.jrtx.movebit" "9.9.9" 7 'stable
    "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-   (list (apply update-artifact (upd:platform-symbol) (upd:architecture-symbol)
+   (list (update-artifact (upd:platform-symbol) (upd:architecture-symbol)
                 artifact-url
                 payload-sha256
                 (file-size payload-zip)
-                'zip '()
-                component-tail))))
+                'zip '() #f))))
 
 (test-case "signed manifest verifies, a wrong key-id fails closed"
   (define wrapped (open-output-bytes))
@@ -123,10 +131,9 @@
 
 (test-case "select-update picks this platform's artifact and gates versions"
   (define config
-    (apply updater-config "site.jrtx.movebit" "0.0.1" 'stable
+    (updater-config "site.jrtx.movebit" "0.0.1" 'stable
            (upd:platform-symbol) (upd:architecture-symbol)
-           pub "movebit-test" 0 download-limit
-           component-tail))
+           pub "movebit-test" 0 download-limit #f))
   (define candidate
     (select-update config
                    (test-manifest "https://dl.example/movebit-9.9.9.zip")))
@@ -205,20 +212,16 @@
   (define payload (file->bytes payload-zip))
   (define-values (port-number stop-server!)
     (serve-files! (list (cons "/movebit-9.9.9.zip" payload))))
-  (define config
-    (apply updater-config "site.jrtx.movebit" "0.1.0" 'stable
-           (upd:platform-symbol) (upd:architecture-symbol)
-           pub "movebit-test" 0 download-limit
-           component-tail))
-  (define candidate
-    (select-update config
-                   (test-manifest
-                    (format "http://127.0.0.1:~a/movebit-9.9.9.zip" port-number))))
-  (check-true (update-candidate? candidate))
-
   (parameterize ([upd:current-install-dir test-data-dir])
     (upd:reset-update-state!)
-    (upd:set-candidate! candidate)
+    ;; The managed check selects from the crafted manifest (the install dir
+    ;; above is not under Program Files, so the portable zip applies).
+    (check-equal?
+     (hash-ref (check-with-manifest!
+                (test-manifest
+                 (format "http://127.0.0.1:~a/movebit-9.9.9.zip" port-number)))
+               'status)
+     "available")
     (upd:start-download! test-data-dir)
     ;; a mismatch here is almost always the payload/manifest digest — show
     ;; the state message next to the phase
@@ -263,9 +266,9 @@
 (test-case "signed AppImage entry is selected only for matching platform and version"
   (define digest (make-string 64 #\a))
   (define artifact
-    (apply update-artifact 'linux (upd:architecture-symbol)
+    (update-artifact 'linux (upd:architecture-symbol)
            "https://downloads.example/movebit-9.9.9-linux.AppImage"
-           digest 100 'appimage '() component-tail))
+           digest 100 'appimage '() #f))
   (define manifest
     (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
                      "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
@@ -277,9 +280,9 @@
       (verify-signed-manifest (open-input-bytes (get-output-bytes wrapped))
                               pub #:key-id "movebit-test")))
   (define (config platform version)
-    (apply updater-config "site.jrtx.movebit" version 'stable
+    (updater-config "site.jrtx.movebit" version 'stable
            platform (upd:architecture-symbol) pub "movebit-test" 0
-           download-limit component-tail))
+           download-limit #f))
   (define selected (select-update (config 'linux "0.1.0") verified
                                   #:install-kind 'appimage))
   (check-true (update-candidate? selected))
@@ -294,7 +297,7 @@
                               (struct-copy update-manifest verified [artifacts '()])
                               #:install-kind 'appimage)))
 
-(test-case "AppImage rejects tampered payload and size; ignores malicious sidecar"
+(test-case "AppImage rejects tampered payload and size through the signed manifest"
   (when (eq? (upd:platform-symbol) 'linux)
     (define arch (symbol->string (upd:architecture-symbol)))
     (define asset (format "movebit-9.9.9-linux-~a.AppImage" arch))
@@ -303,54 +306,52 @@
     (define digest (bytes->hex-string (sha256-bytes payload)))
     (define-values (port-number stop-server!)
       (serve-files!
-       (list (cons (string-append "/" asset ".sha256")
-                   (string->bytes/utf-8
-                    (format "~a  ~a\n" (bytes->hex-string (sha256-bytes tampered)) asset)))
-             (cons (string-append "/valid/" asset) payload)
+       (list (cons (string-append "/valid/" asset) payload)
              (cons (string-append "/tampered/" asset) tampered))))
     (define image-dir (make-temporary-file "movebit-appimage-~a" 'directory))
     (define image-path (build-path image-dir "movebit.AppImage"))
     (define original (make-bytes 16 3))
     (define old-appimage (getenv "APPIMAGE"))
-    (define (candidate suffix sha size)
-      (define artifact
-        (apply update-artifact 'linux (upd:architecture-symbol)
-               (format "http://127.0.0.1:~a/~a/~a" port-number suffix asset)
-               sha size 'appimage '() component-tail))
-      (update-candidate
-       (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
-                        "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-                        (list artifact))
-       artifact))
+    (define (manifest suffix sha size)
+      (update-manifest
+       "site.jrtx.movebit" "9.9.9" 7 'stable
+       "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
+       (list (update-artifact
+              'linux (upd:architecture-symbol)
+              (format "http://127.0.0.1:~a/~a/~a" port-number suffix asset)
+              sha size 'appimage '() #f))))
+    (define (run! suffix sha size)
+      (upd:reset-update-state!)
+      (check-equal? (hash-ref (check-with-manifest! (manifest suffix sha size))
+                              'status)
+                    "available")
+      (upd:start-download! image-dir)
+      (wait-for-terminal-phase! 60))
     (call-with-output-file image-path #:exists 'truncate
       (lambda (out) (write-bytes original out)))
     (putenv "APPIMAGE" (path->string image-path))
     (dynamic-wind
       void
       (lambda ()
-        (check-exn exn:fail?
-                   (lambda ()
-                     (upd:download-appimage-with-progress!
-                      (candidate "tampered" digest (bytes-length payload)))))
+        ;; The signed manifest vouches for the valid bytes; the server sends
+        ;; the tampered ones. Only the exact signed bytes may replace the
+        ;; image.
+        (check-equal? (run! "tampered" digest (bytes-length payload)) "error")
         (check-equal? (file->bytes image-path) original)
-        (check-exn exn:fail?
-                   (lambda ()
-                     (upd:download-appimage-with-progress!
-                      (candidate "valid" digest (sub1 (bytes-length payload))))))
+        (check-equal? (run! "valid" digest (sub1 (bytes-length payload)))
+                      "error")
         (check-equal? (file->bytes image-path) original)
-        ;; The sidecar deliberately advertises the tampered hash. A valid
-        ;; signed digest still accepts only the exact AppImage bytes.
-        (let ([swapped
-               (upd:download-appimage-with-progress!
-                (candidate "valid" digest (bytes-length payload)))])
-          (check-equal? swapped (path->string image-path)))
+        (check-equal? (run! "valid" digest (bytes-length payload))
+                      "downloaded")
+        (check-equal? (hash-ref (upd:update-state-snapshot) 'downloadedPath)
+                      (path->string image-path))
         (check-equal? (sha256-file/hex image-path) digest)
         (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
-        (check-equal? (length (directory-list image-dir)) 2)
+        ;; the previous runnable image stays for recovery
         (check-equal? (file->bytes (string-append (path->string image-path) ".previous"))
                       original)
         (check-not-false
-         (memq 'execute (file-or-directory-permissions image-path #f))))
+         (memq 'execute (file-or-directory-permissions image-path))))
       (lambda ()
         (putenv "APPIMAGE" (or old-appimage ""))
         (when (file-exists? image-path) (delete-file image-path))
@@ -359,63 +360,13 @@
         (delete-directory image-dir)
         (stop-server!)))))
 
-;; start-download! must finish cleanly after a successful AppImage swap: the
-;; replaced image path is a string (from $APPIMAGE), not a path object.
-(when (eq? (upd:platform-symbol) 'linux)
-(test-case "AppImage start-download! records the replaced image path"
-  (define arch (upd:architecture-symbol))
-  (define asset (format "movebit-9.9.9-linux-~a.AppImage" arch))
-  (define payload (make-bytes 32768 9))
-  (define digest (bytes->hex-string (sha256-bytes payload)))
-  (define-values (port-number stop-server!)
-    (serve-files! (list (cons (string-append "/valid/" asset) payload))))
-  (define image-dir
-    (make-temporary-file "movebit-appimage-start-~a" 'directory))
-  (define image-path (build-path image-dir "movebit.AppImage"))
-  (define old-appimage (getenv "APPIMAGE"))
-  (define artifact
-    (apply update-artifact 'linux arch
-           (format "http://127.0.0.1:~a/valid/~a" port-number asset)
-           digest (bytes-length payload) 'appimage '() component-tail))
-  (define candidate
-    (update-candidate
-     (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
-                      "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-                      (list artifact))
-     artifact))
-  (call-with-output-file image-path #:exists 'truncate
-    (lambda (out) (write-bytes (make-bytes 16 3) out)))
-  (putenv "APPIMAGE" (path->string image-path))
-  (dynamic-wind
-    void
-    (lambda ()
-      (upd:reset-update-state!)
-      (upd:set-candidate! candidate)
-      (upd:start-download! image-dir)
-      (define phase
-        (let loop ([n 0])
-          (define p (hash-ref (upd:update-state-snapshot) 'phase))
-          (cond
-            [(member p '("downloaded" "error")) p]
-            [(> n 500) p]
-            [else (sleep 0.02) (loop (add1 n))])))
-      (check-equal? phase "downloaded")
-      (check-true
-       (string? (hash-ref (upd:update-state-snapshot) 'downloadedPath #f)))
-      (check-equal? (sha256-file/hex image-path) digest))
-    (lambda ()
-      (putenv "APPIMAGE" (or old-appimage ""))
-      (when (file-exists? image-path) (delete-file image-path))
-      (define previous (string-append (path->string image-path) ".previous"))
-      (when (file-exists? previous) (delete-file previous))
-      (delete-directory/files image-dir #:must-exist? #f)
-      (stop-server!)))))
-
 ;; ---- persistent silent-check throttle ------------------------------------------
 
 (test-case "the 4-hour throttle stamp is persistent and settled-only"
   (define bootstrap (build-path test-home "bootstrap.json"))
-  ;; no stamp yet -> not throttled
+  ;; earlier suites run real (injected-feed) checks, which settle and stamp;
+  ;; this suite starts from "never checked".
+  (save-bootstrap (hash-set (load-bootstrap) 'last-update-check #f))
   (check-false (upd:update-check-throttled?))
   ;; a settled check (here: the deterministic no-feed-URL refusal) refreshes
   ;; the stamp and lands it in bootstrap.json
@@ -498,22 +449,19 @@
 (test-case "select-update splits the windows feed by install kind"
   ;; The feed carries both windows installables; the kind picks one.
   (define config
-    (apply updater-config "site.jrtx.movebit" "0.0.1" 'stable
+    (updater-config "site.jrtx.movebit" "0.0.1" 'stable
            'windows 'x64
-           pub "movebit-test" 50 download-limit
-           component-tail))
+           pub "movebit-test" 50 download-limit #f))
   (define manifest
     (update-manifest
      "site.jrtx.movebit" "9.9.9" 7 'stable
      "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-     (list (apply update-artifact 'windows 'x64
+     (list (update-artifact 'windows 'x64
                   "https://dl.example/movebit-9.9.9-windows-x64.zip"
-                  payload-sha256 (file-size payload-zip) 'zip '()
-                  component-tail)
-           (apply update-artifact 'windows 'x64
+                  payload-sha256 (file-size payload-zip) 'zip '() #f)
+           (update-artifact 'windows 'x64
                   "https://dl.example/movebit-9.9.9-windows-x64.msi"
-                  payload-sha256 (file-size payload-zip) 'msi '()
-                  component-tail))))
+                  payload-sha256 (file-size payload-zip) 'msi '() #f))))
   (define msi (select-update config manifest #:install-kind 'msi))
   (check-equal?
    (update-artifact-installer (update-candidate-artifact msi)) 'msi)
@@ -614,27 +562,19 @@
   (define total (* 2 1024 1024))
   (define payload-sha (bytes->hex-string (sha256-bytes (make-bytes total 9))))
   (define-values (port-number stop-server!) (serve-dribble! total))
-  (define config
-    (apply updater-config "site.jrtx.movebit" "0.1.0" 'stable
-           (upd:platform-symbol) (upd:architecture-symbol)
-           pub "movebit-test" 0 download-limit
-           component-tail))
-  (define candidate
-    (select-update config
-                   (update-manifest
-                    "site.jrtx.movebit" "9.9.9" 7 'stable
-                    "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-                    (list (apply update-artifact
-                                 (upd:platform-symbol) (upd:architecture-symbol)
-                                 (format "http://127.0.0.1:~a/movebit-9.9.9.zip"
-                                         port-number)
-                                 payload-sha total
-                                 'zip '()
-                                 component-tail)))))
-  (check-true (update-candidate? candidate))
+  (define manifest
+    (update-manifest
+     "site.jrtx.movebit" "9.9.9" 7 'stable
+     "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
+     (list (update-artifact
+            (upd:platform-symbol) (upd:architecture-symbol)
+            (format "http://127.0.0.1:~a/movebit-9.9.9.zip" port-number)
+            payload-sha total
+            'zip '() #f))))
   (parameterize ([upd:current-install-dir test-data-dir])
     (upd:reset-update-state!)
-    (upd:set-candidate! candidate)
+    (check-equal? (hash-ref (check-with-manifest! manifest) 'status)
+                  "available")
     (upd:start-download! test-data-dir)
     (sleep 0.3)  ; let the worker get mid-flight
     (check-equal? (hash-ref (upd:update-state-snapshot) 'phase) "downloading")
