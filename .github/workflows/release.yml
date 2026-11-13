@@ -17,7 +17,7 @@ env:
   # package (this pin install), never as a linked source checkout — keeps
   # local and release builds reproducible against one revision, and the
   # setup-embed-racket action ref must stay in lockstep with this pin.
-  RIVET_PIN: c2e3760c504677cffe77c06bf30744572992cbf2
+  RIVET_PIN: c96673ded75651c94a1d513b122691f85d76ccf5
 jobs:
   validate:
     name: Validate release tag
@@ -297,7 +297,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@c2e3760c504677cffe77c06bf30744572992cbf2
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@c96673ded75651c94a1d513b122691f85d76ccf5
       - name: Install GTK4, a virtual display, and packaging tooling
         run: |
           sudo apt-get update

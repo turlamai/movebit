@@ -67,13 +67,10 @@
          cancel-download!
          prepare-install!
          appimage-flavor?
+         appimage-download-target
+         install-appimage!
          zip-apply-script
-         msi-apply-script
-         ;; test seams: drive the download paths against a local server
-         ;; without a network check (the threadly test-suite shape)
-         set-candidate!
-         download-with-progress!
-         download-appimage-with-progress!)
+         msi-apply-script)
 
 ;; Ed25519 public key, DER SPKI hex-encoded — committed on purpose: the
 ;; public half only enables verification. Rotation replaces this hex and the
@@ -110,13 +107,6 @@
        (hex->bytes current-update-public-key-hex)
        #t))
 
-;; The manifest verifier takes a parsed key object, not raw DER. Lazy on
-;; purpose: FFI at module-import time kills embedded apps at startup (the
-;; landmine rivet/distribution/crypto.rkt documents); a failure here
-;; surfaces as an honest "update check failed" instead of a dead app.
-(define (current-update-public-key)
-  (bytes->ed25519-public-key (hex->bytes current-update-public-key-hex)))
-
 ;; ---------- platform identity ----------
 
 (define (platform-symbol)
@@ -140,16 +130,6 @@
       (with-handlers ([exn:fail? (lambda (_) configured)])
         (app-version))))
 
-;; Rivet main grew a trailing `component` discriminator on updater-config
-;; (and update-artifact): one feed may carry several installables per
-;; platform, and the config names which entry this consumer selects.
-;; MoveBit ships plain component-less artifacts (`release --update-payload`
-;; without a component keeps #f), so select #f when the field exists. The
-;; release pin (v0.11.0) predates the field — branch on the constructor
-;; arity until the pin moves past it, then inline the argument.
-(define component-tail
-  (if (equal? (procedure-arity updater-config) 10) (list #f) '()))
-
 ;; Sticky rollout bucket, 0..99: a manifest rolling out to N matches only
 ;; buckets below N, so a bad build can be stopped from spreading while the
 ;; feed is fixed. Generated once per machine (crypto-random-bytes, NOT
@@ -164,22 +144,6 @@
                            100)])
         (save-bootstrap (hash-set (load-bootstrap) 'rollout-bucket fresh))
         fresh)))
-
-(define (updater-config* maximum-bytes)
-  (apply updater-config
-         "site.jrtx.movebit"
-         (effective-version)
-         'stable
-         (platform-symbol)
-         (architecture-symbol)
-         (current-update-public-key)
-         update-key-id
-         ;; The persisted bucket: today the manifest rolls out to 100, so
-         ;; every bucket matches; a partial rollout narrows the cohort
-         ;; without any client change.
-         (rollout-bucket)
-         maximum-bytes
-         component-tail))
 
 ;; ---------- install shape (which feed entry this install may apply) ----------
 ;;
@@ -225,34 +189,68 @@
 ;; phase: idle | checking | downloading | downloaded | ready-to-apply | error
 ;; The key set is the hosts' poll contract (get-update-state reads it) —
 ;; every key is present in every state, #f when not applicable.
-(define update-state
-  (box (hasheq 'phase "idle"
-               'percent 0
-               'message #f
-               'availableVersion #f
-               'downloadedPath #f)))
+(define (idle-snapshot)
+  (hasheq 'phase "idle"
+          'percent 0
+          'message #f
+          'availableVersion #f
+          'downloadedPath #f))
 
-(define candidate-box (box #f))
-(define worker-thread-box (box #f))
+(define update-state (box (idle-snapshot)))
+(define updater-box (box #f))
+(define download-root-box (box #f))
+;; prepare-install! promotes a verified download to "ready-to-apply"; the
+;; managed state has no such phase, so the product layers it on the
+;; downloaded snapshot until the next check/download clears it.
+(define phase-override-box (box #f))
 
 (define (state-set! key value)
   (set-box! update-state (hash-set (unbox update-state) key value)))
 
+;; The managed phases include transport/selection outcomes the UI treats as
+;; idle: `available` carries its signal in availableVersion, `up-to-date`
+;; means there is nothing to do, and `cancelled` returns the controls to
+;; idle. Anything else passes through unchanged.
+(define (managed-state->product state)
+  (define phase (hash-ref state 'phase "idle"))
+  (define mapped-phase
+    (case phase
+      [("available" "up-to-date" "cancelled") "idle"]
+      [else phase]))
+  (define idle? (string=? mapped-phase "idle"))
+  (hasheq 'phase mapped-phase
+          'percent (if idle? 0 (hash-ref state 'percent 0))
+          'message (let ([message (and (not idle?)
+                                       (hash-ref state 'message #f))])
+                     (if message message #f))
+          'availableVersion (let ([version (hash-ref state 'availableVersion #f)])
+                              (if version version #f))
+          'downloadedPath (let ([path (hash-ref state 'downloadedPath #f)])
+                            (if path path #f))))
+
 (define (update-state-snapshot)
-  (unbox update-state))
+  (define instance (unbox updater-box))
+  (define base
+    (if instance
+        (managed-state->product (updater-state instance))
+        (unbox update-state)))
+  (define override (unbox phase-override-box))
+  (if (and override (equal? (hash-ref base 'phase "idle") "downloaded"))
+      (hash-set base 'phase override)
+      base))
 
 (define (reset-update-state!)
-  (set-box! candidate-box #f)
-  (set-box! update-state
-            (hasheq 'phase "idle"
-                    'percent 0
-                    'message #f
-                    'availableVersion #f
-                    'downloadedPath #f)))
-
-(define (set-update-error! message)
-  (state-set! 'phase "error")
-  (state-set! 'message message))
+  ;; Dropping an instance while its worker runs would orphan the download;
+  ;; land it on the terminal cancelled phase first.
+  (define instance (unbox updater-box))
+  (when (and instance (equal? (hash-ref (updater-state instance) 'phase)
+                              "downloading"))
+    (updater-cancel! instance)
+    (updater-wait instance 5.0))
+  (set-box! updater-box #f)
+  (set-box! download-root-box #f)
+  (set-box! phase-override-box #f)
+  (set-box! update-state (idle-snapshot)))
 
 ;; ---------- silent-check throttle (the family's 4-hour stamp) --------------
 ;;
@@ -291,70 +289,36 @@
     (when (hash-ref result 'settled #f)
       (record-update-check-stamp!))
     result)
-  (reset-update-state!)
-  (state-set! 'phase "checking")
-  (with-handlers
-      ([exn:fail?
-        (lambda (e)
-          (state-set! 'phase "error")
-          (state-set! 'message (exn-message e))
-          (settle (hasheq 'status "error" 'settled #f
-                          'message (exn-message e))))])
-    (cond
-      [(not (movebit-update-configured?))
-       (state-set! 'phase "idle")
-       (settle
-        (hasheq 'status "error" 'settled #t
-                'message "updates unavailable: developer build (no update key configured)"))]
-      [(or (not base-url) (string=? (string-trim base-url) ""))
-       (state-set! 'phase "idle")
-       (settle
-        (hasheq 'status "error" 'settled #t
-                'message "updates unavailable: no update base URL configured"))]
-      [else
-       (define manifest
-         (fetch-update-manifest
-          (string-append (regexp-replace* #rx"/+$" base-url "") "/update-manifest.json")
-          (current-update-public-key)
-          #:key-id update-key-id
-          #:maximum-bytes (* 4 1024 1024)))
-       (define candidate
-         (select-update (updater-config* (* 4 1024 1024)) manifest
-                        #:install-kind (install-kind)))
-       ;; A signed feed lacking this platform's AppImage is a hard error,
-       ;; never a silent fallback to an unauthenticated sibling download.
-       (when (and (appimage-flavor?)
-                  (not (for/or ([item (in-list (update-manifest-artifacts manifest))])
-                         (and (eq? (update-artifact-platform item) 'linux)
-                              (eq? (update-artifact-architecture item)
-                                   (architecture-symbol))
-                              (eq? (update-artifact-installer item) 'appimage)
-                              (not (update-artifact-component item))))))
-         (error 'perform-check! "signed update manifest lacks an AppImage artifact for this architecture"))
-       (cond
-         [candidate
-          (set-box! candidate-box candidate)
-          (define inner (update-candidate-manifest candidate))
-          (state-set! 'phase "idle")
-          (state-set! 'availableVersion (update-manifest-version inner))
-          (settle
-           (hasheq 'status "available" 'settled #t
-                   'currentVersion (effective-version)
-                   'availableVersion (update-manifest-version inner)
-                   'build (update-manifest-build inner)
-                   'publishedAt (update-manifest-published-at inner)
-                   'sizeBytes (update-artifact-size
-                               (update-candidate-artifact candidate))))]
-         [else
-          (state-set! 'phase "idle")
-          (state-set! 'availableVersion (void))
-          (settle
-           (hasheq 'status "up-to-date" 'settled #t
-                   'currentVersion (effective-version)))])])))
-
-;; Test seam: install a candidate without a network check so the download
-;; paths can be driven against a local HTTP server.
-(define (set-candidate! candidate) (set-box! candidate-box candidate))
+  (cond
+    ;; Keep the running transfer (and its instance) instead of orphaning
+    ;; the worker; the UI retries the check once the download ends.
+    [(download-running?)
+     (settle (hasheq 'status "error" 'settled #f
+                     'message "an update download is already running"))]
+    [else
+     (reset-update-state!)
+     (cond
+       [(not (movebit-update-configured?))
+        (settle
+         (hasheq 'status "error" 'settled #t
+                 'message "updates unavailable: developer build (no update key configured)"))]
+       [(or (not base-url) (string=? (string-trim base-url) ""))
+        (settle
+         (hasheq 'status "error" 'settled #t
+                 'message "updates unavailable: no update base URL configured"))]
+       [else
+        (with-handlers
+            ([exn:fail?
+              (lambda (e)
+                (state-set! 'phase "error")
+                (state-set! 'message (exn-message e))
+                (settle (hasheq 'status "error" 'settled #f
+                                'message (exn-message e))))])
+          (define instance (make-movebit-updater base-url))
+          (set-box! updater-box instance)
+          (define result (updater-check! instance))
+          (settle (hash-set result 'settled
+                            (not (equal? (hash-ref result 'status #f) "error")))))])]))
 
 ;; ---------- download ----------
 
@@ -373,35 +337,74 @@
                             seen))]))))
       "movebit-update"))
 
-;; Download watchdog bounds. rivet's download-update waits on
-;; read-bytes-avail! with no timeout, so a connection that stalls without
-;; RST/FIN parks the worker thread forever — the UI would rest on
-;; "downloading" with no terminal state. Two finite bounds keep the phase
-;; machine honest: no byte progress for the stall limit, or wall clock past
-;; the total limit, breaks the worker (rivet's partial-file cleanup runs,
-;; and the worker reports phase=error itself) so the UI always gets a
-;; terminal state.
-(define download-stall-limit-seconds 120)
-(define download-total-limit-seconds (* 30 60))
-(define last-progress-seconds (box 0))
+;; ---------- managed updater ----------
 
-;; rivet's download-update owns the whole artifact path — redirect-following
-;; fetch, signed-size cap, .partial cleanup on any failure, SHA-256 + size
-;; verification against the signed manifest, atomic rename — so the wrapper
-;; only maps its byte progress onto the integer percent the UI polls, and
-;; feeds the watchdog's stall clock on every report.
-(define (download-with-progress! candidate destination)
-  (define total (update-artifact-size (update-candidate-artifact candidate)))
-  (download-update
-   (updater-config* maximum-download-bytes)
-   candidate destination
-   #:on-progress
-   (lambda (done)
-     (set-box! last-progress-seconds (current-seconds))
-     (state-set! 'percent
-                 (if (> total 0)
-                     (min 100 (quotient (* done 100) total))
-                     0)))))
+(define (manifest-url base-url)
+  (string-append (regexp-replace* #rx"/+$" base-url "")
+                 "/update-manifest.json"))
+
+;; The verified image installs in place: chmod, keep the previous runnable
+;; image as .previous, and atomically rename over the running file. Any
+;; failure before the final rename leaves the original untouched.
+(define (install-appimage! verified self)
+  (define backup-temp
+    (make-temporary-file "movebit-backup-~a.AppImage" #f (path-only self)))
+  (define backup
+    (string-append (path->string self) ".previous"))
+  (with-handlers ([exn?
+                   (lambda (e)
+                     (when (file-exists? backup-temp) (delete-file backup-temp))
+                     (raise e))])
+    (file-or-directory-permissions verified #o755)
+    ;; Copy into a unique sibling and rename atomically: never follow a
+    ;; pre-existing backup symlink or truncate a known-good backup in place.
+    (copy-file self backup-temp #t)
+    (file-or-directory-permissions backup-temp #o755)
+    (rename-file-or-directory backup-temp backup #t)
+    ;; Keep .previous after success for manual recovery if startup fails.
+    (rename-file-or-directory verified self #t)
+    self))
+
+(define (make-movebit-updater base-url)
+  ;; Set by the destination callback for an AppImage install and consumed
+  ;; by the after-download hook in the same instance.
+  (define appimage-self-box (box #f))
+  (make-updater
+   #:application-id "site.jrtx.movebit"
+   #:current-version (effective-version)
+   #:channel 'stable
+   #:platform (platform-symbol)
+   #:architecture (architecture-symbol)
+   #:install-kind (install-kind)
+   ;; MoveBit ships plain component-less artifacts (`release
+   ;; --update-payload` without a component keeps #f).
+   #:component #f
+   ;; DER bytes: decoded lazily during the check, so a bad key surfaces as
+   ;; an honest "update check failed" instead of killing module load.
+   #:public-key (hex->bytes current-update-public-key-hex)
+   #:key-id update-key-id
+   #:manifest-url (manifest-url base-url)
+   #:data-directory (or (unbox download-root-box) (current-directory))
+   #:destination
+   (lambda (candidate)
+     (cond
+       [(appimage-flavor?)
+        (define-values (self staged) (appimage-download-target))
+        (set-box! appimage-self-box self)
+        staged]
+       [else
+        (build-path (updates-dir (or (unbox download-root-box)
+                                     (current-directory)))
+                    (artifact-file-name candidate))]))
+   #:after-download
+   (lambda (verified candidate)
+     (define self (unbox appimage-self-box))
+     (if self
+         (install-appimage! verified self)
+         verified))
+   #:rollout-bucket (rollout-bucket)
+   #:maximum-manifest-bytes (* 4 1024 1024)
+   #:maximum-download-bytes maximum-download-bytes))
 
 (define (updates-dir data-dir)
   (build-path data-dir "updates"))
@@ -428,142 +431,45 @@
          (and self (not (string=? self ""))))))
 
 (define (appimage-download-target)
-  ;; Keep staging on the same filesystem for an atomic final rename.
-  (define self (getenv "APPIMAGE"))
-  (unless (and self (non-empty-string? self))
+  ;; Keep staging on the same filesystem for an atomic final rename; return
+  ;; paths end to end (the state publishes path->string of the result).
+  (define self-string (getenv "APPIMAGE"))
+  (unless (and self-string (non-empty-string? self-string))
     (error 'start-download "APPIMAGE is not set; not running as an AppImage"))
-  (values self
-          (make-temporary-file "movebit-update-~a.AppImage" #f (path-only self))))
-
-(define (download-appimage-with-progress! candidate)
-  (define artifact (update-candidate-artifact candidate))
-  ;; A candidate is selected from a verified Ed25519 manifest in production.
-  ;; Never derive an AppImage URL or expected digest from an unsigned sidecar.
-  (unless (and (eq? (platform-symbol) 'linux)
-               (eq? (update-artifact-platform artifact) 'linux)
-               (eq? (update-artifact-architecture artifact) (architecture-symbol))
-               (eq? (update-artifact-installer artifact) 'appimage)
-               (not (update-artifact-component artifact))
-               (member artifact
-                       (update-manifest-artifacts (update-candidate-manifest candidate))
-                       equal?))
-    (error 'download-appimage-with-progress!
-           "candidate is not this architecture's signed AppImage artifact"))
-  (define-values (self temporary) (appimage-download-target))
-  (define backup-temp
-    (make-temporary-file "movebit-backup-~a.AppImage" #f (path-only self)))
-  (define backup (string-append self ".previous"))
-  (with-handlers ([exn?
-                   (lambda (e)
-                     (for ([path (in-list (list temporary backup-temp))])
-                       (when (file-exists? path) (delete-file path)))
-                     (raise e))])
-    ;; Rivet bounds bytes to the signed size, verifies both size and SHA-256,
-    ;; and removes partial downloads on error. No sidecar is consulted.
-    (download-with-progress! candidate temporary)
-    (file-or-directory-permissions temporary #o755)
-    ;; Preserve the previous runnable image for recovery. Copy into a unique
-    ;; sibling and rename atomically: never follow a pre-existing backup
-    ;; symlink or truncate an existing known-good backup in place.
-    (copy-file self backup-temp #t)
-    (file-or-directory-permissions backup-temp #o755)
-    (rename-file-or-directory backup-temp backup #t)
-    ;; On any failure before this final atomic rename the original remains.
-    ;; Keep .previous after success for manual recovery if startup fails.
-    (rename-file-or-directory temporary self #t)
-    self))
-
-(define cancel-requested-box (box #f))
+  (define self (string->path self-string))
+  ;; Reserve a unique name, then remove the file: a failed verification
+  ;; must not strand an empty staging file beside the running image
+  ;; (rivet's managed download cleans only its own .partial).
+  (define staged
+    (make-temporary-file "movebit-update-~a.AppImage" #f (path-only self)))
+  (delete-file staged)
+  (values self staged))
 
 (define (download-running?)
-  (define worker (unbox worker-thread-box))
-  (and worker (thread-running? worker)))
+  (define instance (unbox updater-box))
+  (and instance
+       (equal? (hash-ref (updater-state instance) 'phase) "downloading")))
 
 (define (cancel-download!)
-  (when (download-running?)
-    (set-box! cancel-requested-box #t)
-    (break-thread (unbox worker-thread-box)))
-  (void))
+  (define instance (unbox updater-box))
+  (and instance (download-running?)
+       (begin (updater-cancel! instance) #t)))
 
 ;; Runs on a backend worker thread; the host follows progress via the
-;; update-state RPC. Never raises: failures surface through the phase.
-;; Doubles as the cancel gesture (the taskly toggle contract): the start
-;; gesture while a download runs IS the cancel — no second RPC, the schema
-;; stays put and every host's Cancel button just calls this again.
+;; update-state RPC. Doubles as the cancel gesture (the taskly toggle
+;; contract): the start gesture while a download runs IS the cancel — no
+;; second RPC, the schema stays put and every host's Cancel button calls
+;; this again.
 (define (start-download! data-dir)
   (cond
-    [(download-running?)
-     (cancel-download!)]
+    [(download-running?) (cancel-download!) (void)]
     [else
-     (define candidate (unbox candidate-box))
-     (unless candidate
+     (define instance (unbox updater-box))
+     (unless (and instance (updater-candidate instance))
        (error 'start-download! "no update is available; run a check first"))
-     (set-box! cancel-requested-box #f)
-     (state-set! 'phase "downloading")
-     (state-set! 'percent 0)
-     (state-set! 'message (void))
-     (state-set! 'availableVersion
-                 (update-manifest-version (update-candidate-manifest candidate)))
-     (define destination
-       (build-path (updates-dir data-dir) (artifact-file-name candidate)))
-     (set-box! last-progress-seconds (current-seconds))
-     (define worker-thread
-       (thread
-        (lambda ()
-          ;; The watchdog breaks a stalled worker and the cancel gesture
-          ;; breaks an in-flight one; exn:break is not an exn:fail, so each
-          ;; needs its own arm — either way rivet's partial cleanup removes
-          ;; the .partial and the phase lands on a terminal state (never
-          ;; mid-flight).
-          (with-handlers
-              ([(lambda (e) (or (exn:fail? e) (exn:break? e)))
-                (lambda (e)
-                  (cond
-                    [(unbox cancel-requested-box)
-                     (set-box! cancel-requested-box #f)
-                     (state-set! 'phase "idle")
-                     (state-set! 'percent 0)
-                     (state-set! 'message #f)
-                     (state-set! 'downloadedPath #f)]
-                    [(exn:break? e)
-                     (state-set! 'phase "error")
-                     (state-set! 'message "update download stalled or timed out")]
-                    [else
-                     (state-set! 'phase "error")
-                     (state-set! 'message (exn-message e))]))])
-            (define path
-              (if (appimage-flavor?)
-                  ;; AppImage: only the manifest-signed payload is accepted;
-                  ;; downloadedPath is the atomically replaced image path.
-                  (download-appimage-with-progress! candidate)
-                  (download-with-progress! candidate destination)))
-            (state-set! 'phase "downloaded")
-            (state-set! 'percent 100)
-            (state-set! 'availableVersion
-                        (update-manifest-version
-                         (update-candidate-manifest candidate)))
-            (state-set! 'downloadedPath
-                        (if (path? path) (path->string path) path))))))
-     (set-box! worker-thread-box worker-thread)
-     ;; Watchdog: exits once the worker finishes on its own; otherwise a stall
-     ;; (no byte progress) or the total wall-clock limit breaks the worker so
-     ;; phase never rests on "downloading" indefinitely.
-     (define download-started (current-seconds))
-     (thread
-      (lambda ()
-        (let loop ()
-          (cond
-            [(sync/timeout download-stall-limit-seconds
-                           (thread-dead-evt worker-thread))
-             (void)]
-            [(> (- (current-seconds) (unbox last-progress-seconds))
-                download-stall-limit-seconds)
-             (break-thread worker-thread)]
-            [(> (- (current-seconds) download-started)
-                download-total-limit-seconds)
-             (break-thread worker-thread)]
-            [else (loop)]))))])
-  (void))
+     (set-box! download-root-box data-dir)
+     (set-box! phase-override-box #f)
+     (updater-download! instance)]))
 
 ;; ---------- install preparation (Windows / macOS) ----------
 ;;
@@ -865,7 +771,7 @@
         ;; write: no staging, no writability probe — msiexec elevates
         ;; itself, and the verified .msi downloads straight from the feed.
         (define helper (write-apply-helper-msi! data-dir (getpid)))
-        (state-set! 'phase "ready-to-apply")
+        (set-box! phase-override-box "ready-to-apply")
         (path->string helper)]
        [else
         (assert-install-writable!)
@@ -877,7 +783,7 @@
           (if (eq? (platform-symbol) 'macos)
               (write-apply-helper-mac! data-dir (getpid))
               (write-apply-helper! data-dir (getpid))))
-        (state-set! 'phase "ready-to-apply")
+        (set-box! phase-override-box "ready-to-apply")
         (path->string helper)])]))
 
 ;; The apply helper waits on the precise PID of the exiting app, so a stray
