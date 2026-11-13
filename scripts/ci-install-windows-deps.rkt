@@ -11,10 +11,10 @@
 ;; placeholder in the URL template instead of flagging an empty ref.
 #|
 env:
-  RIVET_PIN: 7f34eee832418c3ad3bd73981e7a318d78d3be24
+  RIVET_PIN: c2e3760c504677cffe77c06bf30744572992cbf2
 |#
 
-(define default-rivet-pin "7f34eee832418c3ad3bd73981e7a318d78d3be24")
+(define default-rivet-pin "c2e3760c504677cffe77c06bf30744572992cbf2")
 
 (define bundle (getenv "MOVEBIT_CI_CA_BUNDLE"))
 (unless (and bundle

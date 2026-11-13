@@ -12,15 +12,17 @@
 #                    movebit-<version>-windows-x64.msi
 #                    movebit-<version>-linux-x64.tar.gz
 #                    movebit-<version>-linux-arm64.tar.gz
+#                    movebit-<version>-linux-x64.AppImage
+#                    movebit-<version>-linux-arm64.AppImage
 #   <key-der-path> Ed25519 private key in DER (OneAsymmetricKey) form; the
 #                  CI secret stores it base64-encoded.
 #
-# Emits <dist-dir>/update-manifest.json — a single signed channel manifest
-# (the family format: schema + payload + Ed25519 signature block) carrying
-# every platform's installable. Env overrides: RELEASE_ASSET_BASE_URL,
-# RIVET_UPDATE_KEY_ID. Clients verify the signature against the key embedded
-# in racket/movebit/update.rkt before any version decision.
-
+# The signing, artifact hashing, schema validation, and feed format live in
+# `raco rivet sign-manifest`; this wrapper owns only MoveBit's artifact
+# matrix and identity. The tarball installer is `targz` (the family feed
+# symbol), so an installed client selects it for its install kind.
+#
+# Env overrides: RELEASE_ASSET_BASE_URL, RIVET_UPDATE_KEY_ID.
 set -euo pipefail
 
 TAG="${1:?usage: make-update-manifest.sh <tag> <dist-dir> <key-der-path>}"
@@ -31,116 +33,38 @@ KEY_ID="${RIVET_UPDATE_KEY_ID:-movebit-2026-10}"
 BASE_URL="${RELEASE_ASSET_BASE_URL:-https://github.com/turlamai/movebit/releases/download/$TAG}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-[[ "$VERSION" == "$(tr -d '[:space:]' < "$ROOT/VERSION")" ]] || {
-  echo "error: tag $TAG does not match VERSION '$(cat "$ROOT/VERSION")'" >&2; exit 1; }
+DIST="$(cd "$DIST" && pwd)"
+cd "$ROOT"
 
-for artifact in "$DIST/movebit-$VERSION-macos-arm64.zip" \
-                "$DIST/movebit-$VERSION-macos-x64.zip" \
-                "$DIST/movebit-$VERSION-windows-x64.zip" \
-                "$DIST/movebit-$VERSION-windows-x64.msi" \
-                "$DIST/movebit-$VERSION-linux-x64.tar.gz" \
-                "$DIST/movebit-$VERSION-linux-arm64.tar.gz" \
-                "$DIST/movebit-$VERSION-linux-x64.AppImage" \
-                "$DIST/movebit-$VERSION-linux-arm64.AppImage"; do
-  [[ -f "$artifact" ]] || { echo "error: missing $artifact" >&2; exit 1; }
-done
+raco rivet check-release-version "$TAG"
 
-# ---- build + sign the merged manifest with rivet's own signer ---------------
-MANIFEST="$DIST/update-manifest.json"
+BUILD="$(sed -nE 's/.*\(build \. ([0-9]+)\).*/\1/p' "$ROOT/rivet.rktd" | head -n1)"
+[[ -n "$BUILD" ]] || {
+  echo "error: could not read build from rivet.rktd" >&2
+  exit 1
+}
+[[ -f "$KEY_PATH" ]] || {
+  echo "error: missing signing key $KEY_PATH" >&2
+  exit 1
+}
 
-SCRIPT="$(mktemp /tmp/movebit-manifest-XXXXXX.rkt)"
-trap 'rm -f "$SCRIPT"' EXIT
+raco rivet sign-manifest \
+  --application-id site.jrtx.movebit \
+  --version "$VERSION" \
+  --build "$BUILD" \
+  --channel stable \
+  --base-url "$BASE_URL" \
+  --key-id "$KEY_ID" \
+  --private-key "$KEY_PATH" \
+  --output "$DIST/update-manifest.json" \
+  --artifact "macos:arm64:zip:$DIST/movebit-$VERSION-macos-arm64.zip" \
+  --artifact "macos:x64:zip:$DIST/movebit-$VERSION-macos-x64.zip" \
+  --artifact "windows:x64:zip:$DIST/movebit-$VERSION-windows-x64.zip" \
+  --artifact "windows:x64:msi:$DIST/movebit-$VERSION-windows-x64.msi" \
+  --artifact "linux:x64:targz:$DIST/movebit-$VERSION-linux-x64.tar.gz" \
+  --artifact "linux:arm64:targz:$DIST/movebit-$VERSION-linux-arm64.tar.gz" \
+  --artifact "linux:x64:appimage:$DIST/movebit-$VERSION-linux-x64.AppImage" \
+  --artifact "linux:arm64:appimage:$DIST/movebit-$VERSION-linux-arm64.AppImage" \
+  --rollback-allowed
 
-cat > "$SCRIPT" <<RKT
-#lang racket/base
-(require rivet/distribution
-         racket/date
-         racket/file
-         racket/format)
-(define version "$VERSION")
-(define base-url "$BASE_URL")
-(define dist (path->complete-path "$DIST"))
-(define key-path (path->complete-path "$KEY_PATH"))
-(define key-id "$KEY_ID")
-(define build (hash-ref (file->value (build-path (path->complete-path "$ROOT") "rivet.rktd")) 'build))
-
-;; Rivet main added a trailing component discriminator to update-artifact
-;; (rivet/distribution/manifest.rkt): one feed may carry several installables
-;; per platform, and the client selects by component. MoveBit ships plain
-;; component-less artifacts, so append #f when the linked rivet's constructor
-;; takes it (the v0.12.0 pin does; older pins predate the field) — the same
-;; arity branch racket/movebit/update.rkt makes for updater-config. No
-;; backticks in this comment: this block lives inside a bash heredoc, where
-;; they are command substitution, not quoting.
-(define artifact-tail
-  (if (equal? (procedure-arity update-artifact) 8) (list #f) '()))
-
-(define (artifact platform architecture file installer)
-  (define path (build-path dist file))
-  (unless (file-exists? path)
-    (error 'make-update-manifest "missing installer: ~a" path))
-  (apply update-artifact platform architecture
-                   (string-append base-url "/" file)
-                   (sha256-file/hex path)
-                   (file-size path)
-                   installer
-                   '()
-                   artifact-tail))
-
-(define manifest
-  (update-manifest "site.jrtx.movebit"
-                   version
-                   build
-                   'stable
-                   ;; published-at: RFC 3339, second precision, UTC
-                   (let ([d (seconds->date (current-seconds) #f)])
-                     (format "~a-~a-~aT~a:~a:~aZ"
-                             (date-year d)
-                             (~r (date-month d) #:min-width 2 #:pad-string "0")
-                             (~r (date-day d) #:min-width 2 #:pad-string "0")
-                             (~r (date-hour d) #:min-width 2 #:pad-string "0")
-                             (~r (date-minute d) #:min-width 2 #:pad-string "0")
-                             (~r (date-second d) #:min-width 2 #:pad-string "0")))
-                   "0.0.0"
-                   #f
-                   #t
-                   100
-                   (list (artifact 'macos 'arm64
-                                   (format "movebit-~a-macos-arm64.zip" version) 'zip)
-                         (artifact 'macos 'x64
-                                   (format "movebit-~a-macos-x64.zip" version) 'zip)
-                         (artifact 'windows 'x64
-                                   (format "movebit-~a-windows-x64.zip" version) 'zip)
-                         ;; Windows MSI installs (Program Files) cannot swap
-                         ;; the portable zip in place — those installs select
-                         ;; the 'msi entry by install-kind and hand off to
-                         ;; a passive msiexec upgrade.
-                         (artifact 'windows 'x64
-                                   (format "movebit-~a-windows-x64.msi" version) 'msi)
-                         ;; Linux tar.gz stays for manual installs. AppImage is a
-                         ;; separate first-class signed update artifact.
-                         (artifact 'linux 'x64
-                                   (format "movebit-~a-linux-x64.tar.gz" version) 'tar-gz)
-                         (artifact 'linux 'arm64
-                                   (format "movebit-~a-linux-arm64.tar.gz" version) 'tar-gz)
-                         (artifact 'linux 'x64
-                                   (format "movebit-~a-linux-x64.AppImage" version) 'appimage)
-                         (artifact 'linux 'arm64
-                                   (format "movebit-~a-linux-arm64.AppImage" version) 'appimage))))
-
-;; write-signed-manifest validates the struct against the manifest schema
-;; before signing, so a malformed manifest fails the release instead of
-;; shipping something every client would reject.
-(call-with-output-file (build-path dist "update-manifest.json")
-  #:exists 'truncate/replace
-  (lambda (out)
-    (write-signed-manifest manifest
-                           (read-ed25519-private-key key-path)
-                           key-id
-                           out)
-    (newline out)))
-(printf "manifest: ~a (8 artifacts, key-id ~a)\\n"
-        (build-path dist "update-manifest.json") key-id)
-RKT
-
-racket "$SCRIPT"
+echo "manifest: $DIST/update-manifest.json (8 artifacts, key-id $KEY_ID)"
