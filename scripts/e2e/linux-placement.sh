@@ -75,7 +75,7 @@ trap cleanup EXIT
 
 data="$out/data"; home="$out/home-$$"
 rm -rf "$data" "$home"; mkdir -p "$data" "$home"
-printf '%s\n' '{"SchemaVersion":4,"WelcomeShown":true,"Language":"en","SoundEnabled":false,"AutoCheckUpdates":false}' > "$data/config.json"
+racket "$repo/scripts/acceptance/profile.rkt" seed "$data"
 
 start_app() {
   env HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_DATA_HOME="$home/share" \
@@ -130,15 +130,7 @@ after="$(xwininfo -id "$win" | awk '/Absolute upper-left X/{x=$4}/Absolute upper
 [[ "$before" != "$after" ]] || { echo "drag did not move the window" >&2; exit 1; }
 free_x=-1; free_y=-1
 for _ in $(seq 1 80); do
-  read -r free_x free_y < <(python3 - "$data/config.json" <<'PY2'
-import json,sys
-try:
-    d=json.load(open(sys.argv[1]))
-except Exception:
-    d={}
-print(d.get("CompanionFreeX",-1), d.get("CompanionFreeY",-1))
-PY2
-)
+  read -r free_x free_y < <(racket "$repo/scripts/acceptance/profile.rkt" position "$data")
   [[ "$free_x" != "-1" ]] && break
   sleep .05
 done

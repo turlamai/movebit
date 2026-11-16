@@ -4,6 +4,13 @@
 
 ### Changed
 
+- Store local settings and daily history in SQLite. Optional folder sync now
+  exchanges validated, revisioned device/day records instead of database
+  files; duplicate/stale arrivals do not double-count, failed exports retry
+  from committed rows, and retention survives replay and restart. Local data
+  and exchange directories are configured independently. Retired JSON stores
+  and their single-file migration path are removed from the v1 runtime.
+
 - **The updater runs on the shared managed state machine.** Candidate
   selection, the download worker, the stall/total watchdog, cancellation
   and the terminal state now come from `rivet/distribution`'s

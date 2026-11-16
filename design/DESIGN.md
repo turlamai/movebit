@@ -81,3 +81,8 @@ Tokens 逐值提取自现行实现：`macos-host/Sources/RivetHost/MainView.swif
 
 差异声明纪律：宿主特例必须先写进本节才能实现；未声明的宿主差异按违约处理
 （案例：taskly 漂移台账 D8）。
+
+
+## Local persistence and record exchange
+
+The local data-folder surface refers to the machine-local SQLite profile. Cross-device exchange has an independent optional directory and does not carry the database, preferences or bootstrap metadata. The existing four-setting window and reminder interactions are unchanged. Browser-prototype data remains illustrative; native persistence and merge semantics are owned by [the storage contract](../docs/STORAGE.md).

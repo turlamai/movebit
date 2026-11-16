@@ -50,7 +50,7 @@ jobs:
       - name: Install Rivet from the release pin
         run: |
           raco pkg install --auto --no-docs \
-            'https://github.com/turlamai/rivet.git#c96673ded75651c94a1d513b122691f85d76ccf5'
+            'https://github.com/turlamai/rivet.git#c96673ded75651c94a1d513b122691f85d76ccf5' db-lib
       - name: Cache appimagetool and its runtime through the authenticated API
         env:
           GH_TOKEN: ${{ github.token }}

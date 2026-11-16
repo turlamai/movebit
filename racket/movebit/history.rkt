@@ -1,34 +1,15 @@
 #lang racket/base
 
-;; Daily activity history, sharded per device per day for bring-your-own-sync.
-;;
-;; Layout under <data-dir>/history/:
-;;   <yyyy-MM-dd>/<device-id>.json   one small record per device per day
-;;
-;; Each device only ever writes its own shard (the counters it observed
-;; locally), so Resilio/Syncthing-style folder sync never conflicts: different
-;; devices touch different files, and past days are immutable. Cross-device
-;; totals are an aggregation at read time — Apple Screen Time semantics:
-;; additive counters (active minutes, sit/water/micro) sum across devices,
-;; while the longest continuous session keeps per-device meaning and takes the
-;; max. Synced files are picked up by history-refresh!, which the backend
-;; calls on its 30 s tick, so another machine's minutes land in the totals
-;; within a tick of arriving.
-;;
-;; Migration: the legacy single history.json (one object mapping day keys to
-;; records) is imported once under this device's id and renamed
-;; history.json.migrated. JSON files, not a database — the data set is tiny,
-;; human-readable, and file-level sync is exactly the transport.
-;;
-;; Conflict copies that sync tools leave behind ("sync-conflict",
-;; "syncconflict", "conflicted copy") are ignored by the scanner so a
-;; pathological merge cannot double-count a day.
+;; Local SQLite records; optional versioned device/day files are transport only.
 
-(require json
+(require db
+         "storage.rkt"
+         json
          racket/file
          racket/format
          racket/math
          racket/path
+         racket/port
          racket/string
          "timeutil.rkt")
 
@@ -51,7 +32,9 @@
          history-device-ids
          history-days
          retention-days
-         history-path)
+         history-path
+         sync-schema-version
+         current-history-diagnostic)
 
 ;; Cue lifecycle outcomes per reminder kind (issue #88): what actually
 ;; happened after a reminder fired, so history never conflates "we reminded
@@ -72,7 +55,7 @@
   #:transparent)
 
 ;; days: mutable hash date-key -> (mutable hash device-id -> day-record)
-(struct history-store (dir device-id days seen)
+(struct history-store (dir device-id [days #:mutable] sync-dir)
   #:transparent)
 
 (define (default-day-record)
@@ -129,10 +112,8 @@
 
 (define retention-days 370)
 
-;; The shard this device writes. Kept for diagnostics; the store itself lives
-;; in per-day subdirectories now.
-(define (history-path directory)
-  (build-path directory "history.json"))
+(define history-path database-path)
+(define sync-schema-version 1)
 
 (define (nonneg n)
   (if (and (exact-integer? n) (>= n 0)) n 0))
@@ -179,219 +160,261 @@
                 (cue-outcomes-sum (day-record-cue-outcomes acc)
                                   (day-record-cue-outcomes r)))))
 
-(define (make-history-store directory device-id)
-  (history-store directory device-id (make-hash) (make-hash)))
+;; A record is a monotonically growing snapshot for one device/day. Replays
+;; never add counters; distinct devices are aggregated only at read time.
+;; The native backend installs a file-backed diagnostic sink. Domain/storage
+;; failures must never allocate a Windows stderr console.
+(define current-history-diagnostic (make-parameter (lambda (_) (void))))
+(define (report-storage-error context e)
+  (with-handlers ([exn:fail? void])
+    ((current-history-diagnostic) (format "~a: ~a" context (exn-message e)))))
 
-(define (shard-dir store date-key)
-  (build-path (history-store-dir store) "history" date-key))
+(define max-counter (sub1 (expt 2 31)))
+(define max-revision (sub1 (expt 2 63)))
+(define max-shard-bytes (* 64 1024))
+(define (counter? n) (and (exact-nonnegative-integer? n) (<= n max-counter)))
+(define (date-key? s)
+  (and (string? s) (regexp-match? #px"^[0-9]{4}-[0-9]{2}-[0-9]{2}$" s)
+       (date-key->civil-day s) (equal? (date-key+days s 0) s)))
+(define (device-id? s) (and (string? s) (regexp-match? #px"^[0-9a-f]{8}$" s)))
+(define (outcomes-valid? outcomes)
+  (and (hash? outcomes) (<= (hash-count outcomes) 32)
+       (for/and ([(kind statuses) (in-hash outcomes)])
+         (and (symbol? kind) (<= (string-length (symbol->string kind)) 64)
+              (hash? statuses) (<= (hash-count statuses) 32)
+              (for/and ([(status n) (in-hash statuses)])
+                (and (symbol? status) (<= (string-length (symbol->string status)) 64)
+                     (counter? n)))))))
+(define (record-valid? r)
+  (and (day-record? r)
+       (andmap counter? (list (day-record-active-minutes r) (day-record-sit-breaks r)
+                             (day-record-water-reminders r) (day-record-micro-breaks r)
+                             (day-record-longest-session-minutes r)))
+       (outcomes-valid? (day-record-cue-outcomes r))
+       (<= (bytes-length (jsexpr->bytes (day-record->jsexpr r))) (- max-shard-bytes 1024))))
+(define (record-json-valid? js)
+  (and (hash? js)
+       (for/and ([key '(ActiveMinutes SitBreaks WaterReminders MicroBreaks LongestSessionMinutes)])
+         (counter? (hash-ref js key #f)))
+       (outcomes-valid? (hash-ref js 'CueOutcomes #f))))
+(define (merge-outcomes a b)
+  (for/fold ([acc a]) ([(kind statuses) (in-hash b)])
+    (hash-set acc kind
+      (for/fold ([inner (hash-ref acc kind (hasheq))]) ([(status n) (in-hash statuses)])
+        (hash-update inner status (lambda (v) (max v n)) 0)))))
+(define (merge-record a b)
+  (day-record (max (day-record-active-minutes a) (day-record-active-minutes b))
+              (max (day-record-sit-breaks a) (day-record-sit-breaks b))
+              (max (day-record-water-reminders a) (day-record-water-reminders b))
+              (max (day-record-micro-breaks a) (day-record-micro-breaks b))
+              (max (day-record-longest-session-minutes a) (day-record-longest-session-minutes b))
+              (merge-outcomes (day-record-cue-outcomes a) (day-record-cue-outcomes b))))
 
-(define (conflict-copy? file-name)
-  (and (regexp-match? #px"(?i:sync-?conflict|conflicted[ _-]?copy)" file-name) #t))
+;; File identities also catch case aliases on case-insensitive volumes.
+(define (contains-directory? parent child)
+  (define p (normal-case-path (normalize-path parent)))
+  (define c (normal-case-path (normalize-path child)))
+  (define relative (find-relative-path p c))
+  (or (and (relative-path? relative) (not (member 'up (explode-path relative))))
+      (and (directory-exists? p)
+           (let ([identity (file-or-directory-identity p)])
+             (let loop ([current c])
+               (or (and (directory-exists? current)
+                        (= identity (file-or-directory-identity current)))
+                   (let-values ([(base name dir?) (split-path current)])
+                     (and (path? base) (not (equal? base current)) (loop base)))))))))
 
-;; --- Loading ---------------------------------------------------------------
+(define (make-history-store directory device-id #:sync-dir [sync-dir #f])
+  (unless (device-id? device-id) (raise-argument-error 'make-history-store "8 lowercase hex digits" device-id))
+  (when (and sync-dir (contains-directory? sync-dir directory))
+    (error 'make-history-store "sync directory must not contain the local database directory"))
+  (history-store directory device-id (make-hash) sync-dir))
 
-(define (read-shard! store date-key device file)
-  (define js
-    (with-handlers ([exn:fail? (lambda (_) #f)])
-      (call-with-input-file file read-json)))
-  (when (hash? js)
-    (define per-device
-      (hash-ref! (history-store-days store) date-key make-hash))
-    (hash-set! per-device device (jsexpr->day-record js))))
+(define (with-history store proc) (call-with-store (history-store-dir store) proc))
+(define (row->record row [offset 0])
+  (day-record (vector-ref row offset) (vector-ref row (+ offset 1))
+              (vector-ref row (+ offset 2)) (vector-ref row (+ offset 3))
+              (vector-ref row (+ offset 4))
+              (jsexpr->cue-outcomes (string->jsexpr (vector-ref row (+ offset 5))))))
+(define (get-row db day device)
+  (query-maybe-row db "SELECT revision, active, sit, water, micro, longest, outcomes FROM records WHERE day = ? AND device = ?" day device))
+(define (put-row! db day device revision record)
+  (query-exec db "INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(day, device) DO UPDATE SET revision=excluded.revision, active=excluded.active,
+    sit=excluded.sit, water=excluded.water, micro=excluded.micro, longest=excluded.longest, outcomes=excluded.outcomes"
+    day device revision (day-record-active-minutes record) (day-record-sit-breaks record)
+    (day-record-water-reminders record) (day-record-micro-breaks record)
+    (day-record-longest-session-minutes record) (jsexpr->string (day-record-cue-outcomes record))))
 
-(define (scan-day-dir! store date-key dir)
-  (for ([entry (in-list (with-handlers ([exn:fail? (lambda (_) '())])
-                          (directory-list dir)))]
-        #:when (file-exists? (build-path dir entry)))
-    (define name (path->string entry))
-    (unless (string-suffix? name ".tmp")
-      (define device (let ([m (regexp-match #px"^([0-9a-f]{8})[.]json$" name)])
-                       (and m (cadr m))))
-      (cond
-        [device
-         (define file (build-path dir entry))
-         (define stamp (with-handlers ([exn:fail? (lambda (_) 0)])
-                         (file-or-directory-modify-seconds file)))
-         (define seen (hash-ref (history-store-seen store) file #f))
-         (unless (equal? seen stamp)
-           (read-shard! store date-key device file)
-           (hash-set! (history-store-seen store) file stamp))]
-        ;; Not ours to interpret: sync-tool conflict copies and any foreign
-        ;; file stay out of the aggregation rather than double-counting.
-        [(conflict-copy? name) (void)]))))
+(define (reload-days! store)
+  (define rows (with-history store (lambda (db) (query-rows db "SELECT day, device, active, sit, water, micro, longest, outcomes FROM records ORDER BY day, device"))))
+  (define next (make-hash))
+  (for ([row (in-list rows)])
+    (hash-set! (hash-ref! next (vector-ref row 0) make-hash)
+               (vector-ref row 1) (row->record row 2)))
+  ;; Publish one complete snapshot; concurrent readers never see a cleared
+  ;; or half-filled cache while a database refresh is being materialized.
+  (set-history-store-days! store next))
 
-;; Scan every day directory, reading only shards that are new or changed
-;; since the last pass (mtime-stamped). One directory listing per day is
-;; cheap enough for the 30 s tick; the reads are the rare part.
-(define (scan-all! store)
-  (define root (build-path (history-store-dir store) "history"))
-  (for ([entry (in-list (with-handlers ([exn:fail? (lambda (_) '())])
-                          (directory-list root)))]
-        #:when (directory-exists? (build-path root entry)))
-    (define date-key (path->string entry))
-    (when (regexp-match? #px"^\\d{4}-\\d{2}-\\d{2}$" date-key)
-      (scan-day-dir! store date-key (build-path root entry)))))
+;; Import is transactional and validates both the envelope and payload before
+;; touching SQLite. Equal/stale revisions are no-ops, including conflict copies.
+(define (import-shard! store day device file)
+  (when (and (not (link-exists? file)) (<= (file-size file) max-shard-bytes))
+    (define js
+      (call-with-input-file file
+        (lambda (in)
+          (define bytes (read-bytes (add1 max-shard-bytes) in))
+          (and (bytes? bytes) (<= (bytes-length bytes) max-shard-bytes)
+               (call-with-input-bytes bytes
+                 (lambda (bounded)
+                   (define value (read-json bounded))
+                   (and (regexp-match? #px"^\\s*$" (port->string bounded)) value)))))))
+    (when (and (hash? js) (equal? (hash-ref js 'SchemaVersion #f) sync-schema-version)
+               (equal? (hash-ref js 'Date #f) day) (equal? (hash-ref js 'DeviceId #f) device)
+               (exact-positive-integer? (hash-ref js 'Revision #f))
+               (<= (hash-ref js 'Revision) max-revision)
+               (record-json-valid? (hash-ref js 'Record #f)))
+      (define incoming (jsexpr->day-record (hash-ref js 'Record)))
+      (define revision (hash-ref js 'Revision))
+      (with-history store
+        (lambda (db)
+          (call-with-transaction db
+            (lambda ()
+              (define cutoff (query-value db "SELECT pruned_before FROM sync_state WHERE id = 1"))
+              (define existing (get-row db day device))
+              (when (and (string>=? day cutoff)
+                         ;; A local database is authoritative for its own existing rows.
+                         (or (not (string=? device (history-store-device-id store))) (not existing))
+                         (or (not existing) (> revision (vector-ref existing 0))))
+                ;; A higher revision must not rewind a counter from the same writer.
+                (define next (if existing (merge-record (row->record existing 1) incoming) incoming))
+                (put-row! db day device revision next)))
+            #:option 'immediate))))))
 
-;; Full (re)load: import the legacy single file once, then scan every day
-;; directory. Unreadable history is not worth crashing a tray app over.
+(define (scan-sync! store)
+  (define root (and (history-store-sync-dir store) (build-path (history-store-sync-dir store) "history")))
+  (when (and root (directory-exists? root) (not (link-exists? root)))
+    (for ([entry (in-list (directory-list root))])
+      (define day (path->string entry))
+      (define dir (build-path root entry))
+      (when (and (date-key? day) (directory-exists? dir) (not (link-exists? dir)))
+        (for ([name (in-list (directory-list dir))])
+          (define matched (regexp-match #px"^([0-9a-f]{8})[.]json$" (path->string name)))
+          (when matched
+            (with-handlers ([exn:fail? (lambda (_) (void))])
+              (import-shard! store day (cadr matched) (build-path dir name)))))))))
+
+(define (shard-content day device revision record)
+  (jsexpr->bytes (hasheq 'SchemaVersion sync-schema-version 'Date day 'DeviceId device
+                        'Revision revision 'Record (day-record->jsexpr record))))
+(define (write-shard! store day revision record)
+  (define root (history-store-sync-dir store))
+  (when root
+    (define dir (build-path root "history" day))
+    (when (or (link-exists? (build-path root "history")) (link-exists? dir))
+      (error 'record-sync "refusing a linked history directory"))
+    (make-directory* dir)
+    (define file (build-path dir (string-append (history-store-device-id store) ".json")))
+    (when (link-exists? file) (error 'record-sync "refusing a linked record"))
+    (define bytes (shard-content day (history-store-device-id store) revision record))
+    (unless (and (file-exists? file) (<= (file-size file) max-shard-bytes)
+                 (bytes=? bytes (file->bytes file)))
+      (define tmp (make-temporary-file ".movebit-record-~a.tmp" #f dir))
+      (dynamic-wind void
+        (lambda ()
+          (call-with-output-file tmp (lambda (out) (write-bytes bytes out)) #:exists 'truncate)
+          (rename-file-or-directory tmp file #t))
+        (lambda () (when (file-exists? tmp) (delete-file tmp)))))))
+
+;; The committed local rows ARE the durable outbox. A failed export or a
+;; stale file left by another instance is repaired on the next refresh;
+;; neither can roll back the committed local snapshot or its revision.
+(define (publish-own! store)
+  (when (history-store-sync-dir store)
+    (define rows (with-history store (lambda (db)
+      (query-rows db "SELECT day, revision, active, sit, water, micro, longest, outcomes FROM records WHERE device = ? ORDER BY day"
+                  (history-store-device-id store)))))
+    (for ([row (in-list rows)])
+      (write-shard! store (vector-ref row 0) (vector-ref row 1) (row->record row 2)))))
+
+(define (prune! store today-key)
+  (define cutoff (date-key+days today-key (- (sub1 retention-days))))
+  (with-history store (lambda (db)
+    (call-with-transaction db (lambda ()
+      (query-exec db "UPDATE sync_state SET pruned_before = max(pruned_before, ?) WHERE id = 1" cutoff)
+      (query-exec db "DELETE FROM records WHERE day < (SELECT pruned_before FROM sync_state WHERE id = 1)"))
+      #:option 'immediate)))
+  ;; Never edit a peer's transport file. The durable watermark rejects old
+  ;; arrivals even if their files are still present in the shared directory.
+  (define root (and (history-store-sync-dir store) (build-path (history-store-sync-dir store) "history")))
+  (when (and root (directory-exists? root) (not (link-exists? root)))
+    (for ([entry (in-list (directory-list root))])
+      (define day (path->string entry))
+      (define dir (build-path root entry))
+      (when (and (date-key? day) (string<? day cutoff) (directory-exists? dir) (not (link-exists? dir)))
+        (define file (build-path dir (string-append (history-store-device-id store) ".json")))
+        (when (and (file-exists? file) (not (link-exists? file))) (delete-file file))
+        (when (null? (directory-list dir)) (delete-directory dir))))))
+
+(define (best-effort-sync! store)
+  (with-handlers ([exn:fail? (lambda (e) (report-storage-error "record sync deferred" e))])
+    (scan-sync! store)
+    (publish-own! store)))
 (define (history-load! store)
-  (hash-clear! (history-store-days store))
-  (hash-clear! (history-store-seen store))
-  (migrate-legacy! store)
-  (scan-all! store)
+  (with-handlers ([exn:fail? (lambda (e) (report-storage-error "SQLite load deferred" e))])
+    (prune! store (ms->date-key (now-ms)))
+    (best-effort-sync! store)
+    (reload-days! store))
   store)
-
-;; Incremental pickup of files that arrived through the folder sync. The
-;; backend calls this on its 30 s tick, so another machine's minutes land in
-;; the totals within a tick of arriving.
 (define (history-refresh! store)
-  (scan-all! store)
+  (with-handlers ([exn:fail? (lambda (e) (report-storage-error "SQLite refresh deferred" e))])
+    (prune! store (ms->date-key (now-ms)))
+    (best-effort-sync! store)
+    (reload-days! store))
   store)
 
-;; One-time import of the pre-sync single history.json: its aggregated days
-;; become this device's shards (history has no per-device attribution to
-;; recover), and the source file is renamed out of the way so a re-import
-;; cannot resurrect pruned days.
-(define (migrate-legacy! store)
-  (define legacy (history-path (history-store-dir store)))
-  (define shards-root (build-path (history-store-dir store) "history"))
-  (when (and (file-exists? legacy)
-             (not (directory-exists? shards-root)))
-    (with-handlers ([exn:fail? (lambda (_) (void))])
-      (define js (call-with-input-file legacy read-json))
-      (when (hash? js)
-        (for ([(key value) (in-hash js)])
-          (define key-str
-            (cond [(string? key) key]
-                  [(symbol? key) (symbol->string key)]
-                  [else #f]))
-          (when (and key-str
-                     (regexp-match? #px"^\\d{4}-\\d{2}-\\d{2}$" key-str)
-                     (hash? value))
-            (write-shard! store key-str
-                          (history-store-device-id store)
-                          (jsexpr->day-record value)))))
-      (define migrated
-        (string->path
-         (string-append (path->string legacy) ".migrated")))
-      (with-handlers ([exn:fail? (lambda (_) (void))])
-        (when (file-exists? migrated)
-          (delete-file migrated)))
-      (rename-file-or-directory legacy migrated #t))))
-
-(define (write-shard! store date-key device record)
-  (define dir (shard-dir store date-key))
-  (make-directory* dir)
-  (define path (build-path dir (string-append device ".json")))
-  ;; A unique temp per write: two instances of the same device (a debug
-  ;; second launch shares the bootstrap device-id, hence the shard) must
-  ;; not share one tmp path — a concurrent rename would move the other
-  ;; writer's tmp out from under it and kill that flush with ENOENT. The
-  ;; scanner ignores *.tmp, so stragglers never enter the aggregation.
-  (define tmp
-    (string->path
-     (string-append (path->string path) "."
-                    (number->string (current-milliseconds)) "."
-                    (number->string (random 1000000)) ".tmp")))
-  (call-with-output-file tmp
-    (lambda (out)
-      (write-json (day-record->jsexpr record) out)
-      (newline out))
-    #:exists 'replace)
-  (rename-file-or-directory tmp path #t))
-
-;; --- Writes ----------------------------------------------------------------
-
-;; Keep the live session peak without touching the other counters. The
-;; periodic SaveDay flush persists it, so insights add no second write timer.
 (define (history-observe-longest-session! store date-key minutes)
-  (when (and (exact-integer? minutes) (> minutes 0))
-    (define per-device
-      (hash-ref! (history-store-days store) date-key make-hash))
-    (define existing
-      (hash-ref per-device (history-store-device-id store) #f))
-    (define record (or existing (default-day-record)))
-    (when (> minutes (day-record-longest-session-minutes record))
-      (hash-set! per-device
-                 (history-store-device-id store)
-                 (struct-copy day-record record
-                              [longest-session-minutes minutes])))))
+  (when (and (counter? minutes) (positive? minutes))
+    (define per-device (hash-ref! (history-store-days store) date-key make-hash))
+    (define device (history-store-device-id store))
+    (define record (hash-ref per-device device (default-day-record)))
+    (hash-set! per-device device
+      (struct-copy day-record record [longest-session-minutes (max minutes (day-record-longest-session-minutes record))]))))
 
-;; Upsert this device's shard for one day, prune expired day directories, and
-;; persist atomically (write-then-swap). Best-effort by the caller: the
-;; in-memory store stays usable when the write fails.
 (define (history-save-day! store date-key record [today-key (ms->date-key (now-ms))])
-  (define per-device
-    (hash-ref! (history-store-days store) date-key make-hash))
-  (hash-set! per-device (history-store-device-id store) record)
-  (write-shard! store date-key (history-store-device-id store) record)
-  (define file
-    (build-path (shard-dir store date-key)
-                (string-append (history-store-device-id store) ".json")))
-  (hash-set! (history-store-seen store) file
-             (with-handlers ([exn:fail? (lambda (_) 0)])
-               (file-or-directory-modify-seconds file)))
-  (prune-expired! store date-key today-key))
+  (unless (and (date-key? date-key) (date-key? today-key) (record-valid? record))
+    (error 'history-save-day! "invalid local daily record"))
+  (prune! store (if (string>? date-key today-key) date-key today-key))
+  (define cached (history-device-record store date-key))
+  (with-history store
+    (lambda (db)
+      (call-with-transaction db
+        (lambda ()
+          (define cutoff (query-value db "SELECT pruned_before FROM sync_state WHERE id = 1"))
+          (when (string>=? date-key cutoff)
+            (define existing (get-row db date-key (history-store-device-id store)))
+            (define next (merge-record (merge-record cached record)
+                                       (if existing (row->record existing 1) (default-day-record))))
+            (unless (and existing (equal? next (row->record existing 1)))
+              (define revision (if existing (add1 (vector-ref existing 0)) 1))
+              (when (> revision max-revision) (error 'history-save-day! "record revision exhausted"))
+              (put-row! db date-key (history-store-device-id store) revision next))))
+        #:option 'immediate)))
+  (reload-days! store)
+  (with-handlers ([exn:fail? (lambda (e) (report-storage-error "record export deferred" e))])
+    (publish-own! store)))
 
-;; --- Reads -----------------------------------------------------------------
-
-;; This device's own record for a day (what the local scheduler continues
-;; from after a restart — never the cross-device aggregate, or synced minutes
-;; from other machines would be double-counted into this device's shard).
 (define (history-device-record store date-key)
-  (define per-device (hash-ref (history-store-days store) date-key #f))
-  (or (and per-device
-           (hash-ref per-device (history-store-device-id store) #f))
-      (default-day-record)))
-
+  (hash-ref (hash-ref (history-store-days store) date-key (hasheq))
+            (history-store-device-id store) (default-day-record)))
 (define (history-device-ids store date-key)
-  (define per-device (hash-ref (history-store-days store) date-key #f))
-  (if per-device
-      (sort (hash-map per-device (lambda (k _) k)) string<?)
-      '()))
-
+  (sort (hash-keys (hash-ref (history-store-days store) date-key (hasheq))) string<?))
 (define (aggregate-day store date-key)
-  (define per-device (hash-ref (history-store-days store) date-key #f))
-  (if per-device
-      (aggregate-day-records (hash-map per-device (lambda (_ v) v)))
-      (default-day-record)))
-
-;; The most recent `count` days, oldest first, holes included as zero days.
-;; count <= 0 yields an empty list. Cross-device totals, Screen Time style.
+  (aggregate-day-records (hash-values (hash-ref (history-store-days store) date-key (hasheq)))))
 (define (history-get-recent store count today-key)
-  (if (<= count 0)
-      '()
-      (for/list ([i (in-range (- count 1) -1 -1)])
-        (define key (date-key+days today-key (- i)))
-        (cons key (aggregate-day store key)))))
-
-;; Snapshot of the in-memory day table (key -> day-record), for diagnostics.
+  (for/list ([i (in-range (sub1 count) -1 -1)])
+    (define key (date-key+days today-key (- i)))
+    (cons key (aggregate-day store key))))
 (define (history-days store)
-  (for/hasheq ([(key per-device) (in-hash (history-store-days store))])
-    (values key (aggregate-day-records (hash-map per-device (lambda (_ v) v))))))
-
-;; Days kept on disk. Pruning happens on every save. The anchor is the later
-;; of the saved day and today, so clock-back situations cannot prune recent
-;; data.
-(define (prune-expired! store saved-key today-key)
-  (define saved (date-key->civil-day saved-key))
-  (define today (date-key->civil-day today-key))
-  (define anchor
-    (cond [(and saved today) (max saved today)]
-          [saved saved]
-          [today today]
-          [else #f]))
-  (when anchor
-    (define cutoff (- anchor (- retention-days 1)))
-    (define root (build-path (history-store-dir store) "history"))
-    (for ([entry (in-list (with-handlers ([exn:fail? (lambda (_) '())])
-                            (directory-list root)))]
-          #:when (directory-exists? (build-path root entry)))
-      (define parsed (date-key->civil-day (path->string entry)))
-      (when (and parsed (< parsed cutoff))
-        (with-handlers ([exn:fail? (lambda (_) (void))])
-          (delete-directory/files (build-path root entry)))
-        (define prefix (path->string (build-path root entry)))
-        (for ([file (in-list (hash-keys (history-store-seen store)))]
-              #:when (string-prefix? (path->string file) prefix))
-          (hash-remove! (history-store-seen store) file))))))
+  (for/hasheq ([(day records) (in-hash (history-store-days store))])
+    (values day (aggregate-day-records (hash-values records)))))

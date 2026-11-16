@@ -91,7 +91,7 @@ Racket 运行时静态链接进宿主——不依赖外部解释器、没有 .NE
 
 ## 配置
 
-配置位于 Windows 的 `%APPDATA%\movebit\config.json`（macOS/Linux 为系统应用数据目录）。默认值就是产品本身：没有节奏要研究、没有分种类开关、也没有外观选项——均衡节奏（50/60/20）、一套角色形象加自由拖拽（和托盘「复位沐比」）已经覆盖一切。设置窗口只剩四项，后端会钳制数值并通过 config-changed 事件向各宿主重新广播：
+设置与历史保存在本机 `movebit.sqlite3` 数据库中（Windows 为 `%APPDATA%\movebit`，macOS/Linux 为系统应用数据目录）。可选的跨设备共享通过独立目录交换带版本的设备/日期记录，不同步正在使用的数据库。参见[存储与同步契约](docs/STORAGE.md)和[备份指南](docs/USER-GUIDE.zh-CN.md#数据备份与恢复)。默认值就是产品本身：没有节奏要研究、没有分种类开关、也没有外观选项——均衡节奏（50/60/20）、一套角色形象加自由拖拽（和托盘「复位沐比」）已经覆盖一切。设置窗口只剩四项，后端会钳制数值并通过 config-changed 事件向各宿主重新广播：
 
 | 设置 | 默认 |
 | --- | --- |
@@ -109,6 +109,7 @@ Racket 运行时静态链接进宿主——不依赖外部解释器、没有 .NE
 ```bash
 git clone https://github.com/turlamai/rivet.git ../rivet
 raco pkg install --auto --no-docs --link ../rivet/rivet ../rivet/rivet-cli
+raco pkg install --auto --no-docs db-lib
 
 raco rivet doctor        # 工具链自检
 raco test racket/        # 领域核心测试

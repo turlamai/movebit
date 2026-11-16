@@ -91,7 +91,7 @@ Daily stats are flushed to the history store every few minutes, archived across 
 
 ## Configuration
 
-Settings live in `%APPDATA%\movebit\config.json` on Windows or the platform application-data directory on macOS/Linux. The defaults are the product: there is no rhythm to study, no per-kind switches and no presentation options — the balanced cadence (50/60/20), one companion presentation and drag-to-place (plus Move Aside) cover it. Four controls remain in the settings window, and the backend clamps and re-announces every change:
+Settings and history live in the machine-local `movebit.sqlite3` database (`%APPDATA%\movebit` on Windows; the platform application-data directory on macOS/Linux). Optional cross-device sharing exchanges versioned device/day records through a separate folder; it never synchronizes the live database. See [storage and sync](docs/STORAGE.md) and the [backup guide](docs/USER-GUIDE.md#data-backup-and-recovery). The defaults are the product: there is no rhythm to study, no per-kind switches and no presentation options — the balanced cadence (50/60/20), one companion presentation and drag-to-place (plus Move Aside) cover it. Four controls remain in the settings window, and the backend clamps and re-announces every change:
 
 | Setting | Default |
 | --- | --- |
@@ -109,6 +109,7 @@ Prerequisites: [Racket CS](https://racket-lang.org) (9.x), the [rivet](https://g
 ```bash
 git clone https://github.com/turlamai/rivet.git ../rivet
 raco pkg install --auto --no-docs --link ../rivet/rivet ../rivet/rivet-cli
+raco pkg install --auto --no-docs db-lib
 
 raco rivet doctor        # toolchain self-check
 raco test racket/        # domain core tests

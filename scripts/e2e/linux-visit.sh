@@ -44,7 +44,7 @@ trap cleanup EXIT
 
 data="$out/data"; home="$out/home-$$"
 rm -rf "$data" "$home"; mkdir -p "$data" "$home"
-printf '%s\n' '{"SchemaVersion":4,"WelcomeShown":true,"Language":"en","SoundEnabled":false,"AutoCheckUpdates":false}' > "$data/config.json"
+racket "$repo/scripts/acceptance/profile.rkt" seed "$data"
 env HOME="$home" XDG_CONFIG_HOME="$home/config" XDG_DATA_HOME="$home/share" \
     XDG_CACHE_HOME="$home/cache" GDK_BACKEND=x11 GSK_RENDERER=cairo \
     MOVEBIT_DATA_DIR="$data" MOVEBIT_BOOTSTRAP_DIR="$data" \
