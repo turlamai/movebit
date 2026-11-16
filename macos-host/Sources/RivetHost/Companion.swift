@@ -582,8 +582,10 @@ struct CompanionInvitationCard: View {
     private var partialExpanded: Bool { presentation.partialExpanded }
 
     private var dark: Bool { scheme == .dark }
-    private var surface = Color(hex: "#F8F7F3")
-    private var surfaceDark = Color(hex: "#282622")
+    // Computed (not stored with defaults): a private stored property would
+    // make the memberwise initializer private on Swift 6.0/6.1.
+    private var surface: Color { Color(hex: "#F8F7F3") }
+    private var surfaceDark: Color { Color(hex: "#282622") }
     private var edge = Color.white.opacity(0.10)
     private var ink = Color(hex: "#26241F")
     private var inkDark = Color(hex: "#F1EBDF")
@@ -963,7 +965,8 @@ final class CompanionController: NSObject {
             }
             .padding(.init(top: 0, leading: 0, bottom: 4, trailing: 0))
             let anyView = AnyView(
-                root.environment(\.layoutDirection, .leftToRight))
+                root.environment(\.layoutDirection,
+                                  LayoutDirection.leftToRight))
             let newHost = CompanionHostingView(rootView: anyView)
             panel.contentView = newHost
             host = newHost
