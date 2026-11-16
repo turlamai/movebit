@@ -1,175 +1,78 @@
 #lang racket/base
 
-;; MoveBit config schema v5 tests (issue #140): the slim nine-field surface,
-;; version gate, clamping, tolerance, foreign-schema rejection and the clean-install
-;; contract (a foreign file is defaults, never guessed at).
-
-(require rackunit
-         racket/file
-         json
-         "../movebit/config.rkt"
-         "../movebit/timeutil.rkt")
-
+(require rackunit db racket/file json
+         "../movebit/storage.rkt" "../movebit/config.rkt" "../movebit/timeutil.rkt")
 (define (make-temp-dir prefix)
-  (define dir (make-temporary-file (string-append "movebit-" prefix "-~a") 'directory))
-  dir)
+  (make-temporary-file (string-append "movebit-" prefix "-~a") 'directory))
+(define (write-payload dir js)
+  (call-with-store dir (lambda (db)
+    (query-exec db "INSERT OR REPLACE INTO settings VALUES (1, ?)" (jsexpr->string js)))))
 
-;; Save_and_load_roundtrip_all_settings
-(let* ([dir (make-temp-dir "cfg")]
-       [expected (reminder-config #f #f #t "zh" #t 1230 480 250 750)])
+(test-case "preferences are durable SQLite rows, not JSON files"
+  (define dir (make-temp-dir "sqlite-config"))
+  (define expected (reminder-config #f #f #t "zh" #t 1230 480 250 750))
   (check-true (save-config dir expected))
-  (define actual (load-config dir))
-  (check-equal? actual expected)
-  ;; atomic write: no .tmp residue
-  (check-false (file-exists? (build-path dir "config.json.tmp")))
-  ;; every write stamps the schema version
-  (define on-disk (call-with-input-file (config-path dir) read-json))
-  (check-equal? (hash-ref on-disk 'SchemaVersion) config-schema-version)
+  (check-equal? (load-config dir) expected)
+  (check-equal? (call-with-input-file (config-path dir) (lambda (in) (read-bytes 16 in)))
+                #"SQLite format 3\0")
+  (check-false (file-exists? (build-path dir "config.json")))
+  (call-with-store dir (lambda (db)
+    (check-equal? (query-value db "PRAGMA user_version") storage-schema-version)
+    (check-equal? (query-value db "SELECT count(*) FROM settings") 1)))
+  (save-config dir (default-config))
+  (call-with-store dir (lambda (db) (check-equal? (query-value db "SELECT count(*) FROM settings") 1)))
   (delete-directory/files dir))
 
-;; TrySave_returns_false_when_config_directory_is_a_file
-(let* ([dir (make-temp-dir "cfgblk")]
-       [blocked-path (build-path dir "not-a-directory")])
-  (display-to-file "block directory creation" blocked-path)
-  (check-false (save-config blocked-path (default-config)))
-  (delete-directory/files dir))
-
-;; Load_clamps_numeric_values_from_disk
-(let* ([dir (make-temp-dir "clamp")]
-       [path (build-path dir "config.json")])
-  (call-with-output-file path
-    (lambda (out)
-      (write-json
-       (hasheq 'SchemaVersion config-schema-version
-               'QuietHoursStartMinutes -5
-               'QuietHoursEndMinutes 9999
-               'SoundEnabled "yes"
-               'Language "klingon"
-               'CompanionFreeX 5000
-               'CompanionFreeY -7)
-       out)))
-  (define actual (load-config dir))
-  (check-equal? (reminder-config-quiet-hours-start-minutes actual) 0)
-  (check-equal? (reminder-config-quiet-hours-end-minutes actual) 1439)
-  ;; wrong-typed boolean keeps the default, it is not coerced
-  (check-true (reminder-config-sound-enabled actual))
-  (check-equal? (reminder-config-language actual) "auto")
-  ;; free position: 5000 clamps to 1000, -7 means "default corner"
-  (check-equal? (reminder-config-companion-free-x actual) 1000)
-  (check-equal? (reminder-config-companion-free-y actual) -1)
-  (delete-directory/files dir))
-
-;; Corrupt_json_falls_back_to_defaults
-(let* ([dir (make-temp-dir "corrupt")]
-       [path (build-path dir "config.json")])
-  (display-to-file "{ definitely not json" path)
+(test-case "failed writes and corrupt/foreign databases are not overwritten"
+  (define dir (make-temp-dir "blocked"))
+  (define blocker (build-path dir "not-a-directory"))
+  (display-to-file "blocked" blocker)
+  (check-false (save-config blocker (default-config)))
+  (define path (database-path dir))
+  (display-to-file "not a database" path)
   (check-equal? (load-config dir) (default-config))
+  (check-false (save-config dir (default-config)))
+  (check-equal? (file->string path) "not a database")
+  (delete-file path)
+  (define db (sqlite3-connect #:database path #:mode 'create))
+  (query-exec db "CREATE TABLE somebody_elses_data (value TEXT)")
+  (disconnect db)
+  (check-false (save-config dir (default-config)))
+  (set! db (sqlite3-connect #:database path))
+  (check-equal? (query-value db "SELECT count(*) FROM sqlite_master WHERE name = 'somebody_elses_data'") 1)
+  (disconnect db)
   (delete-directory/files dir))
 
-;; The v5 defaults ARE the product: sound on (the new cue chime), updates on,
-;; onboarding pending, language auto, quiet hours off, default corner.
-(let ([fresh (default-config)])
-  (check-true (reminder-config-sound-enabled fresh))
-  (check-true (reminder-config-auto-check-updates fresh))
-  (check-false (reminder-config-welcome-shown fresh))
-  (check-equal? (reminder-config-language fresh) "auto")
-  (check-false (reminder-config-quiet-hours-enabled fresh))
-  (check-equal? (reminder-config-companion-free-x fresh) -1)
-  (check-equal? (reminder-config-companion-free-y fresh) -1))
-
-;; Legacy_v0x_PascalCase_file_without_version_marker_is_foreign
-(let* ([dir (make-temp-dir "legacy")]
-       [path (build-path dir "config.json")])
-  (display-to-file #<<EOF
-{
-  "SitReminderMinutes": 60,
-  "ForceBreakEnabled": true,
-  "BreakDurationMinutes": 25,
-  "SkipAfterSeconds": 90,
-  "WelcomeShown": true
-}
-EOF
-                   path)
-  ;; v0.x had no real users: an old file is NOT migrated. A fresh profile
-  ;; starts with defaults; the next save overwrites the foreign file.
-  (check-equal? (load-config dir) (default-config))
-  (delete-directory/files dir))
-
-;; Unknown_future_schema_version_is_also_rejected
-(let* ([dir (make-temp-dir "future")]
-       [path (build-path dir "config.json")])
-  (call-with-output-file path
-    (lambda (out)
-      (write-json (hash-set (config->jsexpr (default-config))
-                            'SchemaVersion
-                            (add1 config-schema-version))
-                  out)))
-  (check-equal? (load-config dir) (default-config))
-  (delete-directory/files dir))
-
-;; Missing_version_marker_falls_back_even_if_everything_else_matches
-(let* ([dir (make-temp-dir "noversion")]
-       [path (build-path dir "config.json")])
-  (call-with-output-file path
-    (lambda (out)
-      (write-json (hash-remove (config->jsexpr (default-config)) 'SchemaVersion)
-                  out)))
-  (check-equal? (load-config dir) (default-config))
-  (delete-directory/files dir))
-
-;; Partial_v5_file_keeps_defaults_for_missing_keys
-(let* ([dir (make-temp-dir "partial")]
-       [path (build-path dir "config.json")])
-  (display-to-file
-   (format "{\"SchemaVersion\": ~a, \"SoundEnabled\": false, \"WelcomeShown\": true, \"Language\": \"zh\"}"
-           config-schema-version)
-   path)
+(test-case "versioned configuration validation survives the SQLite encoding"
+  (define dir (make-temp-dir "validation"))
+  (for ([js (list (hasheq) (hasheq 'SchemaVersion 4)
+                   (hasheq 'SchemaVersion (add1 config-schema-version)))])
+    (write-payload dir js)
+    (check-equal? (load-config dir) (default-config)))
+  (write-payload dir (hasheq 'SchemaVersion config-schema-version 'SoundEnabled #f
+                             'Language "zh" 'QuietHoursStartMinutes -5
+                             'QuietHoursEndMinutes 9999 'CompanionFreeX 5000 'CompanionFreeY -7))
   (define actual (load-config dir))
   (check-false (reminder-config-sound-enabled actual))
-  (check-true (reminder-config-welcome-shown actual))
   (check-equal? (reminder-config-language actual) "zh")
-  (check-false (reminder-config-quiet-hours-enabled actual))
-  (delete-directory/files dir))
-
-;; Save_clamps_out_of_range_values_too (clamp on save, per the port contract)
-(let* ([dir (make-temp-dir "saveclamp")]
-       [draft (struct-copy reminder-config (default-config)
-                           [language "klingon"]
-                           [quiet-hours-start-minutes -5]
-                           [quiet-hours-end-minutes 9999]
-                           [companion-free-x 5000]
-                           [companion-free-y -7])])
-  (save-config dir draft)
-  (define actual (load-config dir))
-  (check-equal? (reminder-config-language actual) "auto")
   (check-equal? (reminder-config-quiet-hours-start-minutes actual) 0)
   (check-equal? (reminder-config-quiet-hours-end-minutes actual) 1439)
   (check-equal? (reminder-config-companion-free-x actual) 1000)
   (check-equal? (reminder-config-companion-free-y actual) -1)
+  (write-payload dir (hasheq 'SchemaVersion config-schema-version 'SoundEnabled "yes" 'Language "foreign"))
+  (check-true (reminder-config-sound-enabled (load-config dir)))
+  (check-equal? (reminder-config-language (load-config dir)) "auto")
   (delete-directory/files dir))
 
-;; --- pre-v5 schemas are foreign, not migrated --------------------------------
-
-;; No shipped install ever carried a v2/v3/v4 profile (the pre-v5 schemas
-;; predate the first public release), so an old-schema file is foreign data:
-;; defaults, never a guess. The next save overwrites it with the v5 shape.
-(let* ([dir (make-temp-dir "v4-foreign")]
-       [path (build-path dir "config.json")]
-       [v4 (hasheq 'SchemaVersion 4
-                   'SoundEnabled #t
-                   'AutoCheckUpdates #f
-                   'WelcomeShown #t
-                   'Language "zh"
-                   'QuietHoursEnabled #t
-                   'QuietHoursStartMinutes 1200
-                   'QuietHoursEndMinutes 480)])
-  (call-with-output-file path (lambda (out) (write-json v4 out)))
+(test-case "new database does not import retired JSON settings"
+  (define dir (make-temp-dir "clean-slate"))
+  (call-with-output-file (build-path dir "config.json")
+    (lambda (out) (write-json (hash-set (config->jsexpr (default-config)) 'Language "zh") out)))
   (check-equal? (load-config dir) (default-config))
-  (check-true (save-config dir (default-config)))
-  (check-equal? (hash-ref (call-with-input-file path read-json) 'SchemaVersion)
-                config-schema-version)
+  (check-true (file-exists? (build-path dir "config.json")))
+  (check-true (save-config dir (struct-copy reminder-config (default-config) [language "en"])))
+  (check-equal? (reminder-config-language (load-config dir)) "en")
   (delete-directory/files dir))
-
 ;; --- quiet hours ------------------------------------------------------------
 
 (define (quiet-config start end)
@@ -229,3 +132,17 @@ EOF
                                      [companion-free-y -5]))])
   (check-equal? (reminder-config-companion-free-x c) 1000)
   (check-equal? (reminder-config-companion-free-y c) -1))
+
+(test-case "a future SQLite schema is refused without erasing settings"
+  (define dir (make-temp-dir "future-db"))
+  (save-config dir (struct-copy reminder-config (default-config) [language "zh"]))
+  (define db (sqlite3-connect #:database (database-path dir)))
+  (query-exec db "PRAGMA user_version = 2")
+  (disconnect db)
+  (check-equal? (load-config dir) (default-config))
+  (check-false (save-config dir (default-config)))
+  (set! db (sqlite3-connect #:database (database-path dir)))
+  (check-equal? (query-value db "PRAGMA user_version") 2)
+  (check-equal? (hash-ref (string->jsexpr (query-value db "SELECT payload FROM settings")) 'Language) "zh")
+  (disconnect db)
+  (delete-directory/files dir))

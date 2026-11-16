@@ -76,6 +76,7 @@ raco rivet acceptance --json # 当前平台的打包产品验收
 
 ## 契约（不要破坏）
 
+- **本地持久化**：`racket/movebit/storage.rkt` 管 SQLite；`docs/STORAGE.md` 是数据与同步契约。设置与统计落本机 `movebit.sqlite3`；跨设备仅交换带版本的设备/日期记录，不同步数据库文件。引导信息只在本机，旧 JSON 存储与迁移路径已退役。
 - **v1 数据契约可全新定义**：没有真实用户，无需兼容旧版 `config.json`、`history.json`、旧字段或迁移旧路径。新格式必须有确定的 fresh-install 默认值、schema 版本、读写容错、隐私与测试；同一 v1 版本在 macOS / Linux / Windows 之间保持一致。保留本地数据优先。
 - **i18n 单源**：`shared/i18n/{zh,en}.json`，平台副本必须逐字节一致；zh 为默认
 - **RPC 面**：`app/backend.rkt` 的 define-rpc 是宿主唯一数据通道；改签名 = 各端宿主 + 生成客户端同步改

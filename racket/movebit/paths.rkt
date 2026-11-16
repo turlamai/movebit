@@ -1,21 +1,8 @@
 #lang racket/base
 
-;; Platform data-directory helpers. The contract (kept identical to the old
-;; app for drop-in migration): config.json / history live under
-;;   macOS   ~/Library/Application Support/movebit
-;;   Linux   ~/.config/movebit            (XDG_CONFIG_HOME respected)
-;;   Windows %APPDATA%/movebit
-;; MOVEBIT_DATA_DIR overrides everything for tests and embedded hosts.
-;;
-;; Cross-device sync support: the data directory itself is user-aimable
-;; (point it at a Resilio/Syncthing folder), which is enabled by a bootstrap
-;; file that always lives in the DEFAULT appdata location and never inside
-;; the synced data. It carries the two per-machine facts:
-;;   device-id  — stable short id naming this machine's history shards
-;;   data-dir   — the custom data directory (absent/null = default location)
-;; Changing data-dir takes effect on the next launch; the pointer itself must
-;; not travel with the synced folder or every device would chase the same
-;; pointer.
+;; Machine-local SQLite and bootstrap metadata stay in the platform app-data
+;; directory (MOVEBIT_DATA_DIR isolates tests). An optional sync-dir pointer
+;; selects a separate exchange directory. Never synchronize the live DB.
 
 (require json
          racket/file
@@ -24,6 +11,7 @@
 
 (provide default-data-dir
          movebit-data-dir
+         movebit-sync-dir
          bootstrap-path
          load-bootstrap
          save-bootstrap
@@ -98,7 +86,7 @@
         (save-bootstrap (hash-set js 'device-id fresh))
         fresh)))
 
-;; --- Effective data directory ----------------------------------------------
+;; --- Effective local database directory ----------------------------------------------
 
 (define (movebit-data-dir)
   (define override (getenv "MOVEBIT_DATA_DIR"))
@@ -106,7 +94,15 @@
     [(and override (not (string=? override "")))
      (simple-form-path override)]
     [else
-     (define custom (hash-ref (load-bootstrap) 'data-dir #f))
+     (define custom (hash-ref (load-bootstrap) 'local-data-dir #f))
      (if (and (string? custom) (not (string=? custom "")))
          (simple-form-path custom)
          (default-data-dir))]))
+
+;; Record exchange is independently configurable; it never relocates SQLite.
+(define (movebit-sync-dir)
+  (define override (getenv "MOVEBIT_SYNC_DIR"))
+  (define configured (if (and override (not (string=? override "")))
+                         override (hash-ref (load-bootstrap) 'sync-dir #f)))
+  (and (string? configured) (not (string=? configured ""))
+       (absolute-path? configured) (simple-form-path configured)))

@@ -14,10 +14,12 @@
 ;; companion and per-kind fields of older schemas are gone by design: the
 ;; product ships exactly one rhythm and one presentation.
 ;;
-;; Numeric settings are clamped on load AND save; a corrupt or unreadable file
+;; Numeric settings are clamped on load AND save; a corrupt or unreadable store
 ;; silently falls back to defaults — a tray app must never crash on config.
 
-(require json
+(require db
+         "storage.rkt"
+         json
          racket/bool
          racket/date
          racket/file
@@ -133,30 +135,22 @@
     (int-field 'CompanionFreeX -1 -1 1000)
     (int-field 'CompanionFreeY -1 -1 1000))))
 
-(define (config-path directory)
-  (build-path directory "config.json"))
+;; Preferences are local SQLite state. JSON remains a wire encoding only.
+(define config-path database-path)
 
-;; Load config.json from the given directory. Any read/parse problem falls
-;; back to defaults (a tray app keeps working).
 (define (load-config directory)
   (with-handlers ([exn:fail? (lambda (_) (default-config))])
-    (define js
-      (call-with-input-file (config-path directory) read-json))
-    (jsexpr->config js)))
+    (call-with-store directory
+      (lambda (db)
+        (define payload (query-maybe-value db "SELECT payload FROM settings WHERE id = 1"))
+        (if payload (jsexpr->config (string->jsexpr payload)) (default-config))))))
 
-;; Atomic write: config.json.tmp -> rename. Returns #t when the file reached
-;; disk, #f otherwise (reminders keep working from in-memory settings).
 (define (save-config directory config)
   (with-handlers ([exn:fail? (lambda (_) #f)])
-    (define path (config-path directory))
-    (define tmp (build-path directory "config.json.tmp"))
-    (make-directory* directory)
-    (call-with-output-file tmp
-      (lambda (out)
-        (write-json (config->jsexpr (clamp-config config)) out)
-        (newline out))
-      #:exists 'replace)
-    (rename-file-or-directory tmp path #t)
+    (call-with-store directory
+      (lambda (db)
+        (query-exec db "INSERT INTO settings (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload"
+                    (jsexpr->string (config->jsexpr (clamp-config config))))))
     #t))
 
 ;; --- quiet hours -----------------------------------------------------------

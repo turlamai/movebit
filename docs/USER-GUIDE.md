@@ -46,7 +46,9 @@ Today's active minutes, presented invitations and self-reported Done counts, plu
 
 ## Data, backup and recovery
 
-Quit MoveBit and back up `config.json` and the `history/` folder: `~/Library/Application Support/movebit` on macOS, `~/.config/movebit` on Linux, `%APPDATA%\movebit` on Windows. The v1 config file carries a `SchemaVersion` marker; a file without it falls back to defaults rather than being half-migrated. Restore into a copy first.
+Settings and history are stored in the machine-local `movebit.sqlite3` database: `~/Library/Application Support/movebit` on macOS, `~/.config/movebit` on Linux, `%APPDATA%\movebit` on Windows. Quit MoveBit and back up the local profile directory as a whole, including any SQLite `-wal` / `-shm` files that remain. Back up the machine-local `bootstrap.json` separately if the profile directory was changed. Copying only an open database file is not a consistent backup. Restore into an isolated local directory first; unknown-schema or corrupt databases are never silently overwritten. Retired JSON settings and history are not imported.
+
+Optional cross-device statistics use a separate record-exchange directory. Set `MOVEBIT_SYNC_DIR` to each machine’s local copy of the same Resilio/Syncthing folder, or configure the backend `set-sync-dir` RPC, then restart. These are advanced configuration paths, not extra controls in the four-setting window. Only versioned device/day statistics are exchanged: settings, bootstrap identity, updates and SQLite files remain local. Repeated and out-of-order records do not count twice. Each device’s counters are added across devices; longest continuous time uses the maximum. Keep the local database outside the synchronized folder. Sync is not a backup. [Storage contract](STORAGE.md).
 
 ## Network, keys and privacy
 
@@ -60,7 +62,7 @@ For Windows portable ZIP updates, a failed copy or an executable that Windows ca
 
 Before replacing a Windows portable installation, the helper waits up to two minutes for the previous process to exit. If exit cannot be confirmed, it leaves the installation untouched and records that the update was not applied; it does not force the application to quit. Close the existing application normally before trying the update again.
 
-Removing the program does not erase your data. `config.json` and the `history/` folder live in the separate data directory (`~/Library/Application Support/movebit` on macOS, `~/.config/movebit` on Linux, `%APPDATA%\movebit` on Windows; a Flatpak install keeps its sandboxed copy under `~/.var/app/site.jrtx.movebit/`, and `flatpak --user uninstall --delete-data site.jrtx.movebit` removes it together with the app). Uninstall the program per platform:
+Removing the program does not erase your data. The SQLite database and its local profile files live in the separate data directory (`~/Library/Application Support/movebit` on macOS, `~/.config/movebit` on Linux, `%APPDATA%\movebit` on Windows; a Flatpak install keeps its sandboxed copy under `~/.var/app/site.jrtx.movebit/`, and `flatpak --user uninstall --delete-data site.jrtx.movebit` removes it together with the app). Uninstall the program per platform:
 
 - **Windows** — remove the MSI from Settings → Apps (Apps & Features); a portable ZIP is removed by deleting its folder.
 - **macOS** — drag MoveBit from Applications to the Trash.

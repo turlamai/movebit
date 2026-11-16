@@ -331,6 +331,10 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("get-history", arguments: [encode_Int64(days)])
         return try decode__List_DayStats_(rivetResult)
     }
+    public func get_sync_dir() async throws -> String {
+        let rivetResult = try await client.call("get-sync-dir", arguments: [])
+        return try decode_String(rivetResult)
+    }
     public func get_update_state() async throws -> RivetTypes.UpdateState {
         let rivetResult = try await client.call("get-update-state", arguments: [])
         return try decode_UpdateState(rivetResult)
@@ -373,6 +377,10 @@ public struct RivetAPI: Sendable {
     }
     public func set_quiet(enabled: Bool) async throws -> Void {
         let rivetResult = try await client.call("set-quiet", arguments: [encode_Bool(enabled)])
+        return try decode_Void(rivetResult)
+    }
+    public func set_sync_dir(path: String) async throws -> Void {
+        let rivetResult = try await client.call("set-sync-dir", arguments: [encode_String(path)])
         return try decode_Void(rivetResult)
     }
     public func snooze_cue(id: Int64) async throws -> Void {

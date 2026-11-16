@@ -106,6 +106,7 @@
 ;; Module top level: runs on the boot thread that later invokes `start`, so
 ;; serve-fds picks this sink up as its default.
 (current-rivet-diagnostic-sink movebit-diagnostic-sink)
+(current-history-diagnostic (lambda (message) (log-error 'movebit "~a" message)))
 
 ;; --- Typed surface --------------------------------------------------------
 
@@ -465,7 +466,12 @@
     (define device-id (ensure-device-id))
     (define loaded-config (load-config data-dir))
     (define idle ((current-idle-provider)))
-    (define history (make-history-store data-dir device-id))
+    (define history
+      (with-handlers ([exn:fail?
+                       (lambda (e)
+                         (log-error 'movebit "invalid record-exchange directory: ~a" e)
+                         (make-history-store data-dir device-id))])
+        (make-history-store data-dir device-id #:sync-dir (movebit-sync-dir))))
     (history-load! history)
     (define scheduler
       (make-scheduler loaded-config
@@ -655,11 +661,8 @@
   (for/list ([entry (in-list recent)])
     (record->dto (car entry) (cdr entry))))
 
-;; --- Data directory (bring-your-own-sync) ---------------------------------
-;; Point data-dir at a Resilio/Syncthing folder and every device in that
-;; folder contributes to the shared totals. The pointer lives in the
-;; bootstrap file OUTSIDE the synced data (each machine keeps its own) and
-;; takes effect on the next launch.
+;; --- Machine-local database directory ------------------------------------
+;; The bootstrap pointer takes effect on restart; it does not move data.
 
 (define-rpc (get-data-dir : String)
   (path->string (runtime-data-dir (require-runtime))))
@@ -671,13 +674,34 @@
   (when custom?
     ;; Create it and actually write into it — a pointer to an unwritable
     ;; folder would only surface as a broken app after the restart.
+    (unless (absolute-path? trimmed) (error 'set-data-dir "choose an absolute directory"))
     (define target (simple-form-path trimmed))
+    (make-history-store target (runtime-device-id (require-runtime)) #:sync-dir (movebit-sync-dir))
     (make-directory* target)
-    (define probe (build-path target ".movebit-write-probe"))
-    (call-with-output-file probe (lambda (out) (display "ok" out)) #:exists 'replace)
+    (define probe (make-temporary-file ".movebit-write-probe-~a" #f target))
     (delete-file probe))
   (save-bootstrap
-   (hash-set (load-bootstrap) 'data-dir (and custom? trimmed)))
+   (hash-set (load-bootstrap) 'local-data-dir (and custom? trimmed)))
+  (void))
+
+;; --- Optional record-exchange directory -----------------------------------
+(define-rpc (get-sync-dir : String)
+  (define configured (movebit-sync-dir))
+  (if configured (path->string configured) ""))
+
+(define-rpc (set-sync-dir [path : String] : Void)
+  (define trimmed (string-trim path))
+  (unless (string=? trimmed "")
+    (unless (absolute-path? trimmed) (error 'set-sync-dir "choose an absolute directory"))
+    (define target (simple-form-path trimmed))
+    ;; Check containment before creating or writing anything under the target.
+    (make-history-store (runtime-data-dir (require-runtime))
+                        (runtime-device-id (require-runtime)) #:sync-dir target)
+    (make-directory* target)
+    (define probe (make-temporary-file ".movebit-sync-probe-~a" #f target))
+    (delete-file probe))
+  (save-bootstrap (hash-set (load-bootstrap) 'sync-dir
+                           (and (not (string=? trimmed "")) trimmed)))
   (void))
 
 ;; --- Online updates --------------------------------------------------------

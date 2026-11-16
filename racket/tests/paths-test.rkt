@@ -1,0 +1,23 @@
+#lang racket/base
+(require rackunit racket/file racket/path "../movebit/paths.rkt")
+
+(test-case "SQLite location, record exchange and bootstrap identity are independent"
+  (define dir (make-temporary-file "movebit-paths-~a" 'directory))
+  (parameterize ([current-environment-variables (environment-variables-copy (current-environment-variables))])
+    (putenv "MOVEBIT_BOOTSTRAP_DIR" (path->string dir))
+    (putenv "MOVEBIT_DATA_DIR" "") (putenv "MOVEBIT_SYNC_DIR" "")
+    (define id (ensure-device-id))
+    (check-true (regexp-match? #px"^[0-9a-f]{8}$" id))
+    (check-equal? (ensure-device-id) id)
+    (define local (path->string (build-path dir "local")))
+    (define exchange (path->string (build-path dir "exchange")))
+    (save-bootstrap (hash-set (hash-set (load-bootstrap) 'local-data-dir local) 'sync-dir exchange))
+    (check-equal? (movebit-data-dir) (simple-form-path local))
+    (check-equal? (movebit-sync-dir) (simple-form-path exchange))
+    (check-equal? (ensure-device-id) id)
+    (putenv "MOVEBIT_SYNC_DIR" (path->string (build-path dir "other-exchange")))
+    (check-not-equal? (movebit-sync-dir) (simple-form-path exchange))
+    (check-equal? (movebit-data-dir) (simple-form-path local))
+    (putenv "MOVEBIT_DATA_DIR" (path->string (build-path dir "isolated")))
+    (check-equal? (movebit-data-dir) (simple-form-path (build-path dir "isolated"))))
+  (delete-directory/files dir))

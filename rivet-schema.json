@@ -633,6 +633,14 @@
     },
     {
       "arguments": [],
+      "name": "get-sync-dir",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
+      "arguments": [],
       "name": "get-update-state",
       "result": {
         "kind": "record",
@@ -769,6 +777,22 @@
         }
       ],
       "name": "set-quiet",
+      "result": {
+        "kind": "scalar",
+        "name": "Void"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "set-sync-dir",
       "result": {
         "kind": "scalar",
         "name": "Void"

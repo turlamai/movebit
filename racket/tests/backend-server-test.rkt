@@ -12,7 +12,9 @@
 ;; tick accumulates one active minute and a 5-minute water cycle fires after
 ;; ~5 ticks — no real waiting.
 
-(require rackunit
+(require db
+         "../movebit/storage.rkt"
+         rackunit
          racket/async-channel
          racket/bool
          racket/file
@@ -32,12 +34,8 @@
 (define tmp-dir (make-temporary-file "movebit-server-test-~a" 'directory))
 ;; Keep the device-id bootstrap out of the developer's real appdata.
 (putenv "MOVEBIT_BOOTSTRAP_DIR" (path->string tmp-dir))
-(call-with-output-file (build-path tmp-dir "config.json")
-  (lambda (out)
-    (write-json
-     (hasheq 'SchemaVersion config-schema-version
-             'AutoCheckUpdates #f)
-     out)))
+(check-true (save-config tmp-dir (struct-copy reminder-config (default-config)
+                                          [auto-check-updates #f])))
 
 ;; --- virtual clock: +60 s of active time per read ---------------------------
 
@@ -392,22 +390,28 @@
 
 (define-values (flush-result flush-ev) (call "flush-now"))
 (check-true (void? flush-result))
-;; flush-now persists this device's day shard under history/<date>/.
-(check-true
- (for/or ([day-dir (in-list (directory-list (build-path tmp-dir "history")
-                                            #:build? #t))]
-          #:when (directory-exists? day-dir)
-          [f (in-list (directory-list day-dir))])
-   (string-suffix? (path->string f) ".json"))
- "flush-now must persist today's stats to a day shard")
-
-;; The persisted config is the clamped, version-marked v1 document (immediate
-;; auto-save on set-config). The v0.x PascalCase fields are gone.
-(define persisted-config
-  (call-with-input-file (build-path tmp-dir "config.json") read-json))
+;; Flush and settings persist in the same real local SQLite database.
+(call-with-store tmp-dir (lambda (db)
+  (check-true (positive? (query-value db "SELECT count(*) FROM records")))
+  (check-equal? (query-value db "PRAGMA integrity_check") "ok")))
+(check-false (file-exists? (build-path tmp-dir "config.json")))
+(check-false (file-exists? (build-path tmp-dir "history.json")))
+(define persisted-config (config->jsexpr (load-config tmp-dir)))
 (check-equal? (hash-ref persisted-config 'SchemaVersion) config-schema-version)
-(check-equal? (hash-ref persisted-config 'Language) "en") ; last write was the quiet-hours config
+(check-equal? (hash-ref persisted-config 'Language) "en")
 (check-false (hash-has-key? persisted-config 'ForceBreakEnabled))
+
+;; Optional record sync is configured independently of the local DB.
+(define-values (sync-before sync-before-events) (call "get-sync-dir"))
+(check-equal? sync-before "")
+(define exchange-dir (path->string (build-path tmp-dir "exchange")))
+(define-values (sync-set sync-set-events) (call "set-sync-dir" exchange-dir))
+(check-true (void? sync-set))
+(define-values (sync-after sync-after-events) (call "get-sync-dir"))
+(check-equal? sync-after exchange-dir)
+(define-values (local-after local-after-events) (call "get-data-dir"))
+(check-equal? local-after (path->string tmp-dir))
+(check-false (file-exists? (build-path exchange-dir "movebit.sqlite3")))
 
 ;; --- diagnostics: JSONL into the data dir --------------------------------------
 ;;

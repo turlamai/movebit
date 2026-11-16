@@ -45,7 +45,9 @@
 
 ## 数据、备份与恢复
 
-退出 MoveBit 后备份 `config.json` 与 `history/` 文件夹：macOS `~/Library/Application Support/movebit`，Linux `~/.config/movebit`，Windows `%APPDATA%\movebit`。v1 配置文件带 `SchemaVersion` 标记；没有标记的外来文件会回落为默认值，而不是被半吊子迁移。恢复前先在副本上验证。
+设置与历史保存在本机 `movebit.sqlite3`：macOS `~/Library/Application Support/movebit`，Linux `~/.config/movebit`，Windows `%APPDATA%\movebit`。退出 MoveBit 后备份整个本地数据目录，包括仍存在的 SQLite `-wal` / `-shm` 文件；如果更改过本地数据位置，也要单独备份默认目录里的 `bootstrap.json`。仅复制正在使用的数据库主文件不构成一致备份。先恢复到隔离的本地目录再验证；未知版本或损坏数据库不会被静默覆盖。退役的 JSON 设置与历史不会自动导入。
+
+跨设备统计使用独立的记录交换目录。将各设备的 `MOVEBIT_SYNC_DIR` 指向同一 Resilio/Syncthing 同步文件夹在本机的副本，或调用后端 `set-sync-dir` RPC 配置，然后重启。这些是高级配置途径，不会在四项设置窗口中增加控件。只交换带版本的设备/日期统计；设置、设备引导信息、更新文件和 SQLite 数据库留在本机。重复或乱序到达的记录不重复计数，各设备计数相加，最长连续时段取最大值。本地数据库必须放在同步目录之外，同步不能代替备份。技术细节见[存储契约](STORAGE.md)。
 
 ## 网络、密钥与隐私
 
@@ -59,7 +61,7 @@ Windows 便携 ZIP 更新中，复制失败或 Windows 无法启动新程序时�
 
 替换 Windows 便携版安装前，辅助程序最多等待两分钟让旧进程退出。如果无法确认退出，会保持安装不变并记录「更新未应用」，不会强制结束应用。请正常关闭原应用后再重试更新。
 
-卸载程序不会删除你的数据。`config.json` 与 `history/` 文件夹位于独立的数据目录（macOS `~/Library/Application Support/movebit`、Linux `~/.config/movebit`、Windows `%APPDATA%\movebit`；Flatpak 安装的沙箱数据在 `~/.var/app/site.jrtx.movebit/`，用 `flatpak --user uninstall --delete-data site.jrtx.movebit` 可连同应用一并删除）。按平台移除程序本体：
+卸载程序不会删除你的数据。SQLite 数据库及本地配置文件位于独立的数据目录（macOS `~/Library/Application Support/movebit`、Linux `~/.config/movebit`、Windows `%APPDATA%\movebit`；Flatpak 安装的沙箱数据在 `~/.var/app/site.jrtx.movebit/`，用 `flatpak --user uninstall --delete-data site.jrtx.movebit` 可连同应用一并删除）。按平台移除程序本体：
 
 - **Windows** —— 在「设置 → 应用」（应用和功能）卸载 MSI；便携 ZIP 直接删除其文件夹。
 - **macOS** —— 在「应用程序」里把 MoveBit 拖入废纸篓。
