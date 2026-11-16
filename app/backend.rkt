@@ -48,9 +48,28 @@
          check-updates)
 
 ;; --- Injectable seams (defaults = the real world) ------------------------
+;; Two environment knobs exist ONLY for development/acceptance runs so cue
+;; delivery can be exercised in seconds; they are never set in production:
+;; MOVEBIT_TICK_INTERVAL_SECONDS compresses the tick thread, and
+;; MOVEBIT_VIRTUAL_CLOCK=1 advances the shared clock 60 virtual seconds per
+;; read (the same model the wire test drives, so the REAL ledger and
+;; scheduler paths are exercised, not a fake).
 
-(define current-tick-interval-seconds (make-parameter 30.0))
-(define current-now-ms (make-parameter now-ms))
+(define current-tick-interval-seconds
+  (make-parameter
+   (or (and (getenv "MOVEBIT_TICK_INTERVAL_SECONDS")
+            (string->number (getenv "MOVEBIT_TICK_INTERVAL_SECONDS")))
+       30.0)))
+
+(define current-now-ms
+  (make-parameter
+   (if (equal? (getenv "MOVEBIT_VIRTUAL_CLOCK") "1")
+       (let ([clock (box (now-ms))])
+         (lambda ()
+           (set-box! clock (+ (unbox clock) 60000))
+           (unbox clock)))
+       now-ms)))
+
 (define current-idle-provider
   (make-parameter
    (lambda ()
@@ -569,6 +588,26 @@
 (define-rpc (acknowledge-cue [id : Int64] : Void)
   (define rt (require-runtime))
   (define acked (orchestrator-acknowledge-cue! (runtime-orchestrator rt) id))
+  (when (and acked (memq 'sit acked))
+    (cue-acknowledged
+     (CueAcknowledged (ReminderKind 'sit)
+                      (orchestrator-sit-acks-today (runtime-orchestrator rt)))))
+  (publish-pending-cues! rt)
+  (publish-stats! rt)
+  (void))
+
+;; Partial completion (2026-11-15 contract 只做了一部分): settle only the
+;; listed kinds of the merged invitation; the rest keep waiting in place.
+;; An empty list or unknown kinds is a no-op (零选择不提交). The kinds ride
+;; as wire strings because rivet's server-side List validation expects the
+;; wire shape for list elements (named Record/Enum args are the only ones
+;; converted; tracked upstream for typed list elements).
+(define-rpc (acknowledge-cue-kinds [id : Int64] [kinds : (List String)] : Void)
+  (define rt (require-runtime))
+  (define selected (map string->symbol kinds))
+  (define acked
+    (orchestrator-acknowledge-cue! (runtime-orchestrator rt) id
+                                   #:kinds selected))
   (when (and acked (memq 'sit acked))
     (cue-acknowledged
      (CueAcknowledged (ReminderKind 'sit)

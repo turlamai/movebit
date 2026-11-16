@@ -19,14 +19,19 @@ final class OnboardingState: ObservableObject {
 struct OnboardingView: View {
     @ObservedObject var state: OnboardingState
     @ObservedObject var model: MoveBitModel
+    /// The welcome pet speaks the hello caption once (2026-11-15 contract).
+    @StateObject private var pet = CompanionPresentation()
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 12)
-            MubiView(state: .idle, message: "", bodySize: 104,
-                     motion: "still")
-                .frame(height: 150)
+            MubiCharacterView(presentation: pet)
+                .frame(height: 170)
                 .accessibilityHidden(true)
+                .onAppear {
+                    pet.expression = .hello
+                    pet.chat = true
+                }
 
             Text(L10n.t("ob.hello"))
                 .font(.system(size: 26, weight: .bold))

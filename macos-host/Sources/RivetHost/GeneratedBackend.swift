@@ -189,6 +189,7 @@ public enum RivetTypes {
 private func encode_Int64(_ v: Int64) -> RivetValue { .int64(v) }
 private func encode_Void(_ v: Void) -> RivetValue { .null }
 private func encode_String(_ v: String) -> RivetValue { .string(v) }
+private func encode__List_String_(_ v: [String]) -> RivetValue { .list(v.map(encode_String)) }
 private func encode__Optional_String_(_ v: String?) -> RivetValue { v.map(encode_String) ?? .null }
 private func encode__Optional_Int64_(_ v: Int64?) -> RivetValue { v.map(encode_Int64) ?? .null }
 private func encode_UpdateCheck(_ v: RivetTypes.UpdateCheck) -> RivetValue { .list([encode_String(v.status), encode_String(v.current_version), encode__Optional_String_(v.available_version), encode__Optional_Int64_(v.build), encode__Optional_Int64_(v.size_bytes), encode__Optional_String_(v.error)]) }
@@ -209,12 +210,12 @@ private func encode_LoopInfo(_ v: RivetTypes.LoopInfo) -> RivetValue { .list([en
 private func encode__List_LoopInfo_(_ v: [RivetTypes.LoopInfo]) -> RivetValue { .list(v.map(encode_LoopInfo)) }
 private func encode_PauseState(_ v: RivetTypes.PauseState) -> RivetValue { .list([encode_Bool(v.paused), encode__Optional_Int64_(v.until_ms)]) }
 private func encode__List_HealthCue_(_ v: [RivetTypes.HealthCue]) -> RivetValue { .list(v.map(encode_HealthCue)) }
-private func encode__List_String_(_ v: [String]) -> RivetValue { .list(v.map(encode_String)) }
 private func encode_RuntimeInfo(_ v: RivetTypes.RuntimeInfo) -> RivetValue { .list([encode_String(v.data_dir), encode_String(v.device_id), encode__List_String_(v.devices_today)]) }
 
 private func decode_Int64(_ v: RivetValue) throws -> Int64 { guard case .int64(let x) = v else { throw RivetGeneratedError.typeMismatch("Int64") }; return x }
 private func decode_Void(_ v: RivetValue) throws -> Void { guard case .null = v else { throw RivetGeneratedError.typeMismatch("Void") } }
 private func decode_String(_ v: RivetValue) throws -> String { guard case .string(let x) = v else { throw RivetGeneratedError.typeMismatch("String") }; return x }
+private func decode__List_String_(_ v: RivetValue) throws -> [String] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List String)") }; return try xs.map(decode_String) }
 private func decode__Optional_String_(_ v: RivetValue) throws -> String? { if case .null = v { return nil }; return try decode_String(v) }
 private func decode__Optional_Int64_(_ v: RivetValue) throws -> Int64? { if case .null = v { return nil }; return try decode_Int64(v) }
 private func decode_UpdateCheck(_ v: RivetValue) throws -> RivetTypes.UpdateCheck { guard case .list(let xs) = v, xs.count == 6 else { throw RivetGeneratedError.typeMismatch("UpdateCheck") }; return RivetTypes.UpdateCheck(status: try decode_String(xs[0]), current_version: try decode_String(xs[1]), available_version: try decode__Optional_String_(xs[2]), build: try decode__Optional_Int64_(xs[3]), size_bytes: try decode__Optional_Int64_(xs[4]), error: try decode__Optional_String_(xs[5])) }
@@ -235,7 +236,6 @@ private func decode_LoopInfo(_ v: RivetValue) throws -> RivetTypes.LoopInfo { gu
 private func decode__List_LoopInfo_(_ v: RivetValue) throws -> [RivetTypes.LoopInfo] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List LoopInfo)") }; return try xs.map(decode_LoopInfo) }
 private func decode_PauseState(_ v: RivetValue) throws -> RivetTypes.PauseState { guard case .list(let xs) = v, xs.count == 2 else { throw RivetGeneratedError.typeMismatch("PauseState") }; return RivetTypes.PauseState(paused: try decode_Bool(xs[0]), until_ms: try decode__Optional_Int64_(xs[1])) }
 private func decode__List_HealthCue_(_ v: RivetValue) throws -> [RivetTypes.HealthCue] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List HealthCue)") }; return try xs.map(decode_HealthCue) }
-private func decode__List_String_(_ v: RivetValue) throws -> [String] { guard case .list(let xs) = v else { throw RivetGeneratedError.typeMismatch("(List String)") }; return try xs.map(decode_String) }
 private func decode_RuntimeInfo(_ v: RivetValue) throws -> RivetTypes.RuntimeInfo { guard case .list(let xs) = v, xs.count == 3 else { throw RivetGeneratedError.typeMismatch("RuntimeInfo") }; return RivetTypes.RuntimeInfo(data_dir: try decode_String(xs[0]), device_id: try decode_String(xs[1]), devices_today: try decode__List_String_(xs[2])) }
 
 public enum RivetEvent: Sendable {
@@ -297,6 +297,10 @@ public struct RivetAPI: Sendable {
     }
     public func acknowledge_cue(id: Int64) async throws -> Void {
         let rivetResult = try await client.call("acknowledge-cue", arguments: [encode_Int64(id)])
+        return try decode_Void(rivetResult)
+    }
+    public func acknowledge_cue_kinds(id: Int64, kinds: [String]) async throws -> Void {
+        let rivetResult = try await client.call("acknowledge-cue-kinds", arguments: [encode_Int64(id), encode__List_String_(kinds)])
         return try decode_Void(rivetResult)
     }
     public func check_updates() async throws -> RivetTypes.UpdateCheck {

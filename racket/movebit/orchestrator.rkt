@@ -260,19 +260,54 @@
 ;; Done: self-reported acknowledgement. A sit claim ends the counted
 ;; continuous session (the user says they got up); water/micro claims touch
 ;; no timer beyond the cue itself. Never fires stats — a click is not proof.
-;; Returns the acknowledged kinds, or #f when the id was unknown/settled.
-(define (orchestrator-acknowledge-cue! o id)
+;; With #:kinds only the listed kinds settle (the 2026-11-15 contract's
+;; 只做了一部分): outcome events fire for the settled kinds, the record keeps
+;; the residual kinds open (re-planned for the smaller invitation), and an
+;; empty selection is a no-op — 零选择不提交. Returns the acknowledged kinds,
+;; or #f when the id was unknown/settled/nothing selected.
+(define (orchestrator-acknowledge-cue! o id #:kinds [selected #f])
   (define record (find-cue o id))
   (and record
        (open? record)
-       (let ([kinds (cue-record-kinds record)])
-         (set-status! o record 'acknowledged)
-         (when (memq 'sit kinds)
-           (scheduler-end-session! (movebit-orchestrator-scheduler o))
-           (sync-ack-day! o)
-           (set-movebit-orchestrator-sit-acks-today!
-            o (add1 (movebit-orchestrator-sit-acks-today o))))
-         kinds)))
+       (let* ([all (cue-record-kinds record)]
+              [kinds (if selected
+                         (filter (λ (kind) (memq kind selected)) all)
+                         all)])
+         (and (pair? kinds)
+              (if (= (length kinds) (length all))
+                  (begin
+                    (set-status! o record 'acknowledged)
+                    (settle-sit! o kinds)
+                    kinds)
+                  (let ([residual (filter (λ (kind) (not (memq kind kinds))) all)])
+                    (for ([kind (in-list kinds)])
+                      (fire-outcome! o kind 'self-reported-done))
+                    (settle-sit! o kinds)
+                    ;; The invitation stays open with the remaining kinds;
+                    ;; same id and status, re-planned presentation.
+                    (set-movebit-orchestrator-cues!
+                     o
+                     (for/list ([c (in-list (movebit-orchestrator-cues o))])
+                       (if (eq? c record)
+                           (struct-copy cue-record c
+                                        [kinds residual]
+                                        [planned (plan-for o residual)])
+                           c)))
+                    kinds))))))
+
+;; The sit-claim side effects shared by full and partial acknowledgements.
+(define (settle-sit! o kinds)
+  (when (memq 'sit kinds)
+    (scheduler-end-session! (movebit-orchestrator-scheduler o))
+    (sync-ack-day! o)
+    (set-movebit-orchestrator-sit-acks-today!
+     o (add1 (movebit-orchestrator-sit-acks-today o)))))
+
+;; One outcome event for a single kind without touching the record status —
+;; the partial-ack counterpart of set-status!'s per-kind sweep.
+(define (fire-outcome! o kind event)
+  (define cb (movebit-orchestrator-on-outcome o))
+  (when cb (cb kind event)))
 
 ;; Later: defer every merged kind by the configured snooze of ACTIVE time.
 (define (orchestrator-snooze-cue! o id)
