@@ -49,6 +49,14 @@ struct OnboardingView: View {
 
             Spacer(minLength: 14)
 
+            Text(L10n.t("ob.patHint"))
+                .font(.system(size: 11.5))
+                .foregroundColor(Palette.inkSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+
             Text(L10n.t("ob.privacy"))
                 .font(.system(size: 11.5))
                 .foregroundColor(Palette.inkMuted)
@@ -56,7 +64,7 @@ struct OnboardingView: View {
             Button {
                 finish()
             } label: {
-                Text(L10n.t("ob.start"))
+                Text(L10n.t("ob.launch"))
                     .font(.system(size: 15, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -65,11 +73,6 @@ struct OnboardingView: View {
             .tint(Palette.accent)
             .keyboardShortcut(.defaultAction)
             .padding(.top, 12)
-
-            Text(L10n.t("ob.startHint"))
-                .font(.system(size: 11))
-                .foregroundColor(Palette.inkMuted)
-                .padding(.top, 8)
         }
         .padding(28)
         .frame(width: 460, height: 520)

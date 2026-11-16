@@ -1,102 +1,146 @@
 import SwiftUI
 import AppKit
 
-// MARK: - micro eye-rest card
-// Small top-center card with a thin shrinking progress bar: rest your eyes
-// while it runs. Letting it finish acknowledges the cue; click / Esc ends it
-// early as a Hide. Never locks, never steals focus, silent by design.
+// MARK: - micro break window (2026-11-15 contract 微休息)
+// A small top-center non-activating window with three real states —
+// invite (开始), running (timer by deadline), ended (in-place 做好了).
+// Stopping, closing, Esc and 先收起来 never record completion; 做好了
+// acknowledges the cue of the running kind when one is open. Never
+// fullscreen, never locks, silent by design.
 
 @MainActor
 final class MicroPanelController: ObservableObject {
-    @Published var progress = 1.0
-    /// The guided rest only starts on an explicit user action (#94).
-    @Published var started = false
-    /// The countdown reached zero. Completion is NOT a self-report: the user
-    /// marks Done explicitly, or clicks the card away as a Hide.
-    @Published var finished = false
+    enum Phase: Equatable {
+        case invite
+        case running
+        case ended
+    }
 
+    @Published var phase: Phase = .invite
+    @Published var seconds: Int64 = 20
+    @Published var remaining: Int64 = 20
+    @Published var progress: Double = 1
+
+    /// Acknowledges the cue matching the running kind (eyes→micro,
+    /// stretch→sit); no open cue of that kind = nothing is recorded.
     var onDone: ((Int64) -> Void)?
+    /// 先收起来 / Esc / window close: a deliberate stop, not a completion.
     var onHide: ((Int64) -> Void)?
 
     private var panel: NSPanel?
     private var generation = 0
     private var keyMonitor: Any?
-    private var currentCueId: Int64 = 0
-    private var durationSeconds: Int64 = 20
-    /// Invitation copy for this session (eye rest vs guided movement).
-    private(set) var hintText = L10n.t("micro.hint")
+    /// Open cue ids by kind symbol ("sit"/"water"/"micro") at show time.
+    private var cueIds: [String: Int64] = [:]
+    private var deadline: Date = .distantFuture
+    private var ticker: Task<Void, Never>?
 
-    func show(durationSeconds: Int64, title: String, hint: String,
-              cueId: Int64) {
-        // Replacing a session (a newer cue, or the menu reopened) must not
-        // record the previous cue as abandoned; only an explicit Hide does.
+    /// Duration per kind (contract: 20-second eyes / 2-minute stretch; the
+    /// rhythm is a product default, the KIND is user-chosen here).
+    private static let eyesSeconds: Int64 = 20
+    private static let stretchSeconds: Int64 = 120
+
+    func show(cueIds: [String: Int64], eyes: Bool) {
         closePanel()
         generation += 1
-        let generation = generation
-        progress = 1
-        started = false
-        finished = false
-        hintText = hint
-        currentCueId = cueId
+        self.cueIds = cueIds
+        phase = .invite
+        setKind(eyes: eyes)
 
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        let hosting = NSHostingView(rootView: MicroBreakView(title: title, controller: self))
-        hosting.sizingOptions = .preferredContentSize
+        let hosting = NSHostingView(rootView: MicroBreakView(controller: self))
+        hosting.sizingOptions = [.preferredContentSize]
         panel.contentView = hosting
-        hosting.layoutSubtreeIfNeeded()
-        panel.setContentSize(hosting.fittingSize)
         position(panel)
         panel.orderFrontRegardless()
         installKeyMonitor()
-
-        self.durationSeconds = max(1, durationSeconds)
     }
 
-    /// Explicit opt-in: only now does the countdown run.
-    func start() {
-        guard !started, !finished else { return }
-        started = true
+    /// Tray/menu entry points keep their shape; the cue map decides what
+    /// 做好了 can settle.
+    func show(durationSeconds: Int64, title: String, hint: String,
+              cueId: Int64) {
+        let kind = durationSeconds >= 120 ? "sit" : "micro"
+        show(cueIds: [kind: cueId], eyes: durationSeconds < 120)
+    }
+
+    private func setKind(eyes: Bool) {
+        seconds = eyes ? Self.eyesSeconds : Self.stretchSeconds
+        remaining = seconds
         progress = 1
-        let generation = generation
-        let totalNanos = UInt64(max(1, durationSeconds) * 1_000_000_000)
-        let tick = min(totalNanos, 250_000_000)
-        Task { [weak self] in
-            while let self, generation == self.generation {
-                try? await Task.sleep(nanoseconds: tick)
-                guard generation == self.generation else { return }
-                self.progress = max(0, self.progress - Double(tick) / Double(totalNanos))
-                if self.progress <= 0 {
-                    self.finished = true
-                    // Leave the card briefly so the finish is visible, then
-                    // hide it without claiming completion. The cue stays
-                    // open in the tray for an explicit Done.
-                    try? await Task.sleep(nanoseconds: 60_000_000_000)
-                    guard generation == self.generation, self.finished else { return }
-                    self.dismissInteractive()
+    }
+
+    var isEyes: Bool { seconds == Self.eyesSeconds }
+
+    /// 开始: the timer runs by deadline (contract 倒计时按截止时间计算).
+    func start() {
+        guard phase == .invite || phase == .ended else { return }
+        phase = .running
+        remaining = seconds
+        progress = 1
+        deadline = Date().addingTimeInterval(TimeInterval(seconds))
+        let current = generation
+        ticker?.cancel()
+        ticker = Task { [weak self] in
+            while let self, current == self.generation, !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard current == self.generation else { return }
+                let left = Int64(max(0, self.deadline.timeIntervalSinceNow.rounded()))
+                if left != self.remaining {
+                    self.remaining = left
+                    self.progress =
+                        Double(max(0, left)) / Double(max(1, self.seconds))
+                }
+                if left <= 0 {
+                    // In-place confirm (contract: 结束后保留原地确认，不自动
+                    // 算完成、不要求去托盘). No auto-close.
+                    self.phase = .ended
                     return
                 }
             }
         }
     }
 
-    /// The eye rest ran its course: acknowledge the cue (self-reported).
-    func finish() {
-        let id = currentCueId
-        closePanel()
-        if id != 0 { onDone?(id) }
+    /// 停止计时: back to the invite, nothing recorded.
+    func stopTimer() {
+        ticker?.cancel()
+        phase = .invite
+        remaining = seconds
+        progress = 1
     }
 
-    /// Click / Esc / a newer cue: end early as a Hide — no completion claimed.
-    func dismissInteractive() {
+    var currentCueId: Int64? {
+        isEyes ? cueIds["micro"] : cueIds["sit"]
+    }
+
+    /// 做好了: settle the running kind's open cue; without one nothing is
+    /// recorded (完成由你确认，同类待回应项才消除).
+    func finish() {
+        ticker?.cancel()
         let id = currentCueId
         closePanel()
-        if id != 0 { onHide?(id) }
+        if let id { onDone?(id) }
+    }
+
+    /// 先收起来 / Esc / close: deliberate stop, never a completion.
+    func tuckAway() {
+        ticker?.cancel()
+        let id = currentCueId
+        closePanel()
+        if let id { onHide?(id) }
+    }
+
+    /// 改为 20 秒护眼 / 改为 2 分钟拉伸: invite-state kind switch.
+    func switchKind() {
+        guard phase == .invite else { return }
+        setKind(eyes: !isEyes)
     }
 
     private func closePanel() {
         generation += 1
-        currentCueId = 0
+        ticker?.cancel()
+        cueIds = [:]
         panel?.orderOut(nil)
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
@@ -107,9 +151,9 @@ final class MicroPanelController: ObservableObject {
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Escape
+            if event.keyCode == 53 { // Escape — never records completion
                 if let self {
-                    MainActor.assumeIsolated { self.dismissInteractive() }
+                    MainActor.assumeIsolated { self.tuckAway() }
                 }
                 return nil
             }
@@ -118,7 +162,7 @@ final class MicroPanelController: ObservableObject {
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 110),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 220),
                             styleMask: [.nonactivatingPanel, .borderless],
                             backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -142,56 +186,144 @@ final class MicroPanelController: ObservableObject {
     }
 }
 
+/// The break window body: compact titlebar (leaf + title + ×) and the
+/// state-driven content per the prototype's micro() view.
 private struct MicroBreakView: View {
-    let title: String
     @ObservedObject var controller: MicroPanelController
+    @Environment(\.colorScheme) private var scheme
+
+    private var dark: Bool { scheme == .dark }
+    private var title: String {
+        controller.isEyes ? L10n.t("micro.eyesTitle") : L10n.t("micro.stretchTitle")
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 10) {
-                Text("👀").font(.system(size: 22))
+        VStack(spacing: 0) {
+            HStack(spacing: 7) {
+                LeafIcon()
+                    .frame(width: 14, height: 14)
+                    .foregroundColor(Palette.inkSecondary)
                 Text(title)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Palette.inkPrimary)
+                Spacer()
+                Button {
+                    controller.tuckAway()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Palette.inkMuted)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.primary.opacity(0.06)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.t("micro.tuckAway"))
+                .help(L10n.t("micro.tuckAway"))
             }
-            Text(controller.finished ? L10n.t("micro.finishedHint")
-                                     : controller.hintText)
-                .font(.system(size: 11.5))
-                .foregroundColor(Palette.inkMuted)
-                .fixedSize(horizontal: false, vertical: true)
-            if controller.started {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2).fill(Palette.trackBg)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Palette.accent)
-                            .frame(width: geo.size.width * CGFloat(controller.progress))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Palette.titlebarBg)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(bodyHeading)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(Palette.inkPrimary)
+                Text(bodyText)
+                    .font(.system(size: 12))
+                    .foregroundColor(Palette.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if controller.phase == .running {
+                    Text("\(controller.remaining) \(L10n.t("micro.seconds"))")
+                        .font(.system(size: 26, weight: .semibold, design: .rounded))
+                        .foregroundColor(Palette.inkPrimary)
+                        .monospacedDigit()
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4).fill(Palette.trackBg)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Palette.accent)
+                                .frame(width: geo.size.width
+                                       * CGFloat(controller.progress))
+                        }
+                    }
+                    .frame(height: 8)
+                }
+
+                HStack(spacing: 10) {
+                    switch controller.phase {
+                    case .running:
+                        primaryButton(L10n.t("micro.done")) { controller.finish() }
+                        quietButton(L10n.t("micro.stop")) { controller.stopTimer() }
+                    case .ended:
+                        Text(L10n.t("micro.endedHint"))
+                            .font(.system(size: 11.5))
+                            .foregroundColor(Palette.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        primaryButton(L10n.t("micro.done")) { controller.finish() }
+                        quietButton(L10n.t("micro.restart")) { controller.start() }
+                    case .invite:
+                        primaryButton(L10n.t("micro.start")) { controller.start() }
+                    }
+                    quietButton(L10n.t("micro.tuckAway")) { controller.tuckAway() }
+                    Spacer()
+                }
+                if controller.phase == .invite {
+                    quietButton(controller.isEyes ? L10n.t("micro.switchStretch")
+                                                  : L10n.t("micro.switchEyes")) {
+                        controller.switchKind()
                     }
                 }
-                .frame(height: 4)
-                .padding(.top, 6)
             }
-            HStack(spacing: 8) {
-                if !controller.started {
-                    Button(L10n.t("micro.start")) { controller.start() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Palette.accent)
-                        .controlSize(.small)
-                }
-                Button(L10n.t("micro.done")) { controller.finish() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                Button(L10n.t("notif.hide")) { controller.dismissInteractive() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            }
-            .padding(.top, 6)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(EdgeInsets(top: 18, leading: 26, bottom: 18, trailing: 26))
-        .frame(width: 400)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Palette.cardBg))
-        .overlay(RoundedRectangle(cornerRadius: 18)
+        .frame(width: 420)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Palette.appBg))
+        .overlay(RoundedRectangle(cornerRadius: 14)
             .strokeBorder(Palette.cardBorder, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var bodyHeading: String {
+        switch controller.phase {
+        case .ended: return L10n.t("micro.endedTitle")
+        default: return controller.isEyes ? L10n.t("micro.eyesTitle")
+                                          : L10n.t("micro.stretchTitle")
+        }
+    }
+
+    private var bodyText: String {
+        if controller.phase == .ended {
+            return L10n.t("micro.endedHint")
+        }
+        return controller.isEyes ? L10n.t("micro.eyesBody")
+                                 : L10n.t("micro.stretchBody")
+    }
+
+    private func primaryButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundColor(dark ? Color(hex: "#241C16") : Palette.appBg)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+        }
+        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accent))
+        .buttonStyle(.plain)
+    }
+
+    private func quietButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundColor(Palette.inkSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
+        .buttonStyle(.plain)
     }
 }

@@ -147,7 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onPendingCuesChanged = { [weak self] in self?.syncCuePresentation() }
         // Restart-install handoff: the backend staged the update and spawned
         // the apply helper; quitting lets it swap the bundle and relaunch.
-        model.onQuitRequested = { [weak self] in self?.quit() }
+        // The handoff quit must not hit the exit-confirmation dialog.
+        model.onQuitRequested = { [weak self] in
+            self?.suppressTerminateConfirmation = true
+            self?.quit()
+        }
 
         installReminderPanels()
         rebuildMenuBar()
@@ -307,27 +311,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Opt-in guided sessions (#94): only offered while a real cue is
         // open, never as ambient entertainment.
-        if let cue = model.pendingCues.first(where: { $0.kinds.contains(.micro) }) {
+        if model.pendingCues.contains(where: { $0.kinds.contains(.micro) }) {
             items.append(.separator)
             items.append(.action(
                 label: L10n.t("tray.eyeRest"), identifier: "tray-eye-rest",
                 handler: { [weak self] in
-                    self?.microController?.show(
-                        durationSeconds: 20,
-                        title: L10n.t("tray.eyeRest"),
-                        hint: L10n.t("micro.hint"),
-                        cueId: cue.id)
+                    self?.microController?.show(cueIds: self?.openCueMap() ?? [:],
+                                                eyes: true)
                 }))
         }
-        if let cue = model.pendingCues.first(where: { $0.kinds.contains(.sit) }) {
+        if model.pendingCues.contains(where: { $0.kinds.contains(.sit) }) {
             items.append(.action(
                 label: L10n.t("tray.stretch"), identifier: "tray-stretch",
                 handler: { [weak self] in
-                    self?.microController?.show(
-                        durationSeconds: 120,
-                        title: L10n.t("stretch.title"),
-                        hint: L10n.t("stretch.hint"),
-                        cueId: cue.id)
+                    self?.microController?.show(cueIds: self?.openCueMap() ?? [:],
+                                                eyes: false)
                 }))
         }
         items.append(.separator)
@@ -353,6 +351,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         items.append(.action(label: L10n.t("tray.exit"), identifier: "tray-exit",
                              handler: { [weak self] in self?.quit() }))
         return items
+    }
+
+    /// Open cue ids by kind symbol for the micro window's 做好了 mapping.
+    private func openCueMap() -> [String: Int64] {
+        guard let model else { return [:] }
+        var map: [String: Int64] = [:]
+        for cue in model.pendingCues {
+            for kind in cue.kinds { map[kind.rawValue] = cue.id }
+        }
+        return map
     }
 
     /// The pet's ••• button pops the same menu as the tray at its anchor.
@@ -460,6 +468,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func quit() {
         model?.flushNowSync()
         NSApp.terminate(nil)
+    }
+
+    /// 退出必须确认（2026-11-15 contract）。The update handoff and the
+    /// acceptance driver terminate without a dialog.
+    private var suppressTerminateConfirmation = false
+
+    func applicationShouldTerminate(_ sender: NSApplication)
+        -> NSApplication.TerminateReply {
+        if suppressTerminateConfirmation
+            || ProcessInfo.processInfo.environment["MOVEBIT_ACCEPTANCE"] == "1" {
+            return .terminateNow
+        }
+        model?.flushNowSync()
+        let alert = NSAlert()
+        alert.messageText = L10n.t("tray.exit")
+        alert.informativeText = L10n.t("quit.confirmBody")
+        alert.addButton(withTitle: L10n.t("dialog.cancel"))
+        alert.addButton(withTitle: L10n.t("tray.exit"))
+        alert.alertStyle = .informational
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        return response == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
     }
 
     // MARK: main menu
@@ -573,7 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 520),
                               styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
-        window.title = L10n.t("ob.title")
+        window.title = "MoveBit"
         window.contentView = NSHostingView(
             rootView: OnboardingView(state: state, model: model))
         window.center()
