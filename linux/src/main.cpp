@@ -244,6 +244,28 @@ struct AppState {
   GtkDrawingArea* mubi_canvas{nullptr};
   GtkLabel* mubi_capsule{nullptr};
   std::int64_t mubi_cue_id{0};
+  // 2026-11-15 contract: the invitation is attached to the pet — heading
+  // + 做到了/稍后 + 只做了一部分 per-kind checklist + × hide, and a •••
+  // menu button under the pet. The pet surface itself never records
+  // completion; the invitation buttons and the tray items do.
+  // Open invitation items: (kind symbol, cue id), priority-ordered.
+  std::vector<std::pair<std::string, std::int64_t>> mubi_pending;
+  GtkBox* mubi_bubble{nullptr};
+  GtkLabel* mubi_bubble_title{nullptr};
+  GtkButton* mubi_bubble_close{nullptr};
+  GtkButton* mubi_bubble_done{nullptr};
+  GtkButton* mubi_bubble_later{nullptr};
+  GtkButton* mubi_bubble_partial{nullptr};
+  GtkBox* mubi_partial_box{nullptr};
+  GtkButton* mubi_bubble_partial_confirm{nullptr};
+  GtkLabel* mubi_bubble_partial_note{nullptr};
+  std::vector<GtkCheckButton*> mubi_kind_checks;
+  // Kind symbol per checklist row (refresh_invitation fills both in step).
+  std::vector<std::string> mubi_check_kinds;
+  GtkButton* mubi_menu_button{nullptr};
+  GtkWindow* mubi_menu_window{nullptr};
+  int mubi_pat_count = 0;
+  guint mubi_mood_reset_id = 0;
   guint mubi_expire_id{0};
   int mubi_state = 0;  // 0 idle, 1 water, 2 stand, 3 eyes, 4 ack, 5 focus
   std::string mubi_message;
@@ -2008,7 +2030,17 @@ void on_mubi_done(GtkButton*, gpointer);
 void on_mubi_later(GtkButton*, gpointer);
 void on_mubi_hide(GtkButton*, gpointer);
 void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
-void on_capsule_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer);
+// 2026-11-15 invitation handlers (the pet surface never acknowledges).
+void refresh_invitation();
+void on_invitation_done(GtkButton*, gpointer);
+void on_invitation_later(GtkButton*, gpointer);
+void on_invitation_hide(GtkButton*, gpointer);
+void on_invitation_reveal_partial(GtkButton*, gpointer);
+void on_invitation_partial_confirm(GtkButton*, gpointer);
+void on_menu_button_clicked(GtkButton*, gpointer);
+void mubi_react_pat();
+void mubi_close_menu();
+void show_menu_window();
 
 // ---- Mubi（沐比）companion (issue #56, X11 leg) ---------------------------------
 // Canonical character from assets/mubi/tokens.json (generator:
@@ -2326,6 +2358,61 @@ void close_window() {
   }
 }
 
+// Kind symbol (wire string) for the acknowledge-cue-kinds RPC.
+char const* kind_symbol(rivet_app::ReminderKind kind) {
+  switch (kind) {
+    case rivet_app::ReminderKind::water: return "water";
+    case rivet_app::ReminderKind::micro: return "micro";
+    default: return "sit";
+  }
+}
+
+char const* kind_word_key(std::string const& kind) {
+  if (kind == "water") return "kind.water";
+  if (kind == "micro") return "kind.micro";
+  return "kind.sit";
+}
+
+// Bare kind word for the per-kind checklist (起身 / 喝水 / 护眼).
+char const* kind_word(rivet_app::ReminderKind kind) {
+  return kind_word_key(kind_symbol(kind));
+}
+
+// Recompute the open invitation items from the ledger's reconciliation
+// view; the arriving cue merges through the same path.
+void sync_pending_items() {
+  auto& s = g_state;
+  s.mubi_pending.clear();
+  for (auto const& cue : s.model.pending_cues) {
+    for (auto const& kind : cue.kinds) {
+      s.mubi_pending.emplace_back(kind_symbol(kind), cue.id);
+    }
+  }
+}
+
+// Composed invitation heading (invite.title.*): one phrase per present
+// kind — 起来走走，喝口水？-style, priority-ordered, no state machine talk.
+std::string invitation_title() {
+  bool has_move = false;
+  bool has_water = false;
+  bool has_eyes = false;
+  for (auto const& [kind, id] : g_state.mubi_pending) {
+    has_move = has_move || kind == "sit";
+    has_water = has_water || kind == "water";
+    has_eyes = has_eyes || kind == "micro";
+  }
+  int const words = (has_move ? 1 : 0) + (has_water ? 1 : 0) + (has_eyes ? 1 : 0);
+  if (words == 3) return l10n::t("invite.title.all");
+  if (has_move && has_water && has_eyes) return l10n::t("invite.title.all");
+  if (has_move && has_water) return l10n::t("invite.title.moveWater");
+  if (has_move && has_eyes) return l10n::t("invite.title.moveEyes");
+  if (has_water && has_eyes) return l10n::t("invite.title.waterEyes");
+  if (has_move) return l10n::t("invite.title.move");
+  if (has_water) return l10n::t("invite.title.water");
+  if (has_eyes) return l10n::t("invite.title.eyes");
+  return l10n::t("invite.title.all");
+}
+
 void refresh_label() {
   if (g_state.mubi_capsule == nullptr) return;
   if (g_state.mubi_labels_always || !g_state.mubi_message.empty()) {
@@ -2505,50 +2592,10 @@ void move_visit_window(int x, int y) {
 }
 #pragma GCC diagnostic pop
 
-gboolean on_visit_tick(gpointer) {
-  auto& s = g_state;
-  bool const returning = s.mubi_visit_phase == 3;
-  if (!s.mubi_x11 || s.mubi_quiet || s.mubi_window == nullptr ||
-      (s.mubi_visit_phase != 1 && !returning)) {
-    s.mubi_visit_tick_id = 0;
-    s.mubi_visit_phase = 0;
-    return G_SOURCE_REMOVE;
-  }
-  int const steps = returning ? 12 : 18;
-  double const t =
-      std::min(1.0, static_cast<double>(++s.mubi_visit_step) / steps);
-  double const eased = t * t * (3.0 - 2.0 * t);
-  int const x0 = returning ? s.mubi_target_x : s.mubi_home_x;
-  int const y0 = returning ? s.mubi_target_y : s.mubi_home_y;
-  int const x1 = returning ? s.mubi_home_x : s.mubi_target_x;
-  int const y1 = returning ? s.mubi_home_y : s.mubi_target_y;
-  move_visit_window(static_cast<int>(std::lround(x0 + (x1 - x0) * eased)),
-                    static_cast<int>(std::lround(y0 + (y1 - y0) * eased)));
-  if (t < 1.0) return G_SOURCE_CONTINUE;
-  s.mubi_visit_tick_id = 0;
-  if (returning) {
-    s.mubi_visit_phase = 0;
-    present(s.mubi_quiet ? 5 : 0, "", nullptr, 0);
-  } else {
-    s.mubi_visit_phase = 2;  // hold at the central third until timeout
-  }
-  return G_SOURCE_REMOVE;
-}
-
+// The 2026-11-15 contract removed the central-visit travel: the invitation
+// waits attached to the pet, so "returning home" is just a re-present.
 void begin_visit_return() {
-  auto& s = g_state;
-  if (s.mubi_visit_phase == 0) {
-    present(s.mubi_quiet ? 5 : 0, "", nullptr, 0);
-    return;
-  }
-  if (s.mubi_visit_phase == 3) return;
-  if (s.mubi_visit_tick_id != 0) {
-    g_source_remove(s.mubi_visit_tick_id);
-    s.mubi_visit_tick_id = 0;
-  }
-  s.mubi_visit_phase = 3;
-  s.mubi_visit_step = 0;
-  s.mubi_visit_tick_id = g_timeout_add(40, on_visit_tick, nullptr);
+  present(g_state.mubi_quiet ? 5 : 0, "", nullptr, 0);
 }
 
 void present(int state, std::string const& message, GtkApplication* app,
@@ -2557,14 +2604,10 @@ void present(int state, std::string const& message, GtkApplication* app,
   if (g_state.acceptance) return;  // headless probe sees the main window only
   if (app == nullptr) app = g_state.app;
   if (app == nullptr) return;
-  // Settled invitation (Done / Later / Hide / ledger settled): bring Mubi
-  // home before the calm pose — no timer does this anymore (issue #140).
-  if ((state == 0 || state == 5) && g_state.mubi_visit_phase == 2) {
-    begin_visit_return();
-    return;
-  }
   auto& s = g_state;
-  // A due cue = a live invitation on screen: pettable canvas, Later tag.
+  // A due cue = a live invitation on screen (2026-11-15: attached to the
+  // pet; no central visit). The ledger snapshot drives the invitation.
+  sync_pending_items();
   bool const due = cue_id != 0 && state >= 1 && state <= 3;
   s.mubi_attending = due;
   s.mubi_state = state;
@@ -2674,12 +2717,98 @@ void present(int state, std::string const& message, GtkApplication* app,
     gtk_widget_set_halign(capsule, GTK_ALIGN_CENTER);
     gtk_label_set_justify(GTK_LABEL(capsule), GTK_JUSTIFY_CENTER);
     gtk_label_set_wrap(GTK_LABEL(capsule), TRUE);
-    auto* capsule_tap = gtk_gesture_click_new();
-    g_signal_connect(capsule_tap, "released", G_CALLBACK(on_capsule_tap),
-                     nullptr);
-    gtk_widget_add_controller(capsule, GTK_EVENT_CONTROLLER(capsule_tap));
     box_append(GTK_BOX(body_box), capsule);
     s.mubi_capsule = GTK_LABEL(capsule);
+
+    // The invitation attached to the pet (2026-11-15 contract): heading,
+    // 做到了 / 稍后, the 只做了一部分 per-kind checklist with 确认所选,
+    // and the × hide (隐藏这次, no completion). Contents are rebuilt by
+    // refresh_invitation() from the ledger; the pet surface itself never
+    // records completion.
+    auto* bubble = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_add_css_class(bubble, "mubi-bubble");
+    gtk_widget_set_halign(bubble, GTK_ALIGN_FILL);
+
+    auto* head_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    auto* title = gtk_label_new("");
+    gtk_label_set_wrap(GTK_LABEL(title), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0);
+    gtk_widget_add_css_class(title, "mubi-bubble-title");
+    gtk_widget_set_hexpand(title, TRUE);
+    gtk_box_append(GTK_BOX(head_row), title);
+    auto* close = gtk_button_new_from_icon_name("window-close-symbolic");
+    gtk_widget_add_css_class(close, "flat");
+    gtk_widget_add_css_class(close, "mubi-bubble-close");
+    gtk_widget_set_valign(close, GTK_ALIGN_START);
+    gtk_button_set_has_frame(GTK_BUTTON(close), FALSE);
+    gtk_widget_set_tooltip_text(close, l10n::t("invite.hideClose").c_str());
+    g_signal_connect(close, "clicked", G_CALLBACK(on_invitation_hide),
+                     nullptr);
+    gtk_box_append(GTK_BOX(head_row), close);
+    gtk_box_append(GTK_BOX(bubble), head_row);
+    s.mubi_bubble_title = GTK_LABEL(title);
+    s.mubi_bubble_close = GTK_BUTTON(close);
+
+    auto* action_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    auto* done = gtk_button_new_with_label(l10n::t("tray.cueDone").c_str());
+    gtk_widget_add_css_class(done, "mubi-primary");
+    gtk_widget_set_hexpand(done, TRUE);
+    g_signal_connect(done, "clicked", G_CALLBACK(on_invitation_done),
+                     nullptr);
+    gtk_box_append(GTK_BOX(action_row), done);
+    auto* later = gtk_button_new_with_label(l10n::t("invite.later").c_str());
+    g_signal_connect(later, "clicked", G_CALLBACK(on_invitation_later),
+                     nullptr);
+    gtk_box_append(GTK_BOX(action_row), later);
+    gtk_box_append(GTK_BOX(bubble), action_row);
+    s.mubi_bubble_done = GTK_BUTTON(done);
+    s.mubi_bubble_later = GTK_BUTTON(later);
+
+    auto* partial = gtk_button_new_with_label(l10n::t("invite.partial").c_str());
+    gtk_widget_add_css_class(partial, "flat");
+    gtk_button_set_has_frame(GTK_BUTTON(partial), FALSE);
+    g_signal_connect(partial, "clicked",
+                     G_CALLBACK(on_invitation_reveal_partial), nullptr);
+    gtk_box_append(GTK_BOX(bubble), partial);
+    s.mubi_bubble_partial = GTK_BUTTON(partial);
+
+    auto* partial_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_visible(partial_box, FALSE);
+    gtk_box_append(GTK_BOX(bubble), partial_box);
+    s.mubi_partial_box = GTK_BOX(partial_box);
+
+    auto* partial_confirm = gtk_button_new_with_label(
+        l10n::t("invite.partialConfirm").c_str());
+    gtk_widget_add_css_class(partial_confirm, "flat");
+    gtk_button_set_has_frame(GTK_BUTTON(partial_confirm), FALSE);
+    gtk_widget_set_halign(partial_confirm, GTK_ALIGN_START);
+    gtk_widget_set_visible(partial_confirm, FALSE);
+    g_signal_connect(partial_confirm, "clicked",
+                     G_CALLBACK(on_invitation_partial_confirm), nullptr);
+    gtk_box_append(GTK_BOX(bubble), partial_confirm);
+    s.mubi_bubble_partial_confirm = GTK_BUTTON(partial_confirm);
+
+    auto* partial_note = gtk_label_new(l10n::t("invite.partialNote").c_str());
+    gtk_label_set_wrap(GTK_LABEL(partial_note), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(partial_note), 0.0);
+    gtk_widget_add_css_class(partial_note, "mubi-bubble-note");
+    gtk_widget_set_visible(partial_note, FALSE);
+    gtk_box_append(GTK_BOX(bubble), partial_note);
+    s.mubi_bubble_partial_note = GTK_LABEL(partial_note);
+
+    gtk_box_append(GTK_BOX(body_box), bubble);
+    s.mubi_bubble = GTK_BOX(bubble);
+
+    // The ••• menu button under the pet: the same compact menu as the tray.
+    auto* menu_button = gtk_button_new_from_icon_name("view-more-symbolic");
+    gtk_widget_add_css_class(menu_button, "mubi-menu-button");
+    gtk_widget_add_css_class(menu_button, "flat");
+    gtk_widget_set_tooltip_text(menu_button, l10n::t("pet.menuOpen").c_str());
+    gtk_widget_set_halign(menu_button, GTK_ALIGN_CENTER);
+    g_signal_connect(menu_button, "clicked",
+                     G_CALLBACK(on_menu_button_clicked), nullptr);
+    box_append(GTK_BOX(body_box), menu_button);
+    s.mubi_menu_button = GTK_BUTTON(menu_button);
 
     gtk_window_set_child(GTK_WINDOW(window), body_box);
   } else {
@@ -2689,11 +2818,14 @@ void present(int state, std::string const& message, GtkApplication* app,
   }
 
   refresh_label();
-  // Explicit size: the window hugs the character (canvas + capsule area
-  // while a label shows). Cue actions live in the tray menu, not here.
+  refresh_invitation();
+  // Explicit size: the window hugs the character plus whatever surfaces the
+  // contract puts beside it — the caption (moods only), the invitation
+  // bubble while a cue waits, and the ••• menu button.
   bool const label_visible = s.mubi_labels_always || !s.mubi_message.empty();
-  int const win_w = canvas_w;
-  int const win_h = canvas_h + (label_visible ? 44 : 0);
+  int const win_w = std::max(canvas_w, due ? 252 : 0);
+  int const win_h = canvas_h + (label_visible ? 44 : 0)
+                    + (due ? 132 : 0) + 34;
   gtk_window_set_default_size(s.mubi_window, win_w, win_h);
   // Do not request window-manager keyboard focus for a floating pet.
   gtk_widget_set_visible(GTK_WIDGET(s.mubi_window), TRUE);
@@ -2783,63 +2915,27 @@ void present(int state, std::string const& message, GtkApplication* app,
       }
       XMoveWindow(xdisplay, xid, x, y);
       XFlush(xdisplay);
-      // A real health cue gets one short central-third visit; a quiet,
-      // still-motion or Reduce Motion install keeps the static home pose.
-      gboolean gtk_animations = TRUE;
-      if (auto* settings = gtk_settings_get_default()) {
-        g_object_get(G_OBJECT(settings), "gtk-enable-animations",
-                     &gtk_animations, nullptr);
-      }
-      if (due && s.mubi_visit_phase == 2) {
-        // Already holding at the center from the invitation being merged
-        // into: refresh in place, no second travel.
-        stop_visit();
-        s.mubi_visit_phase = 2;
-      } else if (due && s.mubi_motion != "still" && !s.mubi_quiet &&
-          gtk_animations) {
-        s.mubi_home_x = x;
-        s.mubi_home_y = y;
-        s.mubi_target_x = std::clamp(
-            work_x + (work_w - px_w) / 2, work_x + px_clear,
-            std::max(work_x + px_clear, work_x + work_w - px_w - px_clear));
-        s.mubi_target_y = std::clamp(
-            work_y + (work_h - px_h) / 2, work_y + px_clear,
-            std::max(work_y + px_clear, work_y + work_h - px_h - px_clear));
-        if (s.mubi_visit_tick_id != 0) {
-          g_source_remove(s.mubi_visit_tick_id);
-          s.mubi_visit_tick_id = 0;
-        }
-        s.mubi_visit_phase = 1;
-        s.mubi_visit_step = 0;
-        s.mubi_visit_tick_id = g_timeout_add(40, on_visit_tick, nullptr);
-      } else {
-        stop_visit();
-      }
+      // The invitation waits AT the pet (2026-11-15): no central visit,
+      // no return travel — placement only changes by direct manipulation.
     }
   }
 #pragma GCC diagnostic pop
 #endif
 
-  // The label reads ~5 s, then the card returns to its calm pose. The cue
-  // itself stays open in the backend ledger (#56: label fade is not Done).
-  // An idle/focus character with no transient message needs NO timer.
-  // Previously this callback rescheduled itself every five seconds forever.
-  // Keep a short, self-ending 1.6s acknowledgment flourish; real due cues
-  // continue to use their own bounded timeout and never imply "Done".
+  // Caption moods read ~2.2 s (contract: 短句只在最近互动后出现), then the
+  // companion returns to quiet waiting. The cue itself stays open in the
+  // backend ledger — a caption fade is never Done.
   if ((!message.empty() || state == 4) && !due) {
     s.mubi_expire_id = g_timeout_add(
-      (state == 4 ? 1600 : 5000),
+      2200,
       +[](gpointer) -> int {
         g_state.mubi_expire_id = 0;
-        if (g_state.mubi_visit_phase != 0) {
-          begin_visit_return();
-        } else {
-          present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
-        }
+        present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
         return G_SOURCE_REMOVE;
       },
       nullptr);
   }
+  refresh_invitation();
 }
 
 void show_idle() { present(g_state.mubi_quiet ? 5 : 0, "", nullptr); }
@@ -2859,10 +2955,13 @@ void set_interactive(bool interactive) {
   if (interactive) {
     double const scale = gdk_surface_get_scale(surface);
     cairo_region_t* region = cairo_region_create();
-    // Union of the character's canvas (pet = Done) and the capsule (Later
-    // tag); everything else on the surface stays pointer-through.
-    for (GtkWidget* widget : {GTK_WIDGET(g_state.mubi_canvas),
-                              GTK_WIDGET(g_state.mubi_capsule)}) {
+    // Union of the character's canvas, the caption, the invitation bubble
+    // (buttons + checklist) and the ••• menu button; everything else on the
+    // surface stays pointer-through.
+    for (GtkWidget* widget :
+         {GTK_WIDGET(g_state.mubi_canvas), GTK_WIDGET(g_state.mubi_capsule),
+          GTK_WIDGET(g_state.mubi_bubble),
+          GTK_WIDGET(g_state.mubi_menu_button)}) {
       if (widget == nullptr) continue;
       graphene_rect_t bounds;
       if (!gtk_widget_compute_bounds(widget,
@@ -3043,10 +3142,10 @@ void on_drag_begin(GtkGestureDrag*, double, double, gpointer) {
 
 void on_drag_update(GtkGestureDrag*, double offset_x, double offset_y,
                     gpointer) {
-  // Past the pet threshold this sequence is a move: suppress the tap that
-  // fires on release, or the pet's return-home would re-dock Mubi before
-  // the drag-end save reads the dropped position.
-  if (std::fabs(offset_x) > 6.0 || std::fabs(offset_y) > 6.0) {
+  // Two-dimensional 8 px threshold (contract 直接操作; prototype Math.hypot
+  // > 8). Past it this sequence is a move: suppress the tap that fires on
+  // release so a drag never submits a health response.
+  if (std::hypot(offset_x, offset_y) > 8.0) {
     g_state.mubi_drag_moved = true;
   }
   if (g_state.mubi_window == nullptr) return;
@@ -3167,19 +3266,40 @@ void on_toast_hide(GtkButton*, gpointer) {
   toast_dismiss();
 }
 
-// Companion card actions (#54): same semantics as the toast row, offered
-// on the character itself while a cue is on screen. Petting = Done since
-// issue #140: a tap on the character acknowledges with the happy glint,
-// then Mubi heads home.
-void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer) {
-  // A release that follows a real drag is the end of a move, not a pet:
-  // petting must never yank Mubi back to its dock mid-move.
-  if (g_state.mubi_drag_moved) return;
-  on_mubi_done(nullptr, nullptr);
+// 2026-11-15 contract: petting is companionship ONLY — a playful caption
+// rotation (happy → wink → peek), never an acknowledgement. The invitation
+// buttons, the tray items and the micro window's 做好了 are the completion
+// paths. A release that follows a real drag is the end of a move, not a pet.
+void mubi_react_pat() {
+  auto& s = g_state;
+  s.mubi_pat_count += 1;
+  char const* caption = nullptr;
+  switch ((s.mubi_pat_count - 1) % 3) {
+    case 0: caption = "pet.caption.happy"; break;
+    case 1: caption = "pet.caption.wink"; break;
+    default: caption = "pet.caption.peek"; break;
+  }
+  if (s.mubi_capsule != nullptr) {
+    gtk_label_set_text(s.mubi_capsule, l10n::t(caption).c_str());
+    gtk_widget_set_visible(GTK_WIDGET(s.mubi_capsule), TRUE);
+  }
+  if (s.mubi_mood_reset_id != 0) g_source_remove(s.mubi_mood_reset_id);
+  s.mubi_mood_reset_id = g_timeout_add(
+      2200,
+      +[](gpointer) -> int {
+        g_state.mubi_mood_reset_id = 0;
+        if (g_state.mubi_capsule != nullptr &&
+            !g_state.mubi_attending && g_state.mubi_message.empty()) {
+          gtk_widget_set_visible(GTK_WIDGET(g_state.mubi_capsule), FALSE);
+        }
+        return G_SOURCE_REMOVE;
+      },
+      nullptr);
 }
 
-void on_capsule_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer) {
-  on_mubi_later(nullptr, nullptr);
+void on_canvas_tap(GtkGestureClick*, gint, gdouble, gdouble, gpointer) {
+  if (g_state.mubi_drag_moved) return;
+  mubi_react_pat();
 }
 
 void on_mubi_done(GtkButton*, gpointer) {
@@ -3225,6 +3345,246 @@ void on_mubi_hide(GtkButton*, gpointer) {
   mubi::present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
 }
 
+// ---- invitation attached to the pet (2026-11-15 contract) ------------------
+void micro_show(std::int64_t duration_seconds, std::string const& title,
+                std::string const& hint_text, std::int64_t cue_id,
+                GtkApplication* app);
+void on_pause_clicked(GtkButton*, gpointer);
+void on_quit_clicked(GtkButton*, gpointer);
+void on_focus_clicked(GtkButton*, gpointer);
+
+bool pending_has_kind(std::string const& kind) {
+  for (auto const& [k, id] : g_state.mubi_pending) {
+    if (k == kind) return true;
+  }
+  return false;
+}
+
+rivet_app::HealthCue const* newest_cue_with_kind(rivet_app::ReminderKind kind) {
+  for (auto it = g_state.model.pending_cues.rbegin();
+       it != g_state.model.pending_cues.rend(); ++it) {
+    if (std::find(it->kinds.begin(), it->kinds.end(), kind) != it->kinds.end())
+      return &*it;
+  }
+  return nullptr;
+}
+
+// Rebuild the bubble from the open ledger snapshot: heading, checklist and
+// visibility. 零选择不提交 — the confirm button disables itself on empty.
+void refresh_invitation() {
+  auto& s = g_state;
+  if (s.mubi_bubble == nullptr) return;
+  bool const due = s.mubi_attending && !s.mubi_pending.empty() && !s.mubi_quiet;
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_bubble), due);
+  if (!due) return;
+  gtk_label_set_text(s.mubi_bubble_title, mubi::invitation_title().c_str());
+  // Rebuild the per-kind checklist (one item per open kind).
+  for (auto* check : s.mubi_kind_checks) {
+    if (gtk_widget_get_parent(GTK_WIDGET(check)) != nullptr) {
+      gtk_box_remove(s.mubi_partial_box, GTK_WIDGET(check));
+    }
+  }
+  s.mubi_kind_checks.clear();
+  std::vector<std::string> seen;
+  for (auto const& [kind, id] : s.mubi_pending) {
+    if (std::find(seen.begin(), seen.end(), kind) != seen.end()) continue;
+    seen.push_back(kind);
+    auto* check = GTK_CHECK_BUTTON(
+        gtk_check_button_new_with_label(
+        l10n::t(mubi::kind_word_key(kind)).c_str()));
+    gtk_check_button_set_active(check, TRUE);
+    gtk_widget_add_css_class(GTK_WIDGET(check), "mubi-kind-check");
+    gtk_box_append(s.mubi_partial_box, GTK_WIDGET(check));
+    s.mubi_kind_checks.push_back(check);
+    s.mubi_check_kinds.push_back(kind);
+  }
+}
+
+// Done (做到了): settles EVERY kind of the current invitation — the same
+// gesture the tray offers, applied to all open cue ids.
+void on_invitation_done(GtkButton*, gpointer) {
+  auto const& pending = g_state.mubi_pending;
+  if (g_state.api == nullptr || pending.empty()) return;
+  std::vector<std::int64_t> ids;
+  for (auto const& [kind, id] : pending) {
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
+      ids.push_back(id);
+      (void)g_state.api->acknowledge_cue_async(id,
+                                               [](rivet_app::Result<void>) {});
+    }
+  }
+  mubi::show_ack();
+}
+
+// Later (稍后): defers every merged kind by the snooze minutes.
+void on_invitation_later(GtkButton*, gpointer) {
+  if (g_state.api == nullptr || g_state.mubi_pending.empty()) return;
+  std::vector<std::int64_t> ids;
+  for (auto const& [kind, id] : g_state.mubi_pending) {
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
+      ids.push_back(id);
+      (void)g_state.api->snooze_cue_async(id, [](rivet_app::Result<void>) {});
+    }
+  }
+  mubi::present(0, l10n::t("mubi.laterNote"), nullptr);
+}
+
+// Hide this invitation (× / 隐藏这次): no completion, no deferral.
+void on_invitation_hide(GtkButton*, gpointer) {
+  if (g_state.api == nullptr || g_state.mubi_pending.empty()) return;
+  std::vector<std::int64_t> ids;
+  for (auto const& [kind, id] : g_state.mubi_pending) {
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
+      ids.push_back(id);
+      (void)g_state.api->dismiss_cue_async(id, [](rivet_app::Result<void>) {});
+    }
+  }
+  mubi::present(g_state.mubi_quiet ? 5 : 0, "", nullptr);
+}
+
+// 只做了一部分: expand the per-kind checklist.
+void on_invitation_reveal_partial(GtkButton*, gpointer) {
+  auto& s = g_state;
+  if (s.mubi_bubble == nullptr || s.mubi_pending.empty()) return;
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_partial_box), TRUE);
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_bubble_partial_confirm), TRUE);
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_bubble_partial_note), TRUE);
+  gtk_widget_set_visible(GTK_WIDGET(s.mubi_bubble_partial), FALSE);
+}
+
+// 确认所选: settles only the checked kinds per cue; zero selection never
+// submits (零选择不提交). The residual kinds keep waiting in place.
+void on_invitation_partial_confirm(GtkButton*, gpointer) {
+  auto& s = g_state;
+  if (s.api == nullptr || s.mubi_pending.empty()) return;
+  // Checkbox rows carry their kind symbol in mubi_check_kinds (same order);
+  // the checklist is rebuilt whenever the ledger snapshot changes.
+  std::vector<std::string> symbols;
+  for (std::size_t i = 0; i < s.mubi_kind_checks.size(); ++i) {
+    if (gtk_check_button_get_active(s.mubi_kind_checks[i]) &&
+        i < s.mubi_check_kinds.size()) {
+      symbols.push_back(s.mubi_check_kinds[i]);
+    }
+  }
+  if (symbols.empty()) return;  // 零选择不提交
+  std::vector<std::int64_t> ids;
+  for (auto const& [kind, id] : s.mubi_pending) {
+    if (std::find(ids.begin(), ids.end(), id) != ids.end()) continue;
+    std::vector<std::string> settled;
+    for (auto const& [k2, i2] : s.mubi_pending) {
+      if (i2 != id) continue;
+      if (std::find(symbols.begin(), symbols.end(), k2) != symbols.end() &&
+          std::find(settled.begin(), settled.end(), k2) == settled.end()) {
+        settled.push_back(k2);
+      }
+    }
+    if (settled.empty()) continue;
+    (void)s.api->acknowledge_cue_kinds_async(
+        id, settled, [](rivet_app::Result<void>) {});
+    ids.push_back(id);
+  }
+  mubi::show_ack();
+}
+
+// The ••• menu button: the same compact menu as the tray, anchored at the
+// pet (a small floating card per the prototype's resident-menu).
+void on_menu_button_clicked(GtkButton*, gpointer) { show_menu_window(); }
+
+void mubi_close_menu() {
+  if (g_state.mubi_menu_window != nullptr) {
+    gtk_window_destroy(g_state.mubi_menu_window);
+    g_state.mubi_menu_window = nullptr;
+  }
+}
+
+void show_menu_window() {
+  auto& s = g_state;
+  if (s.app == nullptr) return;
+  mubi_close_menu();
+  auto* window = GTK_WINDOW(gtk_application_window_new(s.app));
+  gtk_window_set_title(window, "MoveBit");
+  gtk_window_set_decorated(window, FALSE);
+  gtk_widget_add_css_class(GTK_WIDGET(window), "mubi-menu-card");
+  auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_widget_set_margin_top(box, 8);
+  gtk_widget_set_margin_bottom(box, 8);
+  gtk_widget_set_margin_start(box, 8);
+  gtk_widget_set_margin_end(box, 8);
+
+  auto add_item = [&](char const* label_key, std::function<void()> action) {
+    auto* button = gtk_button_new_with_label(l10n::t(label_key).c_str());
+    gtk_widget_add_css_class(button, "flat");
+    gtk_button_set_has_frame(GTK_BUTTON(button), FALSE);
+    gtk_widget_set_halign(GTK_WIDGET(button), GTK_ALIGN_FILL);
+    auto* fn = new std::function<void()>(std::move(action));
+    g_signal_connect_data(
+        button, "clicked",
+        G_CALLBACK(+[](GtkButton*, gpointer user) {
+          (*static_cast<std::function<void()>*>(user))();
+        }),
+        fn,
+        +[](gpointer data, GClosure*) {
+          delete static_cast<std::function<void()>*>(data);
+        },
+        static_cast<GConnectFlags>(0));
+    gtk_box_append(GTK_BOX(box), GTK_WIDGET(button));
+  };
+  auto add_separator = [&] {
+    auto* line = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_append(GTK_BOX(box), line);
+  };
+
+  add_item("tray.open", [] {
+    mubi_close_menu();
+    if (g_state.window != nullptr) gtk_window_present(g_state.window);
+  });
+  if (!s.mubi_pending.empty()) {
+    add_separator();
+    add_item("tray.cueDone", [] { mubi_close_menu(); on_invitation_done(nullptr, nullptr); });
+    add_item("tray.confirmIndividually", [] {
+      mubi_close_menu();
+      on_invitation_reveal_partial(nullptr, nullptr);
+    });
+    add_item("tray.cueLater", [] { mubi_close_menu(); on_invitation_later(nullptr, nullptr); });
+    add_item("tray.cueHide", [] { mubi_close_menu(); on_invitation_hide(nullptr, nullptr); });
+  }
+  add_separator();
+  add_item(s.model.quiet ? "tray.focusOff" : "tray.focusOn", [] {
+    mubi_close_menu();
+    on_focus_clicked(nullptr, nullptr);
+  });
+  add_item(s.model.is_paused() ? "tray.resume" : "tray.pause", [] {
+    mubi_close_menu();
+    on_pause_clicked(nullptr, nullptr);
+  });
+  add_separator();
+  add_item("tray.eyeRest", [] {
+    mubi_close_menu();
+    if (auto const* cue = newest_cue_with_kind(rivet_app::ReminderKind::micro)) {
+      micro_show(20, l10n::t("tray.eyeRest"), l10n::t("micro.hint"), cue->id,
+                 g_state.app);
+    }
+  });
+  add_item("tray.stretch", [] {
+    mubi_close_menu();
+    if (auto const* cue = newest_cue_with_kind(rivet_app::ReminderKind::sit)) {
+      micro_show(120, l10n::t("tray.stretch"), l10n::t("stretch.hint"), cue->id,
+                 g_state.app);
+    }
+  });
+  add_item("tray.resetMubi", [] { mubi_close_menu(); mubi::reset_home(); });
+  add_separator();
+  add_item("tray.exit", [] {
+    mubi_close_menu();
+    on_quit_clicked(nullptr, nullptr);
+  });
+  add_item("tray.backToDesktop", [] { mubi_close_menu(); });
+
+  gtk_window_set_child(window, box);
+  s.mubi_menu_window = window;
+  gtk_widget_set_visible(GTK_WIDGET(window), TRUE);
+}
+
 // ---- tray (StatusNotifierItem, issue #54 parity with the mac/win hosts) ----
 // The companion surface is fully pointer-through on X11, so Done / Later /
 // Hide / pause / Focus live here too, acting on the newest open cue — the
@@ -3245,17 +3605,8 @@ rivet::system::TrayMenuItem menu_item(std::string label,
   return rivet::system::TrayMenuItem(std::move(label), std::move(action));
 }
 
-// "Done · Sip some water 💧" — the control names both the action and the
-// advice, mirroring the mac host's cueActionLabel.
-std::string cue_done_label(rivet_app::HealthCue const& cue) {
-  char const* advice =
-      cue.action == rivet_app::CueAction::drink_water
-          ? "notif.waterTitle"
-          : cue.action == rivet_app::CueAction::rest_eyes ? "micro.hint"
-                                                          : "notif.sitTitle";
-  return l10n::t("tray.cueDone") + " · " + l10n::t(advice);
-}
-
+// The 2026-11-15 tray response items act on the WHOLE merged invitation
+// (the same surface the pet's bubble offers); plain prototype wording.
 void show_guided(std::int64_t duration_seconds, std::string const& title,
                  std::string const& hint) {
   if (g_state.app == nullptr || g_state.model.pending_cues.empty()) return;
@@ -3273,17 +3624,17 @@ std::vector<rivet::system::TrayMenuItem> build_menu() {
   }));
   if (!g_state.model.pending_cues.empty()) {
     items.push_back(TrayMenuItem(TrayMenuItem::Type::separator));
-    // The card presents the newest open cue (the backend plans every X11
-    // cue for character delivery), so the handlers below act on it.
-    auto const& cue = g_state.model.pending_cues.back();
-    items.push_back(menu_item(cue_done_label(cue), [] {
-      on_mubi_done(nullptr, nullptr);
+    items.push_back(menu_item(l10n::t("tray.cueDone"), [] {
+      on_invitation_done(nullptr, nullptr);
+    }));
+    items.push_back(menu_item(l10n::t("tray.confirmIndividually"), [] {
+      on_invitation_reveal_partial(nullptr, nullptr);
     }));
     items.push_back(menu_item(l10n::t("tray.cueLater"), [] {
-      on_mubi_later(nullptr, nullptr);
+      on_invitation_later(nullptr, nullptr);
     }));
     items.push_back(menu_item(l10n::t("tray.cueHide"), [] {
-      on_mubi_hide(nullptr, nullptr);
+      on_invitation_hide(nullptr, nullptr);
     }));
     // Opt-in guided sessions (#94), only while a real cue is open.
     bool has_sit = false;
@@ -3634,35 +3985,11 @@ void handle_health_cue(rivet_app::HealthCue const& cue, GtkApplication* app) {
       case rivet_app::CueAction::rest_eyes: state = State::Eyes; break;
       default: state = State::Idle; break;
     }
-    std::string message;
-    if (kinds.size() > 1) {
-      // One reminder event may contain three independently due health kinds.
-      // Preserve every meaning in the same small, readable character card.
-      auto has = [&kinds](rivet_app::ReminderKind kind) {
-        return std::find(kinds.begin(), kinds.end(), kind) != kinds.end();
-      };
-      std::vector<std::string> parts;
-      if (has(rivet_app::ReminderKind::sit))
-        parts.push_back(l10n::t("notif.sitTitle"));
-      if (has(rivet_app::ReminderKind::water))
-        parts.push_back(l10n::t("notif.waterTitle"));
-      if (has(rivet_app::ReminderKind::micro))
-        parts.push_back(l10n::t("micro.defaultTitle"));
-      for (auto const& part : parts) {
-        if (!message.empty()) message += " / ";
-        message += part;
-      }
-    } else {
-      switch (cue.action) {
-        case rivet_app::CueAction::drink_water: message = pick_water(); break;
-        case rivet_app::CueAction::rest_eyes:
-          message = l10n::t("micro.defaultTitle"); break;
-        case rivet_app::CueAction::stand_and_stretch:
-          message = l10n::t("notif.sitTitle"); break;
-        default: break;
-      }
-    }
-    mubi::present(static_cast<int>(state), message, app, cue.id);
+    // 2026-11-15: the invitation bubble attached to the pet carries the
+    // composed heading; the arriving cue joins the ledger snapshot so the
+    // bubble lists every open kind (persistent invitations supersede-merge).
+    g_state.model.pending_cues.push_back(cue);
+    mubi::present(static_cast<int>(state), "", app, cue.id);
     cue_displayed(cue.id);
     return;
   }
@@ -3767,6 +4094,8 @@ void refresh_states_after_tick() {
         on_result(std::move(r),
                   [](std::vector<rivet_app::HealthCue> const& cues) {
                     g_state.model.pending_cues = cues;
+                    mubi::sync_pending_items();
+                    refresh_invitation();
                     tray::sync();
                   });
       });
