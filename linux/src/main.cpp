@@ -203,6 +203,9 @@ struct AppState {
   GtkButton* focus_button{nullptr};
   GtkButton* move_button{nullptr};  // tray-less desktop fallback
   GtkBox* content_root{nullptr};  // cleared + rebuilt on language change
+  GtkStack* main_stack{nullptr};  // 今日/历史/设置/关于 segments (2026-11-15)
+  GtkStackSwitcher* header_switcher{nullptr};
+  bool dark_theme = false;
 
   std::unique_ptr<rivet::linux_runtime::Backend> backend;
   std::unique_ptr<rivet_app::API> api;
@@ -226,7 +229,9 @@ struct AppState {
   GtkBox* toast_lines_box{nullptr};
   GtkButton* toast_snooze_button{nullptr};
 
-  // Micro eye-rest card.
+  // Micro break window (2026-11-15 微休息): invite → running → ended.
+  // 停止计时 / 先收起来 / Esc never record completion; 做好了 settles the
+  // running kind's open cue (eyes→micro, stretch→sit).
   GtkWindow* micro_window{nullptr};
   guint micro_timeout_id{0};
   double micro_progress = 1.0;
@@ -236,6 +241,15 @@ struct AppState {
   GtkLabel* micro_hint{nullptr};
   GtkButton* micro_start_button{nullptr};
   bool micro_started = false;
+  int micro_phase = 0;  // 0 invite, 1 running, 2 ended
+  bool micro_eyes = true;
+  GtkLabel* micro_body_title{nullptr};
+  GtkLabel* micro_countdown{nullptr};
+  GtkButton* micro_done_button{nullptr};
+  GtkButton* micro_stop_button{nullptr};
+  GtkButton* micro_restart_button{nullptr};
+  GtkButton* micro_switch_button{nullptr};
+  GtkButton* micro_tuck_button{nullptr};
 
   // Mubi（沐比）companion (issue #56): X11-only presentation. On Wayland
   // the compositor owns placement, so the companion stays OFF there and
@@ -479,6 +493,7 @@ void on_result(rivet_app::Result<void> result, Then then) {
 
 GtkWidget* make_card();
 void build_main_content();
+void show_menu_window();  // the pet ••• menu card (shared with the statusbar)
 void refresh_pause_button();
 void refresh_quit_button();
 void refresh_header_buttons();
@@ -1094,10 +1109,32 @@ void on_pause_clicked(GtkButton*, gpointer) {
   }
 }
 
+// 退出必须确认（2026-11-15 contract）: quitting stops every reminder, so
+// the dialog names the consequence; 取消 keeps the app running. The
+// acceptance driver quits via the window close, not this dialog.
 void on_quit_clicked(GtkButton*, gpointer) {
-  flush_now_sync();
-  if (g_state.window != nullptr) gtk_window_destroy(g_state.window);
-  g_state.window = nullptr;
+  if (g_state.app == nullptr) return;
+  auto* dialog = gtk_message_dialog_new(
+      g_state.window, GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION,
+      GTK_BUTTONS_NONE, "%s", l10n::t("tray.exit").c_str());
+  gtk_message_dialog_format_secondary_text(
+      GTK_MESSAGE_DIALOG(dialog), "%s", l10n::t("quit.confirmBody").c_str());
+  gtk_dialog_add_button(GTK_DIALOG(dialog), l10n::t("dialog.cancel").c_str(),
+                        GTK_RESPONSE_CANCEL);
+  gtk_dialog_add_button(GTK_DIALOG(dialog), l10n::t("tray.exit").c_str(),
+                        GTK_RESPONSE_OK);
+  // GTK4 removed gtk_dialog_run: the response lands through the signal.
+  g_signal_connect(
+      dialog, "response",
+      G_CALLBACK(+[](GtkDialog* d, gint response, gpointer) {
+        gtk_window_destroy(GTK_WINDOW(d));
+        if (response != GTK_RESPONSE_OK) return;
+        flush_now_sync();
+        if (g_state.window != nullptr) gtk_window_destroy(g_state.window);
+        g_state.window = nullptr;
+      }),
+      nullptr);
+  gtk_widget_set_visible(GTK_WIDGET(dialog), TRUE);
 }
 
 // Focus (presentation silence): the backend queues cues and returns one
@@ -1623,19 +1660,34 @@ void build_main_content() {
   }
   mw = MainWidgets{};
 
-  auto* scroll = gtk_scrolled_window_new();
-  gtk_widget_set_vexpand(scroll, TRUE);
-  auto* columns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
-  gtk_widget_set_margin_top(columns, 18);
-  gtk_widget_set_margin_bottom(columns, 18);
-  gtk_widget_set_margin_start(columns, 20);
-  gtk_widget_set_margin_end(columns, 20);
-  auto* left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
-  gtk_widget_set_hexpand(left, TRUE);
-  gtk_widget_set_valign(left, GTK_ALIGN_START);
-  auto* right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
-  gtk_widget_set_hexpand(right, TRUE);
-  gtk_widget_set_valign(right, GTK_ALIGN_START);
+  // Four in-window segments (2026-11-15 辅助窗口): 今日 / 历史 / 设置 /
+  // 关于. GtkStack pages stay realized, so each segment keeps its scroll
+  // position while hidden (the prototype's per-tab scroll memory).
+  auto* stack = gtk_stack_new();
+  gtk_stack_set_transition_type(GTK_STACK(stack),
+                                GTK_STACK_TRANSITION_TYPE_NONE);
+  gtk_widget_set_vexpand(stack, TRUE);
+  g_state.main_stack = GTK_STACK(stack);
+  auto make_segment = [&](char const* key, char const* title_key) {
+    auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    gtk_widget_set_margin_top(box, 18);
+    gtk_widget_set_margin_bottom(box, 18);
+    gtk_widget_set_margin_start(box, 20);
+    gtk_widget_set_margin_end(box, 20);
+    auto* seg_scroll = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(seg_scroll, TRUE);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(seg_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(seg_scroll), box);
+    gtk_stack_add_named(GTK_STACK(stack), seg_scroll, key);
+    return box;
+  };
+  auto* left = make_segment("today", "seg.today");        // 今日 page
+  auto* history_page = make_segment("history", "seg.history");  // 历史 page
+  auto* right = make_segment("settings", "seg.settings"); // 设置 page
+  // The history page collects the history + insight cards; the about page
+  // the about card + footer. Pages stay realized: scroll positions persist.
+  auto* about_page = make_segment("about", "seg.about");
 
   // --- today card ---
   {
@@ -1744,7 +1796,7 @@ void build_main_content() {
                                    nullptr, nullptr);
     box_append(GTK_BOX(card), chart);
     mw.hist_chart = GTK_DRAWING_AREA(chart);
-    box_append(left, card);
+    box_append(history_page, card);
   }
 
   // --- insight card ---
@@ -1782,7 +1834,7 @@ void build_main_content() {
     gtk_label_set_xalign(GTK_LABEL(sedentary), 0.0f);
     box_append(GTK_BOX(card), sedentary);
     mw.insight_sedentary = GTK_LABEL(sedentary);
-    box_append(left, card);
+    box_append(history_page, card);
   }
 
   // --- settings card ---
@@ -1930,7 +1982,7 @@ void build_main_content() {
     box_append(GTK_BOX(card), links);
     box_append(GTK_BOX(card),
                label_with(l10n::t("about.license").c_str(), "caption"));
-    box_append(right, card);
+    box_append(about_page, card);
   }
 
   // --- footer (config path) ---
@@ -1938,79 +1990,173 @@ void build_main_content() {
     auto* footer = gtk_label_new("");
     gtk_widget_add_css_class(footer, "footer");
     gtk_label_set_xalign(GTK_LABEL(footer), 0.0f);
-    box_append(right, footer);
+    box_append(about_page, footer);
     mw.footer = GTK_LABEL(footer);
   }
 
-  box_append(GTK_BOX(columns), left);
-  box_append(GTK_BOX(columns), right);
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), columns);
-  box_append(g_state.content_root, scroll);
+  if (g_state.header_switcher != nullptr) {
+    gtk_stack_switcher_set_stack(g_state.header_switcher, GTK_STACK(stack));
+    gtk_widget_set_visible(GTK_WIDGET(g_state.header_switcher), TRUE);
+  }
+  // Segment titles (the switcher reads them; rebuilt on language change).
+  for (auto const& [key, title_key] :
+       std::array{std::pair{"today", "seg.today"}, std::pair{"history", "seg.history"},
+                  std::pair{"settings", "seg.settings"}, std::pair{"about", "seg.about"}}) {
+    if (auto* child = gtk_stack_get_child_by_name(GTK_STACK(stack), key)) {
+      gtk_stack_page_set_title(gtk_stack_get_page(GTK_STACK(stack), child),
+                               l10n::t(title_key).c_str());
+    }
+  }
+  box_append(g_state.content_root, GTK_WIDGET(stack));
+  // The statusbar (2026-11-15): 数据只留在本机 + the compact menu button.
+  auto* statusbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_add_css_class(statusbar, "statusbar");
+  box_append(GTK_BOX(statusbar),
+             label_with(l10n::t("win.dataLocal").c_str(), "statusbar"));
+  auto* statusbar_more = gtk_button_new_from_icon_name("view-more-symbolic");
+  gtk_widget_add_css_class(statusbar_more, "flat");
+  gtk_button_set_has_frame(GTK_BUTTON(statusbar_more), FALSE);
+  gtk_widget_set_halign(statusbar_more, GTK_ALIGN_END);
+  gtk_widget_set_hexpand(statusbar_more, TRUE);
+  gtk_widget_set_tooltip_text(statusbar_more, l10n::t("pet.menuOpen").c_str());
+  g_signal_connect(statusbar_more, "clicked",
+                   G_CALLBACK(+[](GtkButton*, gpointer) { show_menu_window(); }),
+                   nullptr);
+  gtk_box_append(GTK_BOX(statusbar), statusbar_more);
+  box_append(g_state.content_root, statusbar);
   refresh_all();
 }
 
 void apply_global_css() {
   auto* provider = gtk_css_provider_new();
   gtk_css_provider_load_from_string(provider, R"CSS(
-    .app-bg { background: #F5F2EB; }
+    // 2026-11-15 tokens (design/DESIGN.md 视觉规范): window #F8F7F3,
+    // titlebar #F0EEE8, ink #26241F/#655F55, accent #A7472C; dark pairs
+    // (#282622/#302D28/#F1EBDF/#C0B5A4/#EFAA85) under the .dark class the
+    // host sets from the system color scheme.
+    .app-bg { background: #F8F7F3; }
+    .titlebar-bg { background: #F0EEE8; }
+    .dark .app-bg { background: #282622; }
+    .dark .titlebar-bg { background: #302D28; }
     .card {
       background: #FFFFFF;
-      border: 1px solid #EAE2D6;
+      border: 1px solid #E5DED2;
       border-radius: 16px;
       padding: 6px 4px;
     }
-    .section { font-size: 13px; color: #6E6A5E; }
-    .caption { font-size: 11px; color: #6E6A5E; }
-    .footer { font-size: 11px; color: #A39B8D; }
+    .dark .card { background: #2A2622; border-color: #3A352E; }
+    .section { font-size: 13px; color: #655F55; }
+    .dark .section { color: #C0B5A4; }
+    .caption { font-size: 11px; color: #655F55; }
+    .dark .caption { color: #C0B5A4; }
+    .footer { font-size: 11px; color: #8B857A; }
     .row-label { font-size: 13px; color: #26241F; }
+    .dark .row-label { color: #F1EBDF; }
     .row-strong { font-size: 14px; font-weight: 600; color: #26241F; }
+    .dark .row-strong { color: #F1EBDF; }
     .big-number { font-size: 44px; font-weight: 700; color: #26241F; }
+    .dark .big-number { color: #F1EBDF; }
     .counter-value { font-size: 14px; font-weight: 600; color: #26241F; }
-    .metric-tile { background: #EAE6DC; border-radius: 12px; padding: 12px; }
+    .dark .counter-value { color: #F1EBDF; }
+    .metric-tile { background: #EAE3D7; border-radius: 12px; padding: 12px; }
+    .dark .metric-tile { background: #39332C; }
     .metric-value { font-size: 20px; font-weight: 600; color: #26241F; }
+    .dark .metric-value { color: #F1EBDF; }
     .status { font-size: 12.5px; }
-    .status.ok { color: #16A34A; }
+    .status.ok { color: #267344; }
+    .dark .status.ok { color: #8BCE9D; }
     .status.paused { color: #EA580C; }
-    .accent-label { font-size: 11.5px; color: #C25E3E; }
+    .accent-label { font-size: 11.5px; color: #A7472C; }
+    .dark .accent-label { color: #EFAA85; }
     .sit-bar { min-height: 9px; }
-    .sit-bar progress { background: #C25E3E; border-radius: 4px; }
-    .sit-bar trough { background: #EAE6DC; border-radius: 4px; }
+    .sit-bar progress { background: #A7472C; border-radius: 4px; }
+    .dark .sit-bar progress { background: #EFAA85; }
+    .sit-bar trough { background: #EAE3D7; border-radius: 4px; }
+    .dark .sit-bar trough { background: #39332C; }
     .toast-bg { background: #FFFDFB; border-radius: 14px; border: 1px solid #E2DCCC; }
+    .dark .toast-bg { background: #2A2622; border-color: #3A352E; }
     .mubi-bg { background: transparent; }
-    .mubi-capsule { background: #FFFDFB; border-radius: 12px; }
-    .mubi-capsule-text { font-size: 12px; font-weight: 600; color: #2D2A28; }
+    .mubi-capsule { background: #F6F1E9; border-radius: 12px; }
+    .dark .mubi-capsule { background: #3A3028; }
+    .mubi-capsule-text { font-size: 13px; font-weight: 600; color: #6D5948; }
+    .dark .mubi-capsule-text { color: #E8D4BB; }
+    .mubi-bubble { background: #F8F7F3; border: 1px solid rgba(0,0,0,0.10);
+                   border-radius: 14px; padding: 12px; }
+    .dark .mubi-bubble { background: #282622; border-color: rgba(255,255,255,0.10); }
+    .mubi-bubble-title { font-size: 14px; font-weight: 600; color: #26241F; }
+    .dark .mubi-bubble-title { color: #F1EBDF; }
+    .mubi-bubble-note { font-size: 11px; color: #655F55; }
+    .dark .mubi-bubble-note { color: #C0B5A4; }
+    .mubi-primary { font-size: 13px; font-weight: 600; color: #F8F7F3;
+                    background: #A7472C; border-radius: 8px; padding: 6px 12px; }
+    .dark .mubi-primary { color: #241C16; background: #EFAA85; }
+    .mubi-kind-check { font-size: 13px; color: #26241F; }
+    .dark .mubi-kind-check { color: #F1EBDF; }
+    .mubi-menu-button { font-size: 15px; color: #655F55;
+                        background: rgba(248,247,243,0.65);
+                        border-radius: 14px; padding: 2px 10px; }
+    .dark .mubi-menu-button { color: #C0B5A4;
+                              background: rgba(40,38,34,0.65); }
+    .mubi-menu-card { background: #F8F7F3; border: 1px solid rgba(0,0,0,0.12);
+                      border-radius: 12px; }
+    .dark .mubi-menu-card { background: #282622;
+                            border-color: rgba(255,255,255,0.12); }
+    .mubi-menu-card button { font-size: 13px; color: #26241F; }
+    .dark .mubi-menu-card button { color: #F1EBDF; }
     .toast-title { font-size: 17px; font-weight: 600; color: #26241F; }
-    .toast-line { font-size: 13.5px; color: #6E6A5E; }
+    .dark .toast-title { color: #F1EBDF; }
+    .toast-line { font-size: 13.5px; color: #655F55; }
+    .dark .toast-line { color: #C0B5A4; }
     .toast-btn { font-size: 12.5px; color: #26241F; background: #F3EEE3;
                  border-radius: 7px; padding: 5px 10px; }
-    .toast-btn-muted { font-size: 12.5px; color: #6E6A5E; background: transparent;
+    .dark .toast-btn { color: #F1EBDF; background: #39332C; }
+    .toast-btn-muted { font-size: 12.5px; color: #655F55; background: transparent;
                        border: 1px solid #E2DCCC; border-radius: 7px; padding: 5px 10px; }
-    .micro-bg { background: #FFFFFF; border-radius: 18px; border: 1px solid #EAE2D6; }
+    .dark .toast-btn-muted { color: #C0B5A4; border-color: #3A352E; }
+    .micro-bg { background: #F8F7F3; border-radius: 18px; border: 1px solid #E5DED2; }
+    .dark .micro-bg { background: #282622; border-color: #3A352E; }
     .micro-title { font-size: 18px; font-weight: 600; color: #26241F; }
-    .micro-hint { font-size: 11.5px; color: #A39B8D; }
-    .micro-bar trough { background: #EAE6DC; border-radius: 2px; min-height: 4px; }
-    .micro-bar progress { background: #C25E3E; border-radius: 2px; min-height: 4px; }
-    .ob-bg { background: #F5F2EB; }
-    .ob-card { background: #FFFFFF; border: 1px solid #EAE2D6;
+    .dark .micro-title { color: #F1EBDF; }
+    .micro-hint { font-size: 11.5px; color: #8B857A; }
+    .micro-bar trough { background: #EAE3D7; border-radius: 2px; min-height: 4px; }
+    .dark .micro-bar trough { background: #39332C; }
+    .micro-bar progress { background: #A7472C; border-radius: 2px; min-height: 4px; }
+    .dark .micro-bar progress { background: #EFAA85; }
+    .ob-bg { background: #F8F7F3; }
+    .ob-card { background: #FFFFFF; border: 1px solid #E5DED2;
                border-radius: 12px; padding: 14px; }
-    .ob-card-selected { background: #FBEFE2; border: 1px solid #C25E3E;
+    .dark .ob-card { background: #2A2622; border-color: #3A352E; }
+    .ob-card-selected { background: #FBEFE2; border: 1px solid #A7472C;
                         border-radius: 12px; padding: 14px; }
+    .dark .ob-card-selected { background: #413025; border-color: #EFAA85; }
     .ob-title { font-size: 22px; font-weight: 700; color: #26241F; }
+    .dark .ob-title { color: #F1EBDF; }
     .ob-hello { font-size: 26px; font-weight: 700; color: #26241F; }
-    .ob-text { font-size: 14.5px; color: #6E6A5E; }
+    .dark .ob-hello { color: #F1EBDF; }
+    .ob-text { font-size: 14.5px; color: #655F55; }
+    .dark .ob-text { color: #C0B5A4; }
     .ob-strong { font-size: 15px; font-weight: 600; color: #26241F; }
-    .ob-caption { font-size: 11px; color: #A39B8D; }
-    .ob-badge { font-size: 10.5px; color: #C25E3E; background: #FBEFE2;
+    .dark .ob-strong { color: #F1EBDF; }
+    .ob-caption { font-size: 11px; color: #8B857A; }
+    .ob-badge { font-size: 10.5px; color: #A7472C; background: #FBEFE2;
                 border-radius: 5px; padding: 2px 6px; }
-    .ob-primary { font-size: 14px; color: #FFFFFF; background: #C25E3E;
+    .dark .ob-badge { color: #EFAA85; background: #413025; }
+    .ob-primary { font-size: 14px; color: #F8F7F3; background: #A7472C;
                   border-radius: 8px; padding: 9px 18px; }
+    .dark .ob-primary { color: #241C16; background: #EFAA85; }
     .rhythm-chip { font-size: 12.5px; color: #26241F; background: #F3EEE3;
                    border-radius: 8px; padding: 8px 12px; }
-    .rhythm-chip-selected { font-size: 12.5px; color: #C25E3E;
-                            background: #FBEFE2; border: 1px solid #C25E3E;
+    .dark .rhythm-chip { color: #F1EBDF; background: #39332C; }
+    .rhythm-chip-selected { font-size: 12.5px; color: #A7472C;
+                            background: #FBEFE2; border: 1px solid #A7472C;
                             border-radius: 8px; padding: 8px 12px; }
-    .dot { font-size: 18px; color: #EAE6DC; }
-    .dot-active { font-size: 18px; color: #C25E3E; }
+    .dark .rhythm-chip-selected { color: #EFAA85; background: #413025;
+                                  border-color: #EFAA85; }
+    .dot { font-size: 18px; color: #EAE3D7; }
+    .dark .dot { color: #39332C; }
+    .dot-active { font-size: 18px; color: #A7472C; }
+    .dark .dot-active { color: #EFAA85; }
+    .statusbar { font-size: 11px; color: #8B857A; padding: 4px 12px; }
   )CSS");
   gtk_style_context_add_provider_for_display(
       gdk_display_get_default(), GTK_STYLE_PROVIDER(provider),
@@ -3823,7 +3969,15 @@ void micro_close() {
     g_state.micro_bar = nullptr;
     g_state.micro_hint = nullptr;
     g_state.micro_start_button = nullptr;
+    g_state.micro_countdown = nullptr;
+    g_state.micro_body_title = nullptr;
+    g_state.micro_done_button = nullptr;
+    g_state.micro_stop_button = nullptr;
+    g_state.micro_restart_button = nullptr;
+    g_state.micro_switch_button = nullptr;
+    g_state.micro_tuck_button = nullptr;
     g_state.micro_started = false;
+    g_state.micro_phase = 0;
   }
   g_state.micro_cue_id = 0;
 }
@@ -3838,6 +3992,13 @@ void micro_finish() {
   }
 }
 
+void micro_reset() {
+  auto& s = g_state;
+  s.micro_phase = 0;
+  s.micro_started = false;
+  s.micro_timeout_id = 0;
+}
+
 // Click / Esc / a newer cue: end early as a Hide — no completion claimed.
 void micro_dismiss() {
   auto cue_id = g_state.micro_cue_id;
@@ -3847,42 +4008,76 @@ void micro_dismiss() {
   }
 }
 
-// Explicit opt-in (#94): the countdown starts only when the user asks.
+// Phase surface (2026-11-15 微休息): invite → running → ended, with the
+// contract copy on each state. Stopping never records completion.
+void micro_set_phase(int phase) {
+  auto& s = g_state;
+  s.micro_phase = phase;
+  auto show = [phase](GtkWidget* w, bool visible) {
+    if (w != nullptr) gtk_widget_set_visible(w, visible);
+  };
+  show(GTK_WIDGET(s.micro_start_button), phase == 0);
+  show(GTK_WIDGET(s.micro_done_button), phase != 0);
+  show(GTK_WIDGET(s.micro_stop_button), phase == 1);
+  show(GTK_WIDGET(s.micro_restart_button), phase == 2);
+  show(GTK_WIDGET(s.micro_switch_button), phase == 0);
+  show(GTK_WIDGET(s.micro_bar), phase == 1);
+  show(GTK_WIDGET(s.micro_countdown), phase == 1);
+  if (s.micro_body_title != nullptr) {
+    gtk_label_set_text(
+        s.micro_body_title,
+        l10n::t(phase == 2
+                    ? "micro.endedTitle"
+                    : (s.micro_eyes ? "micro.eyesTitle" : "micro.stretchTitle"))
+            .c_str());
+  }
+  if (s.micro_hint != nullptr) {
+    char const* key = phase == 2
+        ? "micro.endedHint"
+        : (phase == 1 ? (s.micro_eyes ? "micro.eyesBody" : "micro.stretchBody")
+                      : "micro.inviteHint");
+    gtk_label_set_text(s.micro_hint, l10n::t(key).c_str());
+  }
+}
+
+char const* micro_switch_label() {
+  return g_state.micro_eyes ? "micro.switchStretch" : "micro.switchEyes";
+}
+
+// 开始 / 重新开始: the countdown runs by deadline (contract 倒计时按截止
+// 时间计算), and the timer NEVER auto-confirms — the ended state keeps the
+// in-place 做好了.
 void micro_start() {
-  if (g_state.micro_started || g_state.micro_window == nullptr) return;
-  g_state.micro_started = true;
-  if (g_state.micro_start_button != nullptr) {
-    gtk_widget_set_visible(GTK_WIDGET(g_state.micro_start_button), FALSE);
+  auto& s = g_state;
+  if (s.micro_window == nullptr || s.micro_phase == 1) return;
+  s.micro_started = true;
+  micro_set_phase(1);
+  s.micro_progress = 1.0;
+  if (s.micro_bar != nullptr) {
+    gtk_progress_bar_set_fraction(s.micro_bar, 1.0);
   }
-  g_state.micro_progress = 1.0;
-  if (g_state.micro_bar != nullptr) {
-    gtk_progress_bar_set_fraction(g_state.micro_bar, 1.0);
-  }
-  g_state.micro_timeout_id = g_timeout_add(
+  if (s.micro_timeout_id != 0) g_source_remove(s.micro_timeout_id);
+  s.micro_timeout_id = g_timeout_add(
       250,
       +[](gpointer) -> int {
-        g_state.micro_progress =
-            std::max(0.0, g_state.micro_progress - 250.0 /
-                                                     g_state.micro_total_ms);
-        if (g_state.micro_bar != nullptr) {
-          gtk_progress_bar_set_fraction(g_state.micro_bar, g_state.micro_progress);
+        auto& st = g_state;
+        st.micro_progress =
+            std::max(0.0, st.micro_progress - 250.0 / st.micro_total_ms);
+        if (st.micro_bar != nullptr) {
+          gtk_progress_bar_set_fraction(st.micro_bar, st.micro_progress);
         }
-        if (g_state.micro_progress <= 0.0) {
-          // Timer completion is not a self-report; Done is explicit.
-          if (g_state.micro_hint != nullptr) {
-            gtk_label_set_text(g_state.micro_hint,
-                               l10n::t("micro.finishedHint").c_str());
-          }
-          // Hide the finished card later without claiming completion; the
-          // cue stays open for the tray's explicit Done.
-          g_state.micro_timeout_id = g_timeout_add_seconds(
-              60,
-              +[](gpointer) -> int {
-                g_state.micro_timeout_id = 0;
-                micro_dismiss();
-                return G_SOURCE_REMOVE;
-              },
-              nullptr);
+        if (st.micro_countdown != nullptr) {
+          gtk_label_set_text(
+              st.micro_countdown,
+              std::to_string(
+                  static_cast<int>(st.micro_progress * st.micro_total_ms / 1000 + 0.999))
+                  .c_str());
+        }
+        if (st.micro_progress <= 0.0) {
+          st.micro_timeout_id = 0;
+          // In-place confirm: the window stays; 做好了 is explicit and a
+          // restart keeps the session going. Nothing auto-closes here.
+          micro_set_phase(2);
           return G_SOURCE_REMOVE;
         }
         return G_SOURCE_CONTINUE;
@@ -3890,63 +4085,131 @@ void micro_start() {
       nullptr);
 }
 
+// 停止计时: back to the invite, nothing recorded.
+void micro_stop() {
+  auto& s = g_state;
+  if (s.micro_timeout_id != 0) {
+    g_source_remove(s.micro_timeout_id);
+    s.micro_timeout_id = 0;
+  }
+  s.micro_progress = 1.0;
+  micro_set_phase(0);
+}
+
+// 改为 20 秒护眼 / 改为 2 分钟拉伸: invite-state kind switch.
+void micro_switch() {
+  auto& s = g_state;
+  if (s.micro_phase != 0) return;
+  s.micro_eyes = !s.micro_eyes;
+  s.micro_total_ms = (s.micro_eyes ? 20 : 120) * 1000;
+  s.micro_progress = 1.0;
+  if (s.micro_switch_button != nullptr) {
+    gtk_button_set_label(s.micro_switch_button,
+                         l10n::t(micro_switch_label()).c_str());
+  }
+  micro_set_phase(0);
+}
+
 void micro_show(std::int64_t duration_seconds, std::string const& title,
                 std::string const& hint_text, std::int64_t cue_id,
                 GtkApplication* app) {
+  // The contract copy derives from the running kind; the caller-supplied
+  // title/hint stay for the older notification-fallback paths.
+  (void)title;
+  (void)hint_text;
   // Replacing a session must not record the previous cue as abandoned.
   micro_close();
   g_state.micro_cue_id = cue_id;
+  g_state.micro_eyes = duration_seconds < 120;
+  g_state.micro_total_ms = std::max<std::int64_t>(1, duration_seconds) * 1000;
   auto* window = gtk_application_window_new(app);
   gtk_widget_add_css_class(GTK_WIDGET(window), "micro-bg");
   gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
-  gtk_window_set_default_size(GTK_WINDOW(window), 400, -1);
+  gtk_window_set_default_size(GTK_WINDOW(window), 420, -1);
   g_state.micro_window = GTK_WINDOW(window);
 
-  auto* body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-  gtk_widget_set_margin_top(body, 18);
-  gtk_widget_set_margin_bottom(body, 18);
-  gtk_widget_set_margin_start(body, 26);
-  gtk_widget_set_margin_end(body, 26);
-  auto* head = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-  box_append(GTK_BOX(head), label_with("👀", nullptr));
-  auto* title_label = gtk_label_new(title.c_str());
-  gtk_widget_add_css_class(title_label, "micro-title");
-  gtk_label_set_xalign(GTK_LABEL(title_label), 0.0f);
-  box_append(GTK_BOX(head), title_label);
-  box_append(GTK_BOX(body), head);
-  auto* hint = gtk_label_new(hint_text.c_str());
+  auto* body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_top(body, 16);
+  gtk_widget_set_margin_bottom(body, 16);
+  gtk_widget_set_margin_start(body, 22);
+  gtk_widget_set_margin_end(body, 22);
+  auto* body_title = gtk_label_new("");
+  gtk_widget_add_css_class(body_title, "micro-title");
+  gtk_label_set_xalign(GTK_LABEL(body_title), 0.0f);
+  box_append(GTK_BOX(body), body_title);
+  g_state.micro_body_title = GTK_LABEL(body_title);
+  auto* hint = gtk_label_new("");
   gtk_widget_add_css_class(hint, "micro-hint");
+  gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
   gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
   box_append(GTK_BOX(body), hint);
   g_state.micro_hint = GTK_LABEL(hint);
+  auto* countdown = gtk_label_new("");
+  gtk_widget_add_css_class(countdown, "counter-value");
+  gtk_label_set_xalign(GTK_LABEL(countdown), 0.0f);
+  box_append(GTK_BOX(body), countdown);
+  g_state.micro_countdown = GTK_LABEL(countdown);
   auto* bar = gtk_progress_bar_new();
   gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(bar), 0.0);
   gtk_widget_add_css_class(bar, "micro-bar");
   box_append(GTK_BOX(body), bar);
   g_state.micro_bar = GTK_PROGRESS_BAR(bar);
+
+  auto* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   auto* start = gtk_button_new_with_label(l10n::t("micro.start").c_str());
-  gtk_widget_add_css_class(start, "micro-start");
-  gtk_widget_set_halign(start, GTK_ALIGN_START);
+  gtk_widget_add_css_class(start, "ob-primary");
   g_signal_connect(
       start, "clicked",
       G_CALLBACK(+[](GtkButton*, gpointer) { micro_start(); }), nullptr);
-  box_append(GTK_BOX(body), start);
+  gtk_box_append(GTK_BOX(actions), start);
   g_state.micro_start_button = GTK_BUTTON(start);
   auto* done = gtk_button_new_with_label(l10n::t("micro.done").c_str());
-  gtk_widget_add_css_class(done, "micro-done");
-  gtk_widget_set_halign(done, GTK_ALIGN_START);
+  gtk_widget_add_css_class(done, "ob-primary");
   g_signal_connect(
       done, "clicked",
       G_CALLBACK(+[](GtkButton*, gpointer) { micro_finish(); }), nullptr);
-  box_append(GTK_BOX(body), done);
-  auto* hide = gtk_button_new_with_label(l10n::t("notif.hide").c_str());
-  gtk_widget_add_css_class(hide, "micro-hide");
-  gtk_widget_set_halign(hide, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(actions), done);
+  g_state.micro_done_button = GTK_BUTTON(done);
+  auto* stop = gtk_button_new_with_label(l10n::t("micro.stop").c_str());
+  gtk_widget_add_css_class(stop, "flat");
+  gtk_button_set_has_frame(GTK_BUTTON(stop), FALSE);
   g_signal_connect(
-      hide, "clicked",
+      stop, "clicked",
+      G_CALLBACK(+[](GtkButton*, gpointer) { micro_stop(); }), nullptr);
+  gtk_box_append(GTK_BOX(actions), stop);
+  g_state.micro_stop_button = GTK_BUTTON(stop);
+  auto* restart = gtk_button_new_with_label(l10n::t("micro.restart").c_str());
+  gtk_widget_add_css_class(restart, "flat");
+  gtk_button_set_has_frame(GTK_BUTTON(restart), FALSE);
+  g_signal_connect(
+      restart, "clicked",
+      G_CALLBACK(+[](GtkButton*, gpointer) { micro_start(); }), nullptr);
+  gtk_box_append(GTK_BOX(actions), restart);
+  g_state.micro_restart_button = GTK_BUTTON(restart);
+  auto* tuck = gtk_button_new_with_label(l10n::t("micro.tuckAway").c_str());
+  gtk_widget_add_css_class(tuck, "flat");
+  gtk_button_set_has_frame(GTK_BUTTON(tuck), FALSE);
+  g_signal_connect(
+      tuck, "clicked",
       G_CALLBACK(+[](GtkButton*, gpointer) { micro_dismiss(); }), nullptr);
-  box_append(GTK_BOX(body), hide);
+  gtk_box_append(GTK_BOX(actions), tuck);
+  g_state.micro_tuck_button = GTK_BUTTON(tuck);
+  gtk_box_append(GTK_BOX(body), actions);
+  auto* switch_btn = gtk_button_new_with_label("");
+  gtk_widget_add_css_class(switch_btn, "flat");
+  gtk_button_set_has_frame(GTK_BUTTON(switch_btn), FALSE);
+  gtk_widget_set_halign(switch_btn, GTK_ALIGN_START);
+  g_signal_connect(
+      switch_btn, "clicked",
+      G_CALLBACK(+[](GtkButton*, gpointer) { micro_switch(); }), nullptr);
+  box_append(GTK_BOX(body), switch_btn);
+  g_state.micro_switch_button = GTK_BUTTON(switch_btn);
   gtk_window_set_child(GTK_WINDOW(window), body);
+  micro_set_phase(0);
+  if (g_state.micro_switch_button != nullptr) {
+    gtk_button_set_label(g_state.micro_switch_button,
+                         l10n::t(micro_switch_label()).c_str());
+  }
   // Escape dismisses too.
   auto* key = gtk_event_controller_key_new();
   g_signal_connect(
@@ -4610,8 +4873,15 @@ void on_activate(GtkApplication* app, gpointer) {
     g_state.quit_button = GTK_BUTTON(quit);
   }
   gtk_window_set_titlebar(GTK_WINDOW(window), header);
+  // Compact titlebar center: the four segment tabs (今日/历史/设置/关于).
+  auto* switcher = gtk_stack_switcher_new();
+  g_state.header_switcher = GTK_STACK_SWITCHER(switcher);
+  // The stack arrives with build_main_content(); it binds + titles lazily.
+  gtk_header_bar_set_title_widget(GTK_HEADER_BAR(header), switcher);
+  gtk_widget_set_visible(switcher, FALSE);
 
   auto* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(GTK_WIDGET(root), "titlebar-bg");
   g_state.content_root = GTK_BOX(root);
   gtk_window_set_child(GTK_WINDOW(window), root);
   g_signal_connect(window, "close-request", G_CALLBACK(on_main_close_request), nullptr);
@@ -4623,6 +4893,17 @@ void on_activate(GtkApplication* app, gpointer) {
     g_state.acceptance = acc && *acc == '1';
   }
   apply_global_css();
+  // Follow the system color scheme: the .dark class swaps the token pairs
+  // (the character itself never inverts — 暗色不反相 is the art contract).
+  gboolean prefer_dark = FALSE;
+  if (auto* settings = gtk_settings_get_default()) {
+    g_object_get(G_OBJECT(settings), "gtk-application-prefer-dark-theme",
+                 &prefer_dark, nullptr);
+  }
+  if (prefer_dark) {
+    gtk_widget_add_css_class(GTK_WIDGET(window), "dark");
+    g_state.dark_theme = true;
+  }
   gtk_window_present(GTK_WINDOW(window));
   start_backend(app);
 }
