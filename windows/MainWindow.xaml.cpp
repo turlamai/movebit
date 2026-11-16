@@ -437,7 +437,22 @@ void MainWindow::HandleHealthCue(rivet_app::HealthCue const& cue) {
         default: break;
       }
     }
-    companion_.Show(state, message);
+    // 2026-11-15: the invitation card attached to the pet carries the
+    // composed heading + per-kind checklist; the character pose keeps the
+    // priority kind's meaning. The old joined message is retired.
+    companion_.bubble_title = wide(InvitationTitle(cue.kinds));
+    companion_.kind_labels.clear();
+    companion_.kind_symbols.clear();
+    companion_.kind_checked.clear();
+    for (auto const& kind : cue.kinds) {
+      char const* symbol = kind_symbol(kind);
+      companion_.kind_symbols.push_back(symbol);
+      companion_.kind_labels.push_back(winrt::to_hstring(l10n::t(
+          "invite.itemDone", {l10n::A(l10n::t(kind_word_key(symbol)))})));
+      companion_.kind_checked.push_back(true);
+    }
+    companion_.partial_expanded = false;
+    companion_.Show(state, L"");
     CueDisplayed(cue.id);
     RefreshTrayState();
     return;
@@ -1049,6 +1064,7 @@ winrt::fire_and_forget MainWindow::PickDataFolderAsync() {
 }
 
 void MainWindow::ApplyTexts() {
+  RefreshSegmentTitles();
   TodayTitle().Text(winrt::to_hstring(l10n::t("today.title")));
   SitCycleCaption().Text(winrt::to_hstring(l10n::t("today.sitCycle")));
   TodaySitCaption().Text(winrt::to_hstring(l10n::t("today.sit")));
@@ -1511,46 +1527,61 @@ void MainWindow::InitTray() {
                     L"https://github.com/turlamai/movebit/releases/latest",
                     nullptr, nullptr, SW_SHOWNORMAL);
   };
-  // Mandatory reminder controls (#54): act on the newest open cue.
+  // Mandatory reminder controls (#54, 2026-11-15 wording): the response
+  // items act on the whole merged invitation.
   tray_.on_cue_done = [this]() {
-    if (model_.pending_cues.empty()) return;
-    auto const id = model_.pending_cues.back().id;
-    (void)api_->acknowledge_cue_async(id, [](rivet_app::Result<void>) {});
+    AcknowledgeAllPending();
     companion_.ShowAck();
     RefreshTrayState();
   };
   tray_.on_cue_later = [this]() {
-    if (model_.pending_cues.empty()) return;
-    auto const id = model_.pending_cues.back().id;
-    (void)api_->snooze_cue_async(id, [](rivet_app::Result<void>) {});
+    SnoozeAllPending();
     RefreshTrayState();
   };
   tray_.on_cue_hide = [this]() {
-    if (model_.pending_cues.empty()) return;
-    auto const id = model_.pending_cues.back().id;
-    (void)api_->dismiss_cue_async(id, [](rivet_app::Result<void>) {});
+    DismissAllPending();
     RefreshTrayState();
   };
-  // Petting = Done on the newest open cue; the bubble's Later tag = snooze
-  // (issue #140). Same semantics as the tray actions above.
+  // 2026-11-15 contract: petting is companionship ONLY — the pet surface
+  // never acknowledges. Completion submits via the invitation card, the
+  // tray items or the micro card's 做好了.
   companion_.on_pet = [this]() {
-    if (model_.pending_cues.empty()) return;
-    auto const id = model_.pending_cues.back().id;
-    (void)api_->acknowledge_cue_async(id, [](rivet_app::Result<void>) {});
+    // A playful act (bounded hop), a caption rotation happens in the
+    // companion; nothing is recorded.
+  };
+  companion_.on_done_all = [this]() {
+    AcknowledgeAllPending();
     companion_.ShowAck();
     RefreshTrayState();
   };
   companion_.on_later = [this]() {
-    if (model_.pending_cues.empty()) return;
-    auto const id = model_.pending_cues.back().id;
-    (void)api_->snooze_cue_async(id, [](rivet_app::Result<void>) {});
-    // #56 §4 `later`: a quiet settle with the reassurance note, then home.
-    companion_.Show(MubiCompanion::MubiState::Idle,
-                    winrt::to_hstring(l10n::t("mubi.laterNote")).c_str());
+    SnoozeAllPending();
     RefreshTrayState();
   };
+  companion_.on_hide_this = [this]() {
+    DismissAllPending();
+    RefreshTrayState();
+  };
+  companion_.on_partial_confirm = [this](std::vector<std::string> const& kinds) {
+    AcknowledgePendingKinds(kinds);
+    companion_.ShowAck();
+    RefreshTrayState();
+  };
+  companion_.on_menu_opened = [this]() { ShowCompanionMenu(); };
   companion_.later_tag_text =
-      winrt::to_hstring(l10n::t("tray.cueLater"));
+      winrt::to_hstring(l10n::t("invite.later"));
+  companion_.done_tag_text =
+      winrt::to_hstring(l10n::t("tray.cueDone"));
+  companion_.later_button_text =
+      winrt::to_hstring(l10n::t("invite.later"));
+  companion_.partial_text =
+      winrt::to_hstring(l10n::t("invite.partial"));
+  companion_.partial_confirm_text =
+      winrt::to_hstring(l10n::t("invite.partialConfirm"));
+  companion_.partial_note_text =
+      winrt::to_hstring(l10n::t("invite.partialNote"));
+  companion_.menu_button_text =
+      winrt::to_hstring(l10n::t("pet.menuOpen"));
   tray_.on_focus_toggle = [this]() {
     auto const next = !model_.quiet;
     (void)api_->set_quiet_async(next, [](rivet_app::Result<void>) {});
@@ -1558,11 +1589,253 @@ void MainWindow::InitTray() {
     companion_.SetQuiet(next);
     RefreshTrayState();
   };
-  tray_.on_exit = [this]() {
-    really_quitting_ = true;
-    Close();
-  };
+  tray_.on_exit = [this]() { ConfirmQuit(); };
   tray_.Attach(*this);
+}
+
+// Kind symbol (wire string) for acknowledge-cue-kinds, and the bare kind
+// word for the per-kind checklist (起身 / 喝水 / 护眼).
+char const* kind_symbol(rivet_app::ReminderKind kind) {
+  switch (kind) {
+    case rivet_app::ReminderKind::water: return "water";
+    case rivet_app::ReminderKind::micro: return "micro";
+    default: return "sit";
+  }
+}
+
+char const* kind_word_key(char const* symbol) {
+  std::string const k = symbol;
+  if (k == "water") return "kind.water";
+  if (k == "micro") return "kind.micro";
+  return "kind.sit";
+}
+
+// Composed invitation heading (invite.title.*): one phrase per present
+// kind — 起来走走，喝口水？-style, priority-ordered.
+std::string InvitationTitle(std::vector<rivet_app::ReminderKind> const& kinds) {
+  bool has_move = false;
+  bool has_water = false;
+  bool has_eyes = false;
+  for (auto const& kind : kinds) {
+    has_move = has_move || kind == rivet_app::ReminderKind::sit;
+    has_water = has_water || kind == rivet_app::ReminderKind::water;
+    has_eyes = has_eyes || kind == rivet_app::ReminderKind::micro;
+  }
+  if (has_move && has_water && has_eyes) return l10n::t("invite.title.all");
+  if (has_move && has_water) return l10n::t("invite.title.moveWater");
+  if (has_move && has_eyes) return l10n::t("invite.title.moveEyes");
+  if (has_water && has_eyes) return l10n::t("invite.title.waterEyes");
+  if (has_move) return l10n::t("invite.title.move");
+  if (has_water) return l10n::t("invite.title.water");
+  if (has_eyes) return l10n::t("invite.title.eyes");
+  return l10n::t("invite.title.all");
+}
+
+// The 2026-11-15 invitation acts on the WHOLE merged invitation.
+void MainWindow::AcknowledgeAllPending() {
+  if (api_ == nullptr) return;
+  for (auto const& cue : model_.pending_cues) {
+    (void)api_->acknowledge_cue_async(cue.id, [](rivet_app::Result<void>) {});
+  }
+}
+
+void MainWindow::SnoozeAllPending() {
+  if (api_ == nullptr) return;
+  for (auto const& cue : model_.pending_cues) {
+    (void)api_->snooze_cue_async(cue.id, [](rivet_app::Result<void>) {});
+  }
+}
+
+void MainWindow::DismissAllPending() {
+  if (api_ == nullptr) return;
+  for (auto const& cue : model_.pending_cues) {
+    (void)api_->dismiss_cue_async(cue.id, [](rivet_app::Result<void>) {});
+  }
+}
+
+// 只做了一部分: settles only the checked kinds per cue (零选择不提交);
+// the residual kinds keep waiting in place.
+void MainWindow::AcknowledgePendingKinds(
+    std::vector<std::string> const& kinds) {
+  if (api_ == nullptr || kinds.empty()) return;
+  for (auto const& cue : model_.pending_cues) {
+    std::vector<std::string> settled;
+    for (auto const& kind : cue.kinds) {
+      char const* symbol = kind_symbol(kind);
+      if (std::find(kinds.begin(), kinds.end(), symbol) != kinds.end() &&
+          std::find(settled.begin(), settled.end(), symbol) == settled.end()) {
+        settled.push_back(symbol);
+      }
+    }
+    if (settled.empty()) continue;
+    (void)api_->acknowledge_cue_kinds_async(
+        cue.id, settled, [](rivet_app::Result<void>) {});
+  }
+}
+
+// The pet's ••• button: the same compact menu as the tray, popped at the
+// pet (TrackPopupMenu with the foreground quirk workaround for the
+// NOACTIVATE surface).
+void MainWindow::ShowCompanionMenu() {
+  if (companion_.hwnd == nullptr) return;
+  HMENU menu = ::CreatePopupMenu();
+  UINT id = 1;
+  auto add = [&](wchar_t const* label, bool enabled) {
+    MENUITEMINFOW item{sizeof(MENUITEMINFOW)};
+    item.fMask = MIIM_ID | MIIM_STRING | MIIM_STATE;
+    item.dwTypeData = const_cast<LPWSTR>(label);
+    item.cch = static_cast<UINT>(wcslen(label));
+    item.wID = id++;
+    item.fState = enabled ? MF_ENABLED : MF_GRAYED;
+    ::InsertMenuItemW(menu, UINT_MAX, TRUE, &item);
+  };
+  auto add_separator = [&]() {
+    ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  };
+  add(winrt::to_hstring(l10n::t("tray.open")).c_str(), TRUE);
+  if (!model_.pending_cues.empty()) {
+    add_separator();
+    add(winrt::to_hstring(l10n::t("tray.cueDone")).c_str(), TRUE);
+    add(winrt::to_hstring(l10n::t("tray.confirmIndividually")).c_str(), TRUE);
+    add(winrt::to_hstring(l10n::t("tray.cueLater")).c_str(), TRUE);
+    add(winrt::to_hstring(l10n::t("tray.cueHide")).c_str(), TRUE);
+  }
+  add_separator();
+  add(winrt::to_hstring(l10n::t(model_.quiet ? "tray.focusOff"
+                                             : "tray.focusOn")).c_str(),
+      TRUE);
+  add(winrt::to_hstring(l10n::t(model_.is_paused() ? "tray.resume"
+                                                   : "tray.pause")).c_str(),
+      TRUE);
+  add_separator();
+  bool has_micro = false;
+  bool has_sit = false;
+  for (auto const& cue : model_.pending_cues) {
+    for (auto const& kind : cue.kinds) {
+      has_micro = has_micro || kind == rivet_app::ReminderKind::micro;
+      has_sit = has_sit || kind == rivet_app::ReminderKind::sit;
+    }
+  }
+  add(winrt::to_hstring(l10n::t("tray.eyeRest")).c_str(), has_micro);
+  add(winrt::to_hstring(l10n::t("tray.stretch")).c_str(), has_sit);
+  add(winrt::to_hstring(l10n::t("tray.resetMubi")).c_str(), TRUE);
+  add_separator();
+  add(winrt::to_hstring(l10n::t("tray.exit")).c_str(), TRUE);
+  add(winrt::to_hstring(l10n::t("tray.backToDesktop")).c_str(), TRUE);
+
+  RECT pet_rect{};
+  ::GetWindowRect(companion_.hwnd, &pet_rect);
+  POINT anchor{pet_rect.left + (pet_rect.right - pet_rect.left) / 2,
+               pet_rect.bottom - 20};
+  ::SetForegroundWindow(companion_.hwnd);
+  UINT const chosen = ::TrackPopupMenu(
+      menu, TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, anchor.x,
+      anchor.y, 0, companion_.hwnd, nullptr);
+  ::PostMessageW(companion_.hwnd, WM_NULL, 0, 0);
+  ::DestroyMenu(menu);
+  auto const newest_cue_id = [&]() -> std::int64_t {
+    return model_.pending_cues.empty() ? 0 : model_.pending_cues.back().id;
+  };
+  switch (chosen) {
+    case 1: BringToForeground(); break;
+    case 3:
+      AcknowledgeAllPending();
+      companion_.ShowAck();
+      RefreshTrayState();
+      break;
+    case 4:
+      companion_.partial_expanded = true;
+      companion_.Render(companion_.anim_state, companion_.current_message);
+      break;
+    case 5: SnoozeAllPending(); RefreshTrayState(); break;
+    case 6: DismissAllPending(); RefreshTrayState(); break;
+    case 8: {
+      auto const next = !model_.quiet;
+      (void)api_->set_quiet_async(next, [](rivet_app::Result<void>) {});
+      model_.quiet = next;
+      companion_.SetQuiet(next);
+      RefreshTrayState();
+      break;
+    }
+    case 9: TogglePause(); break;
+    case 11:
+      if (has_micro && newest_cue_id() != 0) {
+        micro_.Show(20, l10n::t("tray.eyeRest"), l10n::t("micro.hint"),
+                    newest_cue_id());
+      }
+      break;
+    case 12:
+      if (has_sit && newest_cue_id() != 0) {
+        micro_.Show(120, l10n::t("stretch.title"), l10n::t("stretch.hint"),
+                    newest_cue_id());
+      }
+      break;
+    case 13: companion_.ResetHome(); break;
+    case 15: ConfirmQuit(); break;
+    default: break;  // 16 = 返回桌面: closes the menu only
+  }
+}
+
+// 退出必须确认（2026-11-15 contract）: quitting stops every reminder.
+void MainWindow::ConfirmQuit() {
+  if (!tray_hint_shown_) tray_hint_shown_ = true;  // no-op parity guard
+  int const answer = ::MessageBoxW(
+      nullptr, winrt::to_hstring(l10n::t("quit.confirmBody")).c_str(),
+      winrt::to_hstring(l10n::t("tray.exit")).c_str(),
+      MB_OKCANCEL | MB_ICONQUESTION);
+  if (answer != IDOK) return;
+  really_quitting_ = true;
+  Close();
+}
+
+// The four in-window segments (2026-11-15 辅助窗口): pages stay realized,
+// so each keeps its scroll position while hidden.
+void MainWindow::Segment_Click(IInspectable const& sender,
+                               RoutedEventArgs const&) {
+  auto const show = [this](bool today, bool history, bool settings,
+                           bool about) {
+    PageToday().Visibility(today ? Visibility::Visible : Visibility::Collapsed);
+    PageHistory().Visibility(history ? Visibility::Visible
+                                     : Visibility::Collapsed);
+    PageSettings().Visibility(settings ? Visibility::Visible
+                                       : Visibility::Collapsed);
+    PageAbout().Visibility(about ? Visibility::Visible : Visibility::Collapsed);
+  };
+  if (sender == SegToday()) {
+    SegToday().IsChecked(true);
+    SegHistory().IsChecked(false);
+    SegSettings().IsChecked(false);
+    SegAbout().IsChecked(false);
+    show(true, false, false, false);
+  } else if (sender == SegHistory()) {
+    SegToday().IsChecked(false);
+    SegHistory().IsChecked(true);
+    SegSettings().IsChecked(false);
+    SegAbout().IsChecked(false);
+    show(false, true, false, false);
+  } else if (sender == SegSettings()) {
+    SegToday().IsChecked(false);
+    SegHistory().IsChecked(false);
+    SegSettings().IsChecked(true);
+    SegAbout().IsChecked(false);
+    show(false, false, true, false);
+  } else if (sender == SegAbout()) {
+    SegToday().IsChecked(false);
+    SegHistory().IsChecked(false);
+    SegSettings().IsChecked(false);
+    SegAbout().IsChecked(true);
+    show(false, false, false, true);
+  }
+}
+
+// Segment tab titles follow the language copy.
+void MainWindow::RefreshSegmentTitles() {
+  SegToday().Content(winrt::box_value(winrt::to_hstring(l10n::t("seg.today"))));
+  SegHistory().Content(
+      winrt::box_value(winrt::to_hstring(l10n::t("seg.history"))));
+  SegSettings().Content(
+      winrt::box_value(winrt::to_hstring(l10n::t("seg.settings"))));
+  SegAbout().Content(winrt::box_value(winrt::to_hstring(l10n::t("seg.about"))));
 }
 
 void MainWindow::RefreshTrayState() {

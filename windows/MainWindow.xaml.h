@@ -128,6 +128,15 @@ struct MainWindow : MainWindowT<MainWindow> {
   void HideToTray();
   void BringToForeground();
   void TogglePause();
+  // 2026-11-15 invitation actions (the whole merged invitation).
+  void AcknowledgeAllPending();
+  void SnoozeAllPending();
+  void DismissAllPending();
+  void AcknowledgePendingKinds(std::vector<std::string> const& kinds);
+  void ShowCompanionMenu();
+  void ConfirmQuit();
+  void Segment_Click(IInspectable const& sender, RoutedEventArgs const& args);
+  void RefreshSegmentTitles();
 };
 
 }  // namespace winrt::RivetHost::implementation
