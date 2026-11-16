@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: raco pkg install --auto --no-docs "https://github.com/turlamai/rivet.git#${RIVET_PIN}"
 
-      - uses: turlamai/rivet/.github/actions/setup-embed-racket@c96673ded75651c94a1d513b122691f85d76ccf5
+      - uses: turlamai/rivet/.github/actions/setup-embed-racket@e54c03cd36432bfd25045f66b4120d28a55bd693
 
       - name: Fetch both published AppImages through the authenticated API
         env:

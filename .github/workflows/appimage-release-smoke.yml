@@ -38,7 +38,7 @@ jobs:
       - name: Verify smoke script syntax
         run: bash -n scripts/acceptance/check-appimage-package.sh
       - name: Build/cache embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@c96673ded75651c94a1d513b122691f85d76ccf5
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@e54c03cd36432bfd25045f66b4120d28a55bd693
       - name: Install GTK4 and native packaging dependencies
         run: |
           sudo apt-get update
