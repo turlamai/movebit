@@ -4,7 +4,7 @@
   "about.changeDataFolder": "更改…",
   "about.checkUpdates": "检查更新",
   "about.checkUpdatesHint": "在 GitHub Releases 页面查看新版本",
-  "about.dataFolder": "本机数据目录",
+  "about.dataFolder": "数据位置",
   "about.dataFolderApplied": "已保存，重启 MoveBit 后生效",
   "about.dataFolderHint": "SQLite 设置与历史保存在本机；此目录不要放入同步盘。跨设备通过独立同步目录交换记录，更改后重启生效。",
   "about.license": "以 BUSL-1.1 授权发布（源码可得）",

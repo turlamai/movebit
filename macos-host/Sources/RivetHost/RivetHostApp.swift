@@ -220,17 +220,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: main window (settings & stats)
 
     private func installMainWindow(model: MoveBitModel) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 840),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 560),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable,
+                                          .fullSizeContentView],
                               backing: .buffered, defer: false)
+        // Compact titlebar (2026-11-15 辅助窗口): the platform titlebar row
+        // carries the traffic lights; the title text is hidden and the leaf
+        // mark + wordmark render inside the content's titlebar row.
         window.title = "MoveBit"
-        window.minSize = NSSize(width: 460, height: 320)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
+        window.minSize = NSSize(width: 460, height: 420)
         window.contentView = NSHostingView(rootView: MainView().environmentObject(model))
         window.center()
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("MoveBitMainWindow")
         window.delegate = self
         mainWindow = window
+    }
+
+    /// 今日 ▸ 回到沐比身边: the utility window steps aside; the invitation
+    /// waits with the pet on the same desktop (reminders are never cleared).
+    func hideUtilityWindow() {
+        mainWindow?.orderOut(nil)
+    }
+
+    /// 关于 ▸ 数据位置: reveal the real local data directory in Finder.
+    func revealDataLocation() {
+        guard let model else { return }
+        let dir = model.dataDir
+        guard !dir.isEmpty else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: dir))
+    }
+
+    /// The utility statusbar's ••• opens the same compact menu as the tray.
+    func popupFromUtilityStatusbar(_ windowRect: NSRect) {
+        guard let window = mainWindow else { return }
+        popupCompanionMenu(at: window.convertToScreen(windowRect))
     }
 
     func showMainWindow() {

@@ -11,7 +11,7 @@ enum GeneratedI18n {
         "about.changeDataFolder": ["zh": "更改…", "en": "Change…"],
         "about.checkUpdates": ["zh": "检查更新", "en": "Check for updates"],
         "about.checkUpdatesHint": ["zh": "在 GitHub Releases 页面查看新版本", "en": "Opens the GitHub Releases page"],
-        "about.dataFolder": ["zh": "本机数据目录", "en": "Local data folder"],
+        "about.dataFolder": ["zh": "数据位置", "en": "Data location"],
         "about.dataFolderApplied": ["zh": "已保存，重启 MoveBit 后生效", "en": "Saved — takes effect after MoveBit restarts"],
         "about.dataFolderHint": ["zh": "SQLite 设置与历史保存在本机；此目录不要放入同步盘。跨设备通过独立同步目录交换记录，更改后重启生效。", "en": "Local SQLite settings and history. Keep this directory outside folder sync; exchange records using the separate sync directory. Changes apply after a restart."],
         "about.license": ["zh": "以 BUSL-1.1 授权发布（源码可得）", "en": "Released under BUSL-1.1 (source-available)"],
