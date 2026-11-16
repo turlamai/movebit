@@ -307,7 +307,7 @@ jobs:
       # it ships no packages of its own.
       - name: Install pinned Rivet (tag package install)
         shell: bash
-        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
+        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}' db-lib
       - name: Cache appimagetool and its runtime through the authenticated API
         env:
           GH_TOKEN: ${{ github.token }}

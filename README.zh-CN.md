@@ -109,6 +109,7 @@ Racket 运行时静态链接进宿主——不依赖外部解释器、没有 .NE
 ```bash
 git clone https://github.com/turlamai/rivet.git ../rivet
 raco pkg install --auto --no-docs --link ../rivet/rivet ../rivet/rivet-cli
+raco pkg install --auto --no-docs db-lib
 
 raco rivet doctor        # 工具链自检
 raco test racket/        # 领域核心测试

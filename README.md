@@ -109,6 +109,7 @@ Prerequisites: [Racket CS](https://racket-lang.org) (9.x), the [rivet](https://g
 ```bash
 git clone https://github.com/turlamai/rivet.git ../rivet
 raco pkg install --auto --no-docs --link ../rivet/rivet ../rivet/rivet-cli
+raco pkg install --auto --no-docs db-lib
 
 raco rivet doctor        # toolchain self-check
 raco test racket/        # domain core tests
