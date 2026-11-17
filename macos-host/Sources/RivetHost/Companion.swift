@@ -590,13 +590,15 @@ struct CompanionInvitationCard: View {
     // make the memberwise initializer private on Swift 6.0/6.1.
     private var surface: Color { Color(hex: "#F8F7F3") }
     private var surfaceDark: Color { Color(hex: "#282622") }
-    private var edge = Color.white.opacity(0.10)
-    private var ink = Color(hex: "#26241F")
-    private var inkDark = Color(hex: "#F1EBDF")
-    private var muted = Color(hex: "#655F55")
-    private var mutedDark = Color(hex: "#C0B5A4")
-    private var accent = Color(hex: "#A7472C")
-    private var accentDark = Color(hex: "#EFAA85")
+    // All fixed-color helpers stay computed: a private stored property
+    // demotes the memberwise initializer on Swift 6.0/6.1 (Xcode 16.4).
+    private var edge: Color { Color.white.opacity(0.10) }
+    private var ink: Color { Color(hex: "#26241F") }
+    private var inkDark: Color { Color(hex: "#F1EBDF") }
+    private var muted: Color { Color(hex: "#655F55") }
+    private var mutedDark: Color { Color(hex: "#C0B5A4") }
+    private var accent: Color { Color(hex: "#A7472C") }
+    private var accentDark: Color { Color(hex: "#EFAA85") }
 
     private var invitation: CompanionInvitation? { presentation.invitation }
     private var fg: Color { dark ? inkDark : ink }
