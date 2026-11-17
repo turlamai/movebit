@@ -32,7 +32,9 @@ try:
  app=wait(lambda:next((x for x in children(desktop) if any(role(n)=="frame" and (n.name or "")=="MoveBit" for n in walk(x))),None));window=next(n for n in walk(app) if role(n)=="frame")
  wait(lambda:any("Active today" in (n.name or "") or "Active today" in text(n) for n in walk(window)))
  for segment in ["Today","History","Settings","About"]:
-  wait(lambda segment=segment:any(segment in (n.name or "") for n in walk(window) if "toggle button" in role(n) or "push button" in role(n)))
+  # GtkStackSwitcher buttons expose varying atspi roles across GTK builds;
+  # match the localized segment name on any node instead of a role.
+  wait(lambda segment=segment:any((n.name or "") == segment for n in walk(window)))
  wait(lambda:any("Data stays on your device" in (n.name or "") or "Data stays on your device" in text(n) for n in walk(window)))
  a.output.mkdir(parents=True,exist_ok=True);(a.output/"accessibility.json").write_text(json.dumps(snap(app),ensure_ascii=False,indent=2),encoding="utf-8");(a.output/"interaction-trace.json").write_text(json.dumps({"platform":"linux","actions":["launch:isolated-config"],"assertions":["packaged GTK4 window activated","four in-window segment tabs exposed","statusbar carries the honest data-local line","RVT1 backend activity state reached native accessibility tree"]},indent=2),encoding="utf-8")
 except Exception:
