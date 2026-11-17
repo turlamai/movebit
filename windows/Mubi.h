@@ -777,6 +777,7 @@ struct MubiCompanion {
     double const s = body_height / 108.0;
     UINT dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
+    float const dpf = static_cast<float>(dp);
     CueCardLayout const lay = ComputeLayout();
     // UpdateLayeredWindow takes a non-const SIZE* (it writes the applied
     // size back), so the layout surface is copied.
@@ -991,7 +992,6 @@ struct MubiCompanion {
       // like the macOS MubiView card. Painted into the same alpha surface —
       // no second window anywhere.
       if (!message.empty()) {
-        float const dpf = static_cast<float>(dp);
         // GDI+ has no rounded-rect path primitive: four quarter arcs.
         // (GraphicsPath cannot be returned by value — its copy ctor is
         // protected — so the lambda fills a caller-owned path.)
@@ -1156,11 +1156,12 @@ struct MubiCompanion {
             Gdiplus::GraphicsPath btn_path;
             add_rounded_rect(btn_path, box.X, box.Y, box.Width, box.Height,
                              8.0f * dpf);
-            Gdiplus::SolidBrush fill(accent_brush);
-            if (!primary) {
-              fill.SetColor(dark ? Gdiplus::Color(255, 58, 53, 46)
-                                 : Gdiplus::Color(255, 255, 255, 255));
-            }
+            // SolidBrush has no copy ctor: construct the fill fresh.
+            Gdiplus::SolidBrush fill(
+                primary ? (dark ? Gdiplus::Color(255, 239, 170, 133)
+                                : Gdiplus::Color(255, 167, 71, 44))
+                        : (dark ? Gdiplus::Color(255, 58, 53, 46)
+                                : Gdiplus::Color(255, 255, 255, 255)));
             graphics.FillPath(&fill, &btn_path);
             if (!primary) {
               Gdiplus::Pen stroke(dark ? Gdiplus::Color(40, 255, 255, 255)
@@ -1171,7 +1172,8 @@ struct MubiCompanion {
             Gdiplus::SolidBrush label_brush(
                 primary ? (dark ? Gdiplus::Color(255, 36, 28, 22)
                                 : Gdiplus::Color(255, 248, 247, 243))
-                        : ink_brush);
+                        : (dark ? Gdiplus::Color(255, 241, 235, 223)
+                                : Gdiplus::Color(255, 38, 36, 31)));
             Gdiplus::StringFormat centered;
             centered.SetAlignment(Gdiplus::StringAlignmentCenter);
             centered.SetLineAlignment(Gdiplus::StringAlignmentCenter);
@@ -1209,7 +1211,8 @@ struct MubiCompanion {
                                check_box.Width, check_box.Height,
                                3.0f * dpf);
               Gdiplus::SolidBrush fill(
-                  checked ? accent_brush
+                  checked ? (dark ? Gdiplus::Color(255, 239, 170, 133)
+                                  : Gdiplus::Color(255, 167, 71, 44))
                           : Gdiplus::Color(255, 255, 255, 255));
               graphics.FillPath(&fill, &check_path);
               Gdiplus::Pen check_stroke(
@@ -1489,6 +1492,21 @@ struct MubiCompanion {
 
   // ---- petting + repertoire (issue #140) --------------------------------
 
+  // Public surface for the host menu (hwnd/Render stay private): the
+  // anchor rect for popping the menu at the pet, and the 只做了一部分
+  // checklist reveal from the tray's 逐项确认.
+  HWND NativeWindow() const { return hwnd; }
+  RECT WindowRect() const {
+    RECT rect{};
+    if (hwnd != nullptr) ::GetWindowRect(hwnd, &rect);
+    return rect;
+  }
+  void ExpandPartialChecklist() {
+    partial_expanded = true;
+    kind_checked.assign(kind_labels.size(), true);
+    Render(anim_state, current_message);
+  }
+
   void HandleCueClick(LONG x, LONG y) {
     // 2026-11-15 hit contract: the invitation card answers (做到了 / 稍后 /
     // 只做了一部分 / 确认所选 / × 隐藏这次), the ••• button opens the menu,
@@ -1511,7 +1529,7 @@ struct MubiCompanion {
       }
       if (!lay.bubble_checks.empty()) {
         for (std::size_t i = 0; i < lay.bubble_checks.size(); ++i) {
-          if (::PtInRect(&lay.bubble_checks[i], &point)) {
+          if (::PtInRect(&lay.bubble_checks[i], point)) {
             if (i < kind_checked.size()) kind_checked[i] = !kind_checked[i];
             Render(anim_state, current_message);
             return;

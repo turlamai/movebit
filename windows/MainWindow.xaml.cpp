@@ -1677,7 +1677,7 @@ void MainWindow::AcknowledgePendingKinds(
 // pet (TrackPopupMenu with the foreground quirk workaround for the
 // NOACTIVATE surface).
 void MainWindow::ShowCompanionMenu() {
-  if (companion_.hwnd == nullptr) return;
+  if (companion_.NativeWindow() == nullptr) return;
   HMENU menu = ::CreatePopupMenu();
   UINT id = 1;
   auto add = [&](wchar_t const* label, bool enabled) {
@@ -1723,15 +1723,14 @@ void MainWindow::ShowCompanionMenu() {
   add(winrt::to_hstring(l10n::t("tray.exit")).c_str(), TRUE);
   add(winrt::to_hstring(l10n::t("tray.backToDesktop")).c_str(), TRUE);
 
-  RECT pet_rect{};
-  ::GetWindowRect(companion_.hwnd, &pet_rect);
+  RECT const pet_rect = companion_.WindowRect();
   POINT anchor{pet_rect.left + (pet_rect.right - pet_rect.left) / 2,
                pet_rect.bottom - 20};
-  ::SetForegroundWindow(companion_.hwnd);
+  ::SetForegroundWindow(companion_.NativeWindow());
   UINT const chosen = ::TrackPopupMenu(
       menu, TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, anchor.x,
-      anchor.y, 0, companion_.hwnd, nullptr);
-  ::PostMessageW(companion_.hwnd, WM_NULL, 0, 0);
+      anchor.y, 0, companion_.NativeWindow(), nullptr);
+  ::PostMessageW(companion_.NativeWindow(), WM_NULL, 0, 0);
   ::DestroyMenu(menu);
   auto const newest_cue_id = [&]() -> std::int64_t {
     return model_.pending_cues.empty() ? 0 : model_.pending_cues.back().id;
@@ -1744,8 +1743,7 @@ void MainWindow::ShowCompanionMenu() {
       RefreshTrayState();
       break;
     case 4:
-      companion_.partial_expanded = true;
-      companion_.Render(companion_.anim_state, companion_.current_message);
+      companion_.ExpandPartialChecklist();
       break;
     case 5: SnoozeAllPending(); RefreshTrayState(); break;
     case 6: DismissAllPending(); RefreshTrayState(); break;

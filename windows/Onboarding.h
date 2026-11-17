@@ -88,9 +88,6 @@ struct OnboardingWizard {
       Finish();
     });
     root.Children().Append(start);
-                          false, "#A39B8D");
-    hint.HorizontalAlignment(HorizontalAlignment::Center);
-    root.Children().Append(hint);
 
     Controls::ScrollViewer scroll;
     scroll.Content(root);
