@@ -138,6 +138,12 @@ click_x=$((px + pw / 2)); click_y=$((py + ph * 35 / 100))
 xdotool mousemove "$click_x" "$click_y" click 1
 sleep 1.2
 read -r after_x after_y <<<"$(geometry)"
+# The reference is the pre-click position (the invitation's dock reflow
+# already moved the origin from the idle geometry when the bubble appeared).
+(( after_x == px && after_y == py )) || {
+  echo "petting moved the companion ($px,$py -> $after_x,$after_y)" >&2
+  exit 1
+}
 still_armed=0
 for _ in $(seq 1 20); do
   n="$(DISPLAY="$DISPLAY" "$out/xshape" "$win" 2>/dev/null || echo 0)"
@@ -147,10 +153,6 @@ for _ in $(seq 1 20); do
 done
 (( still_armed == 1 )) || {
   echo "petting settled the invitation — the 2026-11-15 contract forbids that (petting is companionship only)" >&2
-  exit 1
-}
-(( after_x == idle_x && after_y == idle_y )) || {
-  echo "petting moved the companion ($idle_x,$idle_y -> $after_x,$after_y)" >&2
   exit 1
 }
 echo "petting: invitation still waiting (armed, $after_x,$after_y) — no completion recorded"
