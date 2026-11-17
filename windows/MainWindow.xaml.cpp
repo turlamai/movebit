@@ -452,8 +452,9 @@ void MainWindow::HandleHealthCue(rivet_app::HealthCue const& cue) {
     for (auto const& kind : cue.kinds) {
       char const* symbol = kind_symbol(kind);
       companion_.kind_symbols.push_back(symbol);
-      companion_.kind_labels.push_back(winrt::to_hstring(l10n::t(
-          "invite.itemDone", {l10n::A(l10n::t(kind_word_key(symbol)))})));
+      companion_.kind_labels.push_back(
+          std::wstring(winrt::to_hstring(l10n::t(
+              "invite.itemDone", {l10n::A(l10n::t(kind_word_key(symbol)))}))));
       companion_.kind_checked.push_back(true);
     }
     companion_.partial_expanded = false;
@@ -1087,8 +1088,20 @@ void MainWindow::ApplyTexts() {
   InsightBusiestLabel().Text(winrt::to_hstring(l10n::t("insight.busiest")));
   SettingsTitle().Text(winrt::to_hstring(l10n::t("set.title")));
   SettingsIntro().Text(winrt::to_hstring(l10n::t("set.defaultsHint")));
-  companion_.later_tag_text =
-      winrt::to_hstring(l10n::t("tray.cueLater"));
+  companion_.later_tag_text = std::wstring(
+      winrt::to_hstring(l10n::t("invite.later")));
+  companion_.done_tag_text = std::wstring(
+      winrt::to_hstring(l10n::t("tray.cueDone")));
+  companion_.later_button_text = std::wstring(
+      winrt::to_hstring(l10n::t("invite.later")));
+  companion_.partial_text = std::wstring(
+      winrt::to_hstring(l10n::t("invite.partial")));
+  companion_.partial_confirm_text = std::wstring(
+      winrt::to_hstring(l10n::t("invite.partialConfirm")));
+  companion_.partial_note_text = std::wstring(
+      winrt::to_hstring(l10n::t("invite.partialNote")));
+  companion_.menu_button_text = std::wstring(
+      winrt::to_hstring(l10n::t("pet.menuOpen")));
   SetQuietHoursLabel().Text(winrt::to_hstring(l10n::t("set.quietHours")));
   SetQuietHoursHint().Text(winrt::to_hstring(l10n::t("set.quietHoursHint")));
   SetQuietStartLabel().Text(winrt::to_hstring(l10n::t("set.quietStart")));
@@ -1573,20 +1586,7 @@ void MainWindow::InitTray() {
     RefreshTrayState();
   };
   companion_.on_menu_opened = [this]() { ShowCompanionMenu(); };
-  companion_.later_tag_text =
-      winrt::to_hstring(l10n::t("invite.later"));
-  companion_.done_tag_text =
-      winrt::to_hstring(l10n::t("tray.cueDone"));
-  companion_.later_button_text =
-      winrt::to_hstring(l10n::t("invite.later"));
-  companion_.partial_text =
-      winrt::to_hstring(l10n::t("invite.partial"));
-  companion_.partial_confirm_text =
-      winrt::to_hstring(l10n::t("invite.partialConfirm"));
-  companion_.partial_note_text =
-      winrt::to_hstring(l10n::t("invite.partialNote"));
-  companion_.menu_button_text =
-      winrt::to_hstring(l10n::t("pet.menuOpen"));
+
   tray_.on_focus_toggle = [this]() {
     auto const next = !model_.quiet;
     (void)api_->set_quiet_async(next, [](rivet_app::Result<void>) {});
