@@ -2945,8 +2945,9 @@ void present(int state, std::string const& message, GtkApplication* app,
     gtk_box_append(GTK_BOX(body_box), bubble);
     s.mubi_bubble = GTK_BOX(bubble);
     // The bubble sits ABOVE the character (prototype resident-companion;
-    // the macOS panel grows the same way).
-    gtk_box_reorder_child(GTK_BOX(body_box), bubble, 0);
+    // the macOS panel grows the same way). GTK4 has no box reorder: insert
+    // at the head instead.
+    gtk_box_insert_child_after(GTK_BOX(body_box), bubble, nullptr);
 
     // The ••• menu button under the pet: the same compact menu as the tray.
     auto* menu_button = gtk_button_new_from_icon_name("view-more-symbolic");
