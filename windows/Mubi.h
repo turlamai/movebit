@@ -343,6 +343,21 @@ struct MubiCompanion {
     if (proximity_timer) proximity_timer.Stop();
   }
 
+  // Public surface for the host menu (hwnd/Render stay private): the
+  // anchor rect for popping the menu at the pet, and the 只做了一部分
+  // checklist reveal from the tray's 逐项确认.
+  HWND NativeWindow() const { return hwnd; }
+  RECT WindowRect() const {
+    RECT rect{};
+    if (hwnd != nullptr) ::GetWindowRect(hwnd, &rect);
+    return rect;
+  }
+  void ExpandPartialChecklist() {
+    partial_expanded = true;
+    kind_checked.assign(kind_labels.size(), true);
+    Render(anim_state, current_message);
+  }
+
  private:
   std::wstring current_message;
 
@@ -1491,21 +1506,6 @@ struct MubiCompanion {
   }
 
   // ---- petting + repertoire (issue #140) --------------------------------
-
-  // Public surface for the host menu (hwnd/Render stay private): the
-  // anchor rect for popping the menu at the pet, and the 只做了一部分
-  // checklist reveal from the tray's 逐项确认.
-  HWND NativeWindow() const { return hwnd; }
-  RECT WindowRect() const {
-    RECT rect{};
-    if (hwnd != nullptr) ::GetWindowRect(hwnd, &rect);
-    return rect;
-  }
-  void ExpandPartialChecklist() {
-    partial_expanded = true;
-    kind_checked.assign(kind_labels.size(), true);
-    Render(anim_state, current_message);
-  }
 
   void HandleCueClick(LONG x, LONG y) {
     // 2026-11-15 hit contract: the invitation card answers (做到了 / 稍后 /

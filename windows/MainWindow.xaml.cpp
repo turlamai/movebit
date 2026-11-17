@@ -388,6 +388,11 @@ void MainWindow::HandleEvent(std::string const& name, rivet::Value const& value)
   }
 }
 
+// Free helpers used by HandleHealthCue (defined near RefreshTrayState).
+char const* kind_symbol(rivet_app::ReminderKind kind);
+char const* kind_word_key(char const* symbol);
+std::string InvitationTitle(std::vector<rivet_app::ReminderKind> const& kinds);
+
 void MainWindow::HandleHealthCue(rivet_app::HealthCue const& cue) {
   // The backend planned the delivery; the host only renders it. The Mubi
   // companion is the v1 default; the R1 cards stay as the notification
