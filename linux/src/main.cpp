@@ -2030,10 +2030,10 @@ void build_main_content() {
 void apply_global_css() {
   auto* provider = gtk_css_provider_new();
   gtk_css_provider_load_from_string(provider, R"CSS(
-    // 2026-11-15 tokens (design/DESIGN.md 视觉规范): window #F8F7F3,
-    // titlebar #F0EEE8, ink #26241F/#655F55, accent #A7472C; dark pairs
-    // (#282622/#302D28/#F1EBDF/#C0B5A4/#EFAA85) under the .dark class the
-    // host sets from the system color scheme.
+    /* 2026-11-15 tokens (design/DESIGN.md): window #F8F7F3, titlebar
+       #F0EEE8, ink #26241F/#655F55, accent #A7472C; dark pairs
+       (#282622/#302D28/#F1EBDF/#C0B5A4/#EFAA85) under the .dark class.
+       GTK CSS supports no // comments. */
     .app-bg { background: #F8F7F3; }
     .titlebar-bg { background: #F0EEE8; }
     .dark .app-bg { background: #282622; }
@@ -3109,6 +3109,10 @@ void set_interactive(bool interactive) {
           GTK_WIDGET(g_state.mubi_bubble),
           GTK_WIDGET(g_state.mubi_menu_button)}) {
       if (widget == nullptr) continue;
+      // Hidden surfaces (the invitation while nothing is due, the caption
+      // while quiet) keep a stale allocation — they must not contribute
+      // rectangles to the input region.
+      if (!gtk_widget_get_visible(widget)) continue;
       graphene_rect_t bounds;
       if (!gtk_widget_compute_bounds(widget,
                                      GTK_WIDGET(g_state.mubi_window),
