@@ -135,8 +135,6 @@ struct MainWindow : MainWindowT<MainWindow> {
   void AcknowledgePendingKinds(std::vector<std::string> const& kinds);
   void ShowCompanionMenu();
   void ConfirmQuit();
-  void Segment_Click(IInspectable const& sender, RoutedEventArgs const& args);
-  void RefreshSegmentTitles();
 };
 
 }  // namespace winrt::RivetHost::implementation
