@@ -17,6 +17,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   MainWindow();
 
   // XAML event handlers.
+  void Segment_Click(winrt::Windows::Foundation::IInspectable const& sender,
+                     Microsoft::UI::Xaml::RoutedEventArgs const& args);
   void Status_Click(winrt::Windows::Foundation::IInspectable const& sender,
                     Microsoft::UI::Xaml::RoutedEventArgs const& args);
   void HistRange_SelectionChanged(
@@ -124,6 +126,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   // a wedged backend (the backend's own watchdog normally fires first).
   unsigned long long update_download_start_tick_ = 0;
 
+  void RefreshSegmentTitles();
   void InitTray();
   void HideToTray();
   void BringToForeground();
