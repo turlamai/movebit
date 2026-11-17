@@ -90,24 +90,30 @@ read -r idle_x idle_y <<<"$(geometry)"
 [[ "$idle_x" -gt 0 && "$idle_y" -gt 0 ]] || { echo "invalid home geometry" >&2; exit 1; }
 
 # The hook delivers the cue at ~2.5 s. The 2026-11-15 contract: the
-# invitation attaches to the pet — the companion must NOT approach the
-# centre, and the input region must arm (buttons + checklist reachable).
-moved=0
-armed=0
+# invitation attaches to the pet — the companion must NOT travel to the
+# work-area centre (the invitation bubble legitimately reflows the window
+# around its dock, but the pet stays in its corner neighborhood), and the
+# input region must arm (buttons + checklist reachable).
+traveled=0
 start=$(date +%s)
 while (( $(date +%s) - start < 8 )); do
   read -r x y <<<"$(geometry)"
-  if (( x < idle_x - 40 || y < idle_y - 40 || y > idle_y + 40 )); then
-    moved=1
+  geo="$(xdotool getwindowgeometry --shell "$win")"
+  w="$(awk -F= '/^WIDTH=/{print $2}' <<<"$geo")"
+  h="$(awk -F= '/^HEIGHT=/{print $2}' <<<"$geo")"
+  cx=$((x + w / 2)); cy=$((y + h / 2))
+  # Central third of the 1280x900 Xvfb work area = the retired visit target.
+  if (( cx > 420 && cx < 860 && cy > 230 && cy < 670 )); then
+    traveled=1
+    break
   fi
-  if (( moved == 1 )); then break; fi
   sleep .05
 done
-(( moved == 0 )) || {
-  echo "Mubi traveled on a due cue ($idle_x,$idle_y -> $x,$y); the 2026-11-15 contract keeps the invitation at the pet" >&2
+(( traveled == 0 )) || {
+  echo "Mubi traveled to the work-area centre on a due cue (centre $cx,$cy); the 2026-11-15 contract keeps the invitation at the pet" >&2
   exit 1
 }
-echo "no-visit: companion stayed at home $idle_x,$idle_y with the cue due"
+echo "no-visit: companion stayed near its dock with the cue due"
 
 # Arm the region: rest the pointer on the window, the input shape grows
 # beyond the empty (pointer-through) state while the invitation waits.
