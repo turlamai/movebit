@@ -185,14 +185,30 @@ struct MubiCompanion {
   bool dragging = false;
   std::function<void(std::int64_t, std::int64_t)> on_placement_changed;
 
-  // Persistent invitation + petting + repertoire (issue #140): while a due
-  // cue waits, the character is pettable (tap = Done) and a Later tag rides
-  // the capsule; between reminders Mubi plays by itself near its dock.
+  // The invitation attached to the pet (2026-11-15 contract): composed
+  // heading, 做到了/稍后, the 只做了一部分 per-kind checklist with 确认所选,
+  // × hides this invitation, and a ••• menu button under the pet. The pet
+  // surface itself NEVER records completion — on_pet is companionship only.
   bool attending = false;
   std::function<void()> on_pet;
   std::function<void()> on_later;
-  // Localized "Later" label for the bubble tag; the host keeps it current.
+  std::function<void()> on_done_all;
+  std::function<void()> on_hide_this;
+  std::function<void(std::vector<std::string> const&)> on_partial_confirm;
+  std::function<void()> on_menu_opened;
+  // Host-supplied surface text (localized; kept current on every Show).
+  std::wstring bubble_title = L"";
   std::wstring later_tag_text = L"Later";
+  std::wstring done_tag_text = L"Done";
+  std::wstring later_button_text = L"Later";
+  std::wstring partial_text = L"Only did some of these";
+  std::wstring partial_confirm_text = L"Confirm selected";
+  std::wstring partial_note_text = L"Unchecked items will wait for you.";
+  std::wstring menu_button_text = L"Mubi menu";
+  std::vector<std::wstring> kind_labels;         // checklist rows
+  std::vector<std::string> kind_symbols;         // wire strings, same order
+  std::vector<bool> kind_checked;                // all true on rebuild
+  bool partial_expanded = false;
   int act = 0;  // 0 none, 1 roll, 2 squish, 3 teary, 4 hop
   double act_progress = 0.0;
   double act_total_ticks = 1.0;
@@ -327,6 +343,21 @@ struct MubiCompanion {
     if (proximity_timer) proximity_timer.Stop();
   }
 
+  // Public surface for the host menu (hwnd/Render stay private): the
+  // anchor rect for popping the menu at the pet, and the 只做了一部分
+  // checklist reveal from the tray's 逐项确认.
+  HWND NativeWindow() const { return hwnd; }
+  RECT WindowRect() const {
+    RECT rect{};
+    if (hwnd != nullptr) ::GetWindowRect(hwnd, &rect);
+    return rect;
+  }
+  void ExpandPartialChecklist() {
+    partial_expanded = true;
+    kind_checked.assign(kind_labels.size(), true);
+    Render(anim_state, current_message);
+  }
+
  private:
   std::wstring current_message;
 
@@ -447,9 +478,17 @@ struct MubiCompanion {
   // surface coordinates.
   struct CueCardLayout {
     SIZE surface{0, 0};
-    RECT pet{0, 0, 0, 0};      // the character grid (pet = Done, drag handle)
-    RECT capsule{0, 0, 0, 0};  // message capsule (display only)
+    RECT pet{0, 0, 0, 0};      // the character grid (companionship + drag)
+    RECT capsule{0, 0, 0, 0};  // mood caption (display only)
     RECT later{0, 0, 0, 0};    // empty when no Later pill is shown
+    RECT menu{0, 0, 0, 0};     // ••• button under the pet
+    RECT bubble{0, 0, 0, 0};   // invitation card (attending only)
+    RECT bubble_close{0, 0, 0, 0};
+    RECT bubble_done{0, 0, 0, 0};
+    RECT bubble_later{0, 0, 0, 0};
+    RECT bubble_partial{0, 0, 0, 0};   // 只做了一部分 disclosure row
+    RECT bubble_confirm{0, 0, 0, 0};   // 确认所选 (expanded only)
+    std::vector<RECT> bubble_checks;   // per-kind checkboxes (expanded only)
   };
 
   CueCardLayout ComputeLayout() const {
@@ -461,13 +500,138 @@ struct MubiCompanion {
     float const margin = 4.0f * static_cast<float>(dp);
     float const grid_w = static_cast<float>(120.0 * s * dp);
     float const grid_h = static_cast<float>(140.0 * s * dp);
+    float const menu_w = 36.0f * static_cast<float>(dp);
+    float const menu_h = 28.0f * static_cast<float>(dp);
+    if (attending && !bubble_title.empty()) {
+      // The invitation attached to the pet (2026-11-15 contract): a 248 dp
+      // card above the character — heading + ×, 做到了/稍后, the 只做了一
+      // 部分 checklist (expanded on demand) — and the ••• button below.
+      HDC screen = ::GetDC(nullptr);
+      {
+        Gdiplus::Graphics graphics(screen);
+        Gdiplus::FontFamily family(IsCjkText(bubble_title)
+                                       ? L"Microsoft YaHei UI" : L"Segoe UI");
+        Gdiplus::Font heading_font(
+            &family, static_cast<float>(14 * dp), Gdiplus::FontStyleBold,
+            Gdiplus::UnitPixel);
+        Gdiplus::Font small_font(
+            &family, static_cast<float>(11.5 * dp), Gdiplus::FontStyleRegular,
+            Gdiplus::UnitPixel);
+        Gdiplus::StringFormat fmt;
+        fmt.SetAlignment(Gdiplus::StringAlignmentNear);
+        fmt.SetLineAlignment(Gdiplus::StringAlignmentNear);
+        float const card_w = 248.0f * static_cast<float>(dp);
+        float const pad = 16.0f * static_cast<float>(dp);
+        float const close_sz = 22.0f * static_cast<float>(dp);
+        float const text_w = card_w - 2 * pad - close_sz;
+        Gdiplus::RectF head_bounds(0, 0, 0, 0);
+        graphics.MeasureString(bubble_title.c_str(), -1, &heading_font,
+                               Gdiplus::RectF(0, 0, text_w,
+                                              2.0f * heading_font.GetHeight(&graphics)),
+                               &fmt, &head_bounds);
+        float const btn_h = 32.0f * static_cast<float>(dp);
+        float const row_gap = 10.0f * static_cast<float>(dp);
+
+        float y = pad;
+        float const head_h = head_bounds.Height + 2.0f * static_cast<float>(dp);
+        y += head_h + row_gap;
+        y += btn_h + row_gap;                       // 做到了 / 稍后 row
+        float const partial_row_h =
+            13.0f * static_cast<float>(dp) * 1.4f;
+        y += partial_row_h + row_gap;               // disclosure row
+        float body_h = y + pad;
+        if (partial_expanded) {
+          float const check_h = 13.0f * static_cast<float>(dp) * 1.7f;
+          y += kind_labels.size() * check_h + row_gap;
+          y += btn_h * 0.9f + row_gap;              // 确认所选 row
+          Gdiplus::RectF note_bounds(0, 0, 0, 0);
+          graphics.MeasureString(partial_note_text.c_str(), -1, &small_font,
+                                 Gdiplus::RectF(0, 0, text_w,
+                                                2.0f * small_font.GetHeight(&graphics)),
+                                 &fmt, &note_bounds);
+          y += note_bounds.Height + row_gap;        // note line
+          body_h = y + pad;
+        }
+        float const grid_total_h = grid_h + menu_h + 8.0f * static_cast<float>(dp);
+        float const surface_w = std::max(grid_w, card_w) + 2 * margin;
+        float const surface_h = body_h + 8.0f * static_cast<float>(dp)
+                                + grid_total_h + 2 * margin;
+        lay.surface = SIZE{static_cast<int>(surface_w),
+                           static_cast<int>(surface_h)};
+        // The bubble sits ABOVE the character; the pet stays anchored at the
+        // bottom of the surface (AppKit parity: the card grows upward).
+        float const cx = surface_w / 2.0f;
+        lay.bubble = RECT{static_cast<LONG>(cx - card_w / 2),
+                          static_cast<LONG>(margin),
+                          static_cast<LONG>(cx + card_w / 2),
+                          static_cast<LONG>(margin + body_h)};
+        float const by = margin;
+        lay.bubble_close = RECT{
+            static_cast<LONG>(lay.bubble.right - pad - close_sz),
+            static_cast<LONG>(by + pad - 2),
+            static_cast<LONG>(lay.bubble.right - pad + 2),
+            static_cast<LONG>(by + pad - 2 + close_sz)};
+        float const btn_row_y = by + pad + head_h + row_gap;
+        float const done_w = 78.0f * static_cast<float>(dp);
+        float const later_w = 62.0f * static_cast<float>(dp);
+        lay.bubble_done = RECT{
+            static_cast<LONG>(lay.bubble.left + pad), static_cast<LONG>(btn_row_y),
+            static_cast<LONG>(lay.bubble.left + pad + done_w),
+            static_cast<LONG>(btn_row_y + btn_h)};
+        lay.bubble_later = RECT{
+            static_cast<LONG>(lay.bubble_done.right + 10.0f * dp),
+            static_cast<LONG>(btn_row_y),
+            static_cast<LONG>(lay.bubble_done.right + 10.0f * dp + later_w),
+            static_cast<LONG>(btn_row_y + btn_h)};
+        float const partial_y = btn_row_y + btn_h + row_gap;
+        lay.bubble_partial = RECT{
+            static_cast<LONG>(lay.bubble.left + pad), static_cast<LONG>(partial_y),
+            static_cast<LONG>(lay.bubble.right - pad),
+            static_cast<LONG>(partial_y + partial_row_h)};
+        if (partial_expanded) {
+          float const check_y = partial_y + partial_row_h + row_gap;
+          float const check_h = 13.0f * static_cast<float>(dp) * 1.7f;
+          for (std::size_t i = 0; i < kind_labels.size(); ++i) {
+            lay.bubble_checks.push_back(RECT{
+                static_cast<LONG>(lay.bubble.left + pad),
+                static_cast<LONG>(check_y + i * check_h),
+                static_cast<LONG>(lay.bubble.right - pad),
+                static_cast<LONG>(check_y + (i + 1) * check_h)});
+          }
+          float const confirm_y = check_y +
+              kind_labels.size() * check_h + row_gap;
+          lay.bubble_confirm = RECT{
+              static_cast<LONG>(lay.bubble.left + pad), static_cast<LONG>(confirm_y),
+              static_cast<LONG>(lay.bubble.left + pad + 118.0f * dp),
+              static_cast<LONG>(confirm_y + btn_h * 0.9f)};
+        }
+        // Pet + menu button below the card.
+        float const card_bottom = margin + body_h;
+        lay.pet = RECT{static_cast<LONG>(cx - grid_w / 2),
+                       static_cast<LONG>(card_bottom + 8.0f * dp),
+                       static_cast<LONG>(cx + grid_w / 2),
+                       static_cast<LONG>(card_bottom + 8.0f * dp + grid_h)};
+        lay.menu = RECT{static_cast<LONG>(cx - menu_w / 2),
+                        static_cast<LONG>(lay.pet.bottom + 4.0f * dp),
+                        static_cast<LONG>(cx + menu_w / 2),
+                        static_cast<LONG>(lay.pet.bottom + 4.0f * dp + menu_h)};
+      }
+      ::ReleaseDC(nullptr, screen);
+      return lay;
+    }
     if (current_message.empty()) {
-      // Bare character: the plain 120x140 design grid with a small margin.
+      // Bare character + the ••• button: the plain 120x140 design grid.
       lay.surface = SIZE{static_cast<int>(grid_w + 2 * margin),
-                         static_cast<int>(grid_h + 2 * margin)};
+                         static_cast<int>(grid_h + 2 * margin + menu_h
+                                          + 8.0f * static_cast<float>(dp))};
       lay.pet = RECT{static_cast<LONG>(margin), static_cast<LONG>(margin),
                      static_cast<LONG>(margin + grid_w),
                      static_cast<LONG>(margin + grid_h)};
+      float const cx = (grid_w + 2 * margin) / 2.0f;
+      lay.menu = RECT{static_cast<LONG>(cx - menu_w / 2),
+                      static_cast<LONG>(margin + grid_h + 4.0f * dp),
+                      static_cast<LONG>(cx + menu_w / 2),
+                      static_cast<LONG>(margin + grid_h + 4.0f * dp + menu_h)};
       return lay;
     }
 
@@ -538,6 +702,15 @@ struct MubiCompanion {
                          static_cast<LONG>(cx + later_w / 2),
                          static_cast<LONG>(y4 + later_h)};
       }
+      float const menu_y = y4 + later_h + 4.0f * static_cast<float>(dp);
+      lay.menu = RECT{static_cast<LONG>(cx - menu_w / 2),
+                      static_cast<LONG>(menu_y),
+                      static_cast<LONG>(cx + menu_w / 2),
+                      static_cast<LONG>(menu_y + menu_h)};
+      lay.surface = SIZE{static_cast<int>(surface_w),
+                         static_cast<int>(y4 + later_h + menu_h
+                                          + 4.0f * static_cast<float>(dp)
+                                          + margin)};
     }
     ::ReleaseDC(nullptr, screen);
     return lay;
@@ -619,6 +792,7 @@ struct MubiCompanion {
     double const s = body_height / 108.0;
     UINT dpi = ::GetDpiForWindow(hwnd);
     double const dp = static_cast<double>(dpi) / 96.0;
+    float const dpf = static_cast<float>(dp);
     CueCardLayout const lay = ComputeLayout();
     // UpdateLayeredWindow takes a non-const SIZE* (it writes the applied
     // size back), so the layout surface is copied.
@@ -685,13 +859,10 @@ struct MubiCompanion {
       char const* body_deep = "#E8D7BE";
       char const* shadow_hex = "#D8C8B5";
       char const* ink_hex = "#2D2A28";
+      // 暗色不反相 (2026-11-15 contract): the character keeps its ivory
+      // body in dark mode; only the shadow under it deepens for grounding.
       if (dark) {
-        fin_hex = "#E4D6BC";
-        body_light = "#EDE2CC";
-        body_mid = "#E4D6BC";
-        body_deep = "#CDBB9F";
-        shadow_hex = "#5A5245";
-        ink_hex = "#F1EEE7";
+        shadow_hex = "#3A3126";
       }
 
       // Fins.
@@ -836,7 +1007,6 @@ struct MubiCompanion {
       // like the macOS MubiView card. Painted into the same alpha surface —
       // no second window anywhere.
       if (!message.empty()) {
-        float const dpf = static_cast<float>(dp);
         // GDI+ has no rounded-rect path primitive: four quarter arcs.
         // (GraphicsPath cannot be returned by value — its copy ctor is
         // protected — so the lambda fills a caller-owned path.)
@@ -913,6 +1083,238 @@ struct MubiCompanion {
           tag_format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
           graphics.DrawString(later_tag_text.c_str(), -1, &tag_font, tag_box,
                               &tag_format, &tag_text_brush);
+        }
+      }
+
+      // The invitation bubble attached to the pet (2026-11-15 contract).
+      if (attending && !bubble_title.empty() &&
+          lay.bubble.right > lay.bubble.left) {
+        auto add_rounded_rect = [](Gdiplus::GraphicsPath& p, float x, float y,
+                                   float w, float h, float r) {
+          float const d = std::min(2.0f * r, 2.0f * std::min(w, h));
+          p.AddArc(x, y, d, d, 180, 90);
+          p.AddArc(x + w - d, y, d, d, 270, 90);
+          p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+          p.AddArc(x, y + h - d, d, d, 90, 90);
+          p.CloseFigure();
+        };
+        Gdiplus::RectF card_box(
+            static_cast<float>(lay.bubble.left),
+            static_cast<float>(lay.bubble.top),
+            static_cast<float>(lay.bubble.right - lay.bubble.left),
+            static_cast<float>(lay.bubble.bottom - lay.bubble.top));
+        {
+          // Window surfaces from the contract palette (no inversion needed —
+          // both themes pair with the same character colors).
+          Gdiplus::SolidBrush card_brush(dark ? argb(246, "#282622")
+                                              : argb(250, "#F8F7F3"));
+          Gdiplus::GraphicsPath card_path;
+          add_rounded_rect(card_path, card_box.X, card_box.Y, card_box.Width,
+                           card_box.Height, 14.0f * dpf);
+          graphics.FillPath(&card_brush, &card_path);
+          Gdiplus::Pen card_stroke(dark ? Gdiplus::Color(26, 255, 255, 255)
+                                        : Gdiplus::Color(26, 0, 0, 0),
+                                   1.0f * dpf);
+          graphics.DrawPath(&card_stroke, &card_path);
+        }
+        Gdiplus::FontFamily family(IsCjkText(bubble_title)
+                                       ? L"Microsoft YaHei UI" : L"Segoe UI");
+        Gdiplus::Font heading_font(&family, 14.0f * dpf,
+                                   Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::Font small_font(&family, 11.5f * dpf,
+                                 Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::StringFormat fmt;
+        fmt.SetAlignment(Gdiplus::StringAlignmentNear);
+        fmt.SetLineAlignment(Gdiplus::StringAlignmentNear);
+        Gdiplus::SolidBrush ink_brush(dark ? argb(255, "#F1EBDF")
+                                           : argb(255, "#26241F"));
+        Gdiplus::SolidBrush muted_brush(dark ? argb(255, "#C0B5A4")
+                                             : argb(255, "#655F55"));
+        Gdiplus::SolidBrush accent_brush(dark ? argb(255, "#EFAA85")
+                                              : argb(255, "#A7472C"));
+        // Heading (up to two wrapped lines).
+        {
+          float const pad = 16.0f * dpf;
+          float const close_sz = 22.0f * dpf;
+          Gdiplus::RectF head_box(
+              card_box.X + pad, card_box.Y + pad,
+              card_box.Width - 2 * pad - close_sz,
+              card_box.Height);
+          graphics.DrawString(bubble_title.c_str(), -1, &heading_font,
+                              head_box, &fmt, &ink_brush);
+          // × close: a 22 dp circle with an x mark.
+          Gdiplus::RectF close_box(
+              static_cast<float>(lay.bubble_close.left),
+              static_cast<float>(lay.bubble_close.top),
+              static_cast<float>(lay.bubble_close.right - lay.bubble_close.left),
+              static_cast<float>(lay.bubble_close.bottom - lay.bubble_close.top));
+          graphics.FillEllipse(&muted_brush, close_box.X, close_box.Y,
+                               close_box.Width, close_box.Height);
+          Gdiplus::Pen xpen(dark ? argb(255, "#282622") : argb(255, "#F8F7F3"),
+                            2.0f * dpf);
+          float const inset = 7.0f * dpf;
+          graphics.DrawLine(&xpen, close_box.X + inset, close_box.Y + inset,
+                            close_box.X + close_box.Width - inset,
+                            close_box.Y + close_box.Height - inset);
+          graphics.DrawLine(&xpen, close_box.X + close_box.Width - inset,
+                            close_box.Y + inset, close_box.X + inset,
+                            close_box.Y + close_box.Height - inset);
+        }
+        // 做好了 (primary) + 稍后 buttons.
+        {
+          auto draw_button = [&](RECT const& r, std::wstring const& label,
+                                 bool primary) {
+            Gdiplus::RectF box(
+                static_cast<float>(r.left), static_cast<float>(r.top),
+                static_cast<float>(r.right - r.left),
+                static_cast<float>(r.bottom - r.top));
+            Gdiplus::GraphicsPath btn_path;
+            add_rounded_rect(btn_path, box.X, box.Y, box.Width, box.Height,
+                             8.0f * dpf);
+            // SolidBrush has no copy ctor: construct the fill fresh.
+            Gdiplus::SolidBrush fill(
+                primary ? (dark ? Gdiplus::Color(255, 239, 170, 133)
+                                : Gdiplus::Color(255, 167, 71, 44))
+                        : (dark ? Gdiplus::Color(255, 58, 53, 46)
+                                : Gdiplus::Color(255, 255, 255, 255)));
+            graphics.FillPath(&fill, &btn_path);
+            if (!primary) {
+              Gdiplus::Pen stroke(dark ? Gdiplus::Color(40, 255, 255, 255)
+                                       : Gdiplus::Color(36, 0, 0, 0),
+                                  1.0f * dpf);
+              graphics.DrawPath(&stroke, &btn_path);
+            }
+            Gdiplus::SolidBrush label_brush(
+                primary ? (dark ? Gdiplus::Color(255, 36, 28, 22)
+                                : Gdiplus::Color(255, 248, 247, 243))
+                        : (dark ? Gdiplus::Color(255, 241, 235, 223)
+                                : Gdiplus::Color(255, 38, 36, 31)));
+            Gdiplus::StringFormat centered;
+            centered.SetAlignment(Gdiplus::StringAlignmentCenter);
+            centered.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            graphics.DrawString(label.c_str(), -1, &small_font, box,
+                                &centered, &label_brush);
+          };
+          draw_button(lay.bubble_done, done_tag_text, true);
+          draw_button(lay.bubble_later, later_button_text, false);
+        }
+        // 只做了一部分 disclosure row (or the expanded checklist).
+        {
+          Gdiplus::RectF row_box(
+              static_cast<float>(lay.bubble_partial.left),
+              static_cast<float>(lay.bubble_partial.top),
+              static_cast<float>(lay.bubble_partial.right - lay.bubble_partial.left),
+              static_cast<float>(lay.bubble_partial.bottom - lay.bubble_partial.top));
+          std::wstring const row_text = partial_expanded
+                                            ? partial_confirm_text
+                                            : partial_text + L"  +";
+          graphics.DrawString(row_text.c_str(), -1, &small_font, row_box,
+                              &fmt, &muted_brush);
+        }
+        if (partial_expanded) {
+          for (std::size_t i = 0; i < lay.bubble_checks.size(); ++i) {
+            RECT const& r = lay.bubble_checks[i];
+            bool const checked = i < kind_checked.size() && kind_checked[i];
+            float const box_d = 15.0f * dpf;
+            float const cxp = static_cast<float>(r.left) + 2.0f * dpf;
+            float const cyp = (static_cast<float>(r.top) +
+                               static_cast<float>(r.bottom)) / 2.0f - box_d / 2;
+            Gdiplus::RectF check_box(cxp, cyp, box_d, box_d);
+            {
+              Gdiplus::GraphicsPath check_path;
+              add_rounded_rect(check_path, check_box.X, check_box.Y,
+                               check_box.Width, check_box.Height,
+                               3.0f * dpf);
+              Gdiplus::SolidBrush fill(
+                  checked ? (dark ? Gdiplus::Color(255, 239, 170, 133)
+                                  : Gdiplus::Color(255, 167, 71, 44))
+                          : Gdiplus::Color(255, 255, 255, 255));
+              graphics.FillPath(&fill, &check_path);
+              Gdiplus::Pen check_stroke(
+                  dark ? Gdiplus::Color(60, 255, 255, 255)
+                       : Gdiplus::Color(60, 0, 0, 0),
+                  1.0f * dpf);
+              graphics.DrawPath(&check_stroke, &check_path);
+              if (checked) {
+                Gdiplus::Pen tick(dark ? argb(255, "#241C16")
+                                       : argb(255, "#F8F7F3"),
+                                  2.0f * dpf);
+                graphics.DrawLine(&tick, check_box.X + 3.0f * dpf,
+                                  check_box.Y + 8.0f * dpf,
+                                  check_box.X + 6.5f * dpf,
+                                  check_box.Y + 11.5f * dpf);
+                graphics.DrawLine(&tick, check_box.X + 6.5f * dpf,
+                                  check_box.Y + 11.5f * dpf,
+                                  check_box.X + 12.0f * dpf,
+                                  check_box.Y + 4.0f * dpf);
+              }
+            }
+            Gdiplus::RectF label_box(check_box.X + check_box.Width + 6.0f * dpf,
+                                     static_cast<float>(r.top),
+                                     static_cast<float>(r.right - r.left) -
+                                         check_box.Width - 8.0f * dpf,
+                                     static_cast<float>(r.bottom - r.top));
+            graphics.DrawString(kind_labels[i].c_str(), -1, &small_font,
+                                label_box, &fmt, &ink_brush);
+          }
+          if (lay.bubble_confirm.right > lay.bubble_confirm.left) {
+            Gdiplus::RectF confirm_box(
+                static_cast<float>(lay.bubble_confirm.left),
+                static_cast<float>(lay.bubble_confirm.top),
+                static_cast<float>(lay.bubble_confirm.right - lay.bubble_confirm.left),
+                static_cast<float>(lay.bubble_confirm.bottom - lay.bubble_confirm.top));
+            Gdiplus::GraphicsPath confirm_path;
+            add_rounded_rect(confirm_path, confirm_box.X, confirm_box.Y,
+                             confirm_box.Width, confirm_box.Height,
+                             8.0f * dpf);
+            graphics.FillPath(&accent_brush, &confirm_path);
+            Gdiplus::SolidBrush confirm_label(
+                dark ? Gdiplus::Color(255, 36, 28, 22)
+                     : Gdiplus::Color(255, 248, 247, 243));
+            Gdiplus::StringFormat centered;
+            centered.SetAlignment(Gdiplus::StringAlignmentCenter);
+            centered.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            graphics.DrawString(partial_confirm_text.c_str(), -1, &small_font,
+                                confirm_box, &centered, &confirm_label);
+            Gdiplus::RectF note_box(
+                static_cast<float>(lay.bubble.left) + 16.0f * dpf,
+                confirm_box.Y + confirm_box.Height + 10.0f * dpf,
+                card_box.Width - 32.0f * dpf,
+                2.0f * small_font.GetHeight(&graphics));
+            graphics.DrawString(partial_note_text.c_str(), -1, &small_font,
+                                note_box, &fmt, &muted_brush);
+          }
+        }
+      }
+
+      // The ••• menu button under the pet (the same compact menu as the
+      // tray; a stadium pill with three dots).
+      if (lay.menu.right > lay.menu.left) {
+        Gdiplus::RectF menu_box(
+            static_cast<float>(lay.menu.left), static_cast<float>(lay.menu.top),
+            static_cast<float>(lay.menu.right - lay.menu.left),
+            static_cast<float>(lay.menu.bottom - lay.menu.top));
+        Gdiplus::GraphicsPath menu_path;
+        {
+          float const r_cap = menu_box.Height;
+          menu_path.AddArc(menu_box.X, menu_box.Y, r_cap, r_cap, 180, 180);
+          menu_path.AddArc(menu_box.X + menu_box.Width - r_cap, menu_box.Y,
+                           r_cap, r_cap, 270, 180);
+          menu_path.CloseFigure();
+        }
+        Gdiplus::SolidBrush menu_brush(dark ? Gdiplus::Color(166, 40, 38, 34)
+                                            : Gdiplus::Color(166, 248, 247, 243));
+        graphics.FillPath(&menu_brush, &menu_path);
+        Gdiplus::Pen menu_stroke(dark ? Gdiplus::Color(31, 255, 255, 255)
+                                      : Gdiplus::Color(26, 0, 0, 0),
+                                 1.0f * dpf);
+        graphics.DrawPath(&menu_stroke, &menu_path);
+        Gdiplus::SolidBrush dots(dark ? argb(255, "#C0B5A4")
+                                      : argb(255, "#655F55"));
+        float const mid_y = menu_box.Y + menu_box.Height / 2;
+        for (int i = -1; i <= 1; ++i) {
+          graphics.FillEllipse(&dots, menu_box.X + menu_box.Width / 2 + i * 6.0f * dpf - 1.6f * dpf,
+                               mid_y - 1.6f * dpf, 3.2f * dpf, 3.2f * dpf);
         }
       }
     }
@@ -1106,15 +1508,64 @@ struct MubiCompanion {
   // ---- petting + repertoire (issue #140) --------------------------------
 
   void HandleCueClick(LONG x, LONG y) {
-    // Same layout the painter used: character = pet/Done, the Later pill
-    // below the capsule = snooze. A click on the capsule or empty surface
-    // answers nothing — only an explicit answer (pet, tag, tray) ends the
-    // invitation.
+    // 2026-11-15 hit contract: the invitation card answers (做到了 / 稍后 /
+    // 只做了一部分 / 确认所选 / × 隐藏这次), the ••• button opens the menu,
+    // and the character surface is companionship ONLY — a pat never
+    // completes anything. The capsule and empty surface answer nothing.
     CueCardLayout const lay = ComputeLayout();
     POINT const point{x, y};
-    if (::PtInRect(&lay.later, point)) {
-      if (on_later) on_later();
-    } else if (::PtInRect(&lay.pet, point)) {
+    if (attending && !bubble_title.empty()) {
+      if (::PtInRect(&lay.bubble_close, point)) {
+        if (on_hide_this) on_hide_this();
+        return;
+      }
+      if (::PtInRect(&lay.bubble_done, point)) {
+        if (on_done_all) on_done_all();
+        return;
+      }
+      if (::PtInRect(&lay.bubble_later, point)) {
+        if (on_later) on_later();
+        return;
+      }
+      if (!lay.bubble_checks.empty()) {
+        for (std::size_t i = 0; i < lay.bubble_checks.size(); ++i) {
+          if (::PtInRect(&lay.bubble_checks[i], point)) {
+            if (i < kind_checked.size()) kind_checked[i] = !kind_checked[i];
+            Render(anim_state, current_message);
+            return;
+          }
+        }
+      }
+      if (partial_expanded && ::PtInRect(&lay.bubble_confirm, point)) {
+        if (on_partial_confirm) {
+          std::vector<std::string> selected;
+          for (std::size_t i = 0; i < kind_symbols.size() && i < kind_checked.size();
+               ++i) {
+            if (kind_checked[i]) selected.push_back(kind_symbols[i]);
+          }
+          on_partial_confirm(selected);
+        }
+        return;
+      }
+      if (partial_expanded && ::PtInRect(&lay.bubble_partial, point)) {
+        // Toggling the expanded checklist off collapses it (the prototype's
+        // 收起逐项确认 path).
+        partial_expanded = false;
+        Render(anim_state, current_message);
+        return;
+      }
+      if (!partial_expanded && ::PtInRect(&lay.bubble_partial, point)) {
+        partial_expanded = true;
+        kind_checked.assign(kind_labels.size(), true);
+        Render(anim_state, current_message);
+        return;
+      }
+    }
+    if (::PtInRect(&lay.menu, point)) {
+      if (on_menu_opened) on_menu_opened();
+      return;
+    }
+    if (::PtInRect(&lay.pet, point)) {
       if (on_pet) on_pet();
     }
   }

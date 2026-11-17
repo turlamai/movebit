@@ -69,12 +69,17 @@ struct OnboardingWizard {
     line.HorizontalAlignment(HorizontalAlignment::Center);
     root.Children().Append(line);
 
+    auto pat_hint = make_text(winrt::to_hstring(l10n::t("ob.patHint")), 11.5,
+                              false, "#655F55");
+    pat_hint.TextWrapping(TextWrapping::Wrap);
+    pat_hint.HorizontalAlignment(HorizontalAlignment::Center);
+    root.Children().Append(pat_hint);
     auto privacy = make_text(winrt::to_hstring(l10n::t("ob.privacy")), 11.5,
                              false, "#A39B8D");
     privacy.HorizontalAlignment(HorizontalAlignment::Center);
     root.Children().Append(privacy);
 
-    auto start = make_button(winrt::to_hstring(l10n::t("ob.start")), "#C25E3E",
+    auto start = make_button(winrt::to_hstring(l10n::t("ob.launch")), "#A7472C",
                              "#FFFFFF", false);
     start.CornerRadius(CornerRadius{8, 8, 8, 8});
     start.Padding(Thickness{18, 9, 18, 9});
@@ -83,11 +88,6 @@ struct OnboardingWizard {
       Finish();
     });
     root.Children().Append(start);
-
-    auto hint = make_text(winrt::to_hstring(l10n::t("ob.startHint")), 11,
-                          false, "#A39B8D");
-    hint.HorizontalAlignment(HorizontalAlignment::Center);
-    root.Children().Append(hint);
 
     Controls::ScrollViewer scroll;
     scroll.Content(root);
