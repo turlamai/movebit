@@ -272,12 +272,15 @@ private struct MubiShape: Shape {
 struct MubiCharacterView: View {
     @ObservedObject var presentation: CompanionPresentation
     var onPat: (() -> Void)?
-    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-    @Environment(\.colorScheme) private var scheme
-    @State private var hop = false
-    @State private var blinking = false
-    @State private var landedSquish = false
-    @State private var nod = false
+    // Wrapper properties stay internal: ANY private stored property (state,
+    // environment) demotes the memberwise initializer to private on the
+    // Swift 6.0/6.1 toolchains (Xcode 16.4), breaking call sites.
+    @Environment(\.accessibilityReduceMotion) var systemReduceMotion
+    @Environment(\.colorScheme) var scheme
+    @State var hop = false
+    @State var blinking = false
+    @State var landedSquish = false
+    @State var nod = false
 
     private var dark: Bool { scheme == .dark }
     private var scale: CGFloat { presentation.bodySize / MubiArt.bodyHeight }
@@ -577,8 +580,9 @@ struct CompanionInvitationCard: View {
     var onLater: (() -> Void)?
     var onHideThis: (() -> Void)?
     var onConfirmPartial: (([String]) -> Void)?
-    @Environment(\.colorScheme) private var scheme
-    @State private var selected: Set<String> = []
+    // Internal wrappers — see the note on MubiCharacterView.
+    @Environment(\.colorScheme) var scheme
+    @State var selected: Set<String> = []
     private var partialExpanded: Bool { presentation.partialExpanded }
 
     private var dark: Bool { scheme == .dark }
@@ -964,9 +968,7 @@ final class CompanionController: NSObject {
                 menuButton
             }
             .padding(.init(top: 0, leading: 0, bottom: 4, trailing: 0))
-            let anyView = AnyView(
-                root.environment(\.layoutDirection,
-                                  LayoutDirection.leftToRight))
+            let anyView = AnyView(root)
             let newHost = CompanionHostingView(rootView: anyView)
             panel.contentView = newHost
             host = newHost
