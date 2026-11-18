@@ -18,6 +18,8 @@
 
 namespace winrt::RivetHost::implementation {
 
+using namespace winrt::Microsoft::UI::Xaml;
+
 enum class HealthGlyph { sit, water, eyes };
 
 inline wchar_t const* health_glyph_data(HealthGlyph kind) {
