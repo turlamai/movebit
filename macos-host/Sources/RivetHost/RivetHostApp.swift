@@ -195,12 +195,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         companion?.onHideThis = { [weak self] in
             self?.model?.dismissAllPending()
         }
-        companion?.onConfirmPartial = { [weak self] words in
+        companion?.onConfirmPartial = { [weak self] symbols in
             guard let self, let model = self.model else { return }
             for cue in model.pendingCues {
                 let selected = cue.kinds
-                    .map { $0.invitationWord }
-                    .filter { words.contains($0) }
+                    .map { $0.rawValue }
+                    .filter { symbols.contains($0) }
                 if !selected.isEmpty {
                     model.acknowledgeCueKinds(cue.id, kinds: selected)
                 }
@@ -445,8 +445,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model else { return }
         let suspended = model.isPaused || model.quiet
         let words = model.pendingCues
-            .flatMap { $0.kinds.map { $0.invitationWord } }
-        let kinds = ["move", "water", "eyes"].filter { words.contains($0) }
+            .flatMap { $0.kinds.map { $0.rawValue } }
+        let kinds = ["sit", "water", "micro"].filter { words.contains($0) }
         companion?.update(
             invitation: kinds.isEmpty ? nil : CompanionInvitation(kinds: kinds),
             suspended: suspended)

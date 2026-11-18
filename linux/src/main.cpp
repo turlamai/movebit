@@ -2504,7 +2504,14 @@ void close_window() {
   }
 }
 
-// Kind symbol (wire string) for the acknowledge-cue-kinds RPC.
+// Kind symbol <-> enum helpers (the generated RPC takes ReminderKind
+// values; the invitation checklist carries wire symbols).
+rivet_app::ReminderKind symbol_kind(std::string const& symbol) {
+  if (symbol == "water") return rivet_app::ReminderKind::water;
+  if (symbol == "micro") return rivet_app::ReminderKind::micro;
+  return rivet_app::ReminderKind::sit;
+}
+
 char const* kind_symbol(rivet_app::ReminderKind kind) {
   switch (kind) {
     case rivet_app::ReminderKind::water: return "water";
@@ -3633,8 +3640,10 @@ void on_invitation_partial_confirm(GtkButton*, gpointer) {
       }
     }
     if (settled.empty()) continue;
+    std::vector<rivet_app::ReminderKind> settled_kinds;
+    for (auto const& kind : settled) settled_kinds.push_back(mubi::symbol_kind(kind));
     (void)s.api->acknowledge_cue_kinds_async(
-        id, settled, [](rivet_app::Result<void>) {});
+        id, settled_kinds, [](rivet_app::Result<void>) {});
     ids.push_back(id);
   }
   mubi::show_ack();

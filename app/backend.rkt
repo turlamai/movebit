@@ -598,13 +598,12 @@
 
 ;; Partial completion (2026-11-15 contract 只做了一部分): settle only the
 ;; listed kinds of the merged invitation; the rest keep waiting in place.
-;; An empty list or unknown kinds is a no-op (零选择不提交). The kinds ride
-;; as wire strings because rivet's server-side List validation expects the
-;; wire shape for list elements (named Record/Enum args are the only ones
-;; converted; tracked upstream for typed list elements).
-(define-rpc (acknowledge-cue-kinds [id : Int64] [kinds : (List String)] : Void)
+;; An empty list or unknown kinds is a no-op (零选择不提交). rivet >= 0.17.0
+;; recursively decodes (List <Enum>) arguments from their wire form
+;; (issue #480), so the handler receives ReminderKind DTOs.
+(define-rpc (acknowledge-cue-kinds [id : Int64] [kinds : (List ReminderKind)] : Void)
   (define rt (require-runtime))
-  (define selected (map string->symbol kinds))
+  (define selected (map kind->symbol kinds))
   (define acked
     (orchestrator-acknowledge-cue! (runtime-orchestrator rt) id
                                    #:kinds selected))

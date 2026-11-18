@@ -541,6 +541,32 @@
       }
     },
     {
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "Int64"
+          }
+        },
+        {
+          "name": "kinds",
+          "type": {
+            "element": {
+              "kind": "record",
+              "name": "ReminderKind"
+            },
+            "kind": "list"
+          }
+        }
+      ],
+      "name": "acknowledge-cue-kinds",
+      "result": {
+        "kind": "scalar",
+        "name": "Void"
+      }
+    },
+    {
       "arguments": [],
       "name": "check-updates",
       "result": {

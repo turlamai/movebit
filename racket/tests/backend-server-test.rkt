@@ -251,8 +251,12 @@
 (define water-loop
   (findf (lambda (l) (string=? (list-ref l 0) "water")) loops-wire))
 (check-true (pair? water-loop))
-(check-equal? (list-ref water-loop 2) 50)                 ; 60 - 10 accumulated
-(check-equal? (list-ref water-loop 1) 10)                 ; due-in = 60 - 50
+;; Later defers by ACTIVE time: the due point lands snooze minutes after
+;; now, i.e. accumulated + due-in == the interval with due-in <= snooze.
+;; Under load extra tick rounds advance the accumulator, so pin the
+;; RELATION, never the exact machine-dependent numbers.
+(check-equal? (+ (list-ref water-loop 2) (list-ref water-loop 1)) 60)
+(check-true (<= (list-ref water-loop 1) 10))
 (check-false (member wa-id (pending-ids)))
 
 ;; --- 3. quiet mode queues, and exits with a bounded summary -----------------

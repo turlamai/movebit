@@ -385,8 +385,11 @@ final class MoveBitModel: ObservableObject {
     /// Zero selection is a backend no-op (零选择不提交).
     func acknowledgeCueKinds(_ id: Int64, kinds: [String]) {
         guard !kinds.isEmpty, let api = api() else { return }
+        // Wire symbols ("sit"/"water"/"micro") -> generated enum values.
+        let mapped = kinds.compactMap(RivetTypes.ReminderKind.init(rawValue:))
+        guard mapped.count == kinds.count else { return }
         Task {
-            try? await api.acknowledge_cue_kinds(id: id, kinds: kinds)
+            try? await api.acknowledge_cue_kinds(id: id, kinds: mapped)
             if let q = try? await api.get_pending_cues() { pendingCues = q }
         }
     }

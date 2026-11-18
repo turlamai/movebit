@@ -202,28 +202,22 @@ struct CompanionInvitation: Equatable {
     var kinds: [String]
 }
 
-extension ReminderKind {
-    /// Semantic kind -> invitation word key (invite.title.* / kind.*).
-    var invitationWord: String {
-        switch self {
-        case .sit: return "move"
-        case .water: return "water"
-        case .micro: return "eyes"
-        }
-    }
-}
-
 /// Compose the invitation heading: 起来走走，喝口水？-style, one phrase per
-/// present kind (invite.title.* covers every combination).
+/// present kind (invite.title.* covers every combination). Kinds travel as
+/// wire symbols ("sit"/"water"/"micro") end-to-end — the SAME strings the
+/// acknowledge-cue-kinds RPC expects, so a checkbox selection maps 1:1.
 func invitationTitle(for kinds: [String]) -> String {
-    let words = ["move", "water", "eyes"].filter { kinds.contains($0) }
-    switch words.joined(separator: "-") {
-    case "move": return L10n.t("invite.title.move")
-    case "water": return L10n.t("invite.title.water")
-    case "eyes": return L10n.t("invite.title.eyes")
-    case "move-water": return L10n.t("invite.title.moveWater")
-    case "move-eyes": return L10n.t("invite.title.moveEyes")
-    case "water-eyes": return L10n.t("invite.title.waterEyes")
+    let hasMove = kinds.contains("sit")
+    let hasWater = kinds.contains("water")
+    let hasEyes = kinds.contains("micro")
+    switch (hasMove, hasWater, hasEyes) {
+    case (true, true, true): return L10n.t("invite.title.all")
+    case (true, true, false): return L10n.t("invite.title.moveWater")
+    case (true, false, true): return L10n.t("invite.title.moveEyes")
+    case (false, true, true): return L10n.t("invite.title.waterEyes")
+    case (true, false, false): return L10n.t("invite.title.move")
+    case (false, true, false): return L10n.t("invite.title.water")
+    case (false, false, true): return L10n.t("invite.title.eyes")
     default: return L10n.t("invite.title.all")
     }
 }
@@ -943,7 +937,7 @@ final class CompanionController: NSObject {
         if suspended { return .sleep }
         if let kinds = presentation.invitation?.kinds {
             if kinds.contains("water") { return .water }
-            if kinds.contains("move") { return .move }
+            if kinds.contains("sit") { return .move }
             if kinds.contains("micro") { return .eyes }
         }
         return .waiting

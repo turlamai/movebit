@@ -1664,12 +1664,12 @@ void MainWindow::AcknowledgePendingKinds(
     std::vector<std::string> const& kinds) {
   if (api_ == nullptr || kinds.empty()) return;
   for (auto const& cue : model_.pending_cues) {
-    std::vector<std::string> settled;
+    std::vector<rivet_app::ReminderKind> settled;
     for (auto const& kind : cue.kinds) {
       char const* symbol = kind_symbol(kind);
       if (std::find(kinds.begin(), kinds.end(), symbol) != kinds.end() &&
-          std::find(settled.begin(), settled.end(), symbol) == settled.end()) {
-        settled.push_back(symbol);
+          std::find(settled.begin(), settled.end(), kind) == settled.end()) {
+        settled.push_back(kind);
       }
     }
     if (settled.empty()) continue;
