@@ -7,6 +7,7 @@
 // screen cannot nag on every launch.
 
 #include "pch.h"
+#include "Glyphs.h"
 #include "MoveBitModel.h"
 #include "Overlays.h"
 
@@ -49,10 +50,12 @@ struct OnboardingWizard {
     root.HorizontalAlignment(HorizontalAlignment::Center);
     root.VerticalAlignment(VerticalAlignment::Center);
 
-    // Mubi's water-drop motif stands in for the layered character surface,
-    // which cannot be embedded in a WinUI view; the real Mubi idles on screen
-    // behind this window at first launch.
-    auto glyph = make_text(L"💧", 64, false, "#26241F");
+    // A static vector Mubi in the hello pose (prototype pet geometry and
+    // palette). The layered live character surface still cannot be embedded
+    // in a WinUI view and the real Mubi idles on screen behind this window;
+    // the welcome art now matches that character instead of an emoji
+    // stand-in (#167).
+    auto glyph = make_mubi_welcome();
     glyph.HorizontalAlignment(HorizontalAlignment::Center);
     root.Children().Append(glyph);
 
