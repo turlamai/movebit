@@ -3,82 +3,84 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- #167: the prototype's linear glyph vocabulary (24x24 stroke
-         paths) and the neutral selected-tab treatment
-         (.window-tabs button.selected = surface + hairline border, no
-         accent fill) replace emoji placeholders and the default WinUI
-         ToggleButton accent. -->
-    <Window.Resources>
-        <Style x:Key="LineGlyph" TargetType="Path">
-            <Setter Property="Fill" Value="{x:Null}" />
-            <Setter Property="Stroke" Value="#655F55" />
-            <Setter Property="StrokeThickness" Value="1.2" />
-            <Setter Property="StrokeStartLineCap" Value="Round" />
-            <Setter Property="StrokeEndLineCap" Value="Round" />
-            <Setter Property="StrokeLineJoin" Value="Round" />
-            <Setter Property="Stretch" Value="Uniform" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-        <Style x:Key="SegmentTab" TargetType="ToggleButton">
-            <Setter Property="Foreground" Value="#26241F" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="Padding" Value="10,5" />
-            <Setter Property="MinHeight" Value="32" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Root" Background="Transparent"
-                                BorderBrush="Transparent" BorderThickness="1"
-                                CornerRadius="6" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center" />
-                        </Border>
-                        <VisualStateManager.VisualStateGroups>
-                            <VisualStateGroup x:Name="CommonStates">
-                                <VisualState x:Name="Normal" />
-                                <VisualState x:Name="PointerOver">
-                                    <VisualState.Setters>
-                                        <Setter Target="Root.Background" Value="#F0EEE8" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="Pressed">
-                                    <VisualState.Setters>
-                                        <Setter Target="Root.Background" Value="#F0EEE8" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="Disabled" />
-                                <VisualState x:Name="Checked">
-                                    <VisualState.Setters>
-                                        <Setter Target="Root.Background" Value="#FFFFFF" />
-                                        <Setter Target="Root.BorderBrush" Value="#EAE2D6" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="CheckedPointerOver">
-                                    <VisualState.Setters>
-                                        <Setter Target="Root.Background" Value="#FFFFFF" />
-                                        <Setter Target="Root.BorderBrush" Value="#EAE2D6" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="CheckedPressed">
-                                    <VisualState.Setters>
-                                        <Setter Target="Root.Background" Value="#FFFFFF" />
-                                        <Setter Target="Root.BorderBrush" Value="#EAE2D6" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="CheckedDisabled" />
-                            </VisualStateGroup>
-                        </VisualStateManager.VisualStateGroups>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
-
     <!-- 2026-11-15 tokens: window #F8F7F3, ink #26241F/#655F55, accent
          #A7472C. The four in-window segments (今日/历史/设置/关于) keep every
          named element of the former card layout; pages stay realized so
          each keeps its scroll position while hidden. -->
     <ScrollViewer Background="#F8F7F3">
+
+        <!-- #167: the prototype's linear glyph vocabulary (24x24 stroke
+             paths) and the neutral selected-tab treatment
+             (.window-tabs button.selected = surface + hairline border,
+             no accent fill) replace emoji placeholders and the default
+             WinUI ToggleButton accent. Window.Resources is not available
+             to the WinUI3 XAML compiler, so the styles live on the root
+             ScrollViewer. -->
+        <ScrollViewer.Resources>
+            <Style x:Key="LineGlyph" TargetType="Path">
+                <Setter Property="Fill" Value="{x:Null}" />
+                <Setter Property="Stroke" Value="#655F55" />
+                <Setter Property="StrokeThickness" Value="1.2" />
+                <Setter Property="StrokeStartLineCap" Value="Round" />
+                <Setter Property="StrokeEndLineCap" Value="Round" />
+                <Setter Property="StrokeLineJoin" Value="Round" />
+                <Setter Property="Stretch" Value="Uniform" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="SegmentTab" TargetType="ToggleButton">
+                <Setter Property="Foreground" Value="#26241F" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Padding" Value="10,5" />
+                <Setter Property="MinHeight" Value="32" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Root" Background="Transparent"
+                                    BorderBrush="Transparent" BorderThickness="1"
+                                    CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="#F0EEE8" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="#F0EEE8" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled" />
+                                    <VisualState x:Name="Checked">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="#FFFFFF" />
+                                            <Setter Target="Root.BorderBrush" Value="#EAE2D6" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="#FFFFFF" />
+                                            <Setter Target="Root.BorderBrush" Value="#EAE2D6" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="#FFFFFF" />
+                                            <Setter Target="Root.BorderBrush" Value="#EAE2D6" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedDisabled" />
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ScrollViewer.Resources>
         <StackPanel Orientation="Vertical">
             <Grid Padding="20,14,20,0" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
