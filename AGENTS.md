@@ -19,7 +19,6 @@
 
 The owner requests a product-led experience and commercial viability reboot: [master #86](https://github.com/turlamai/movebit/issues/86), [bilingual detailed design](docs/PRODUCT-EXPERIENCE-2026.md) / [中文版](docs/PRODUCT-EXPERIENCE-2026.zh-CN.md). Delivery issues: #87 reminder UX, #88 truthful metrics, #89 expressive Mubi, #90 onboarding/UI, #94 opt-in guided microbreaks, #91 paid value, #92 real product acceptance. Existing #51/#54/#56 remain authoritative for safety, original art and the no-interruption rule, **but earlier prohibitions on all voluntary pet interactions or subtle ambient personality are proposed to be relaxed** within the strict limits in #89. This does NOT authorize feeding, punishment, attention loops, full-screen blocking, spying or unverified claims. Do not claim design hypotheses are completed implementation.
 
-**Critical commercial decision conflict:** main's historical "free-only / no Permit" language is superseded as a planned product direction by owner decision tracked in #81 and open PR #82. #82 owns PRICING.md and PRICING.zh-CN.md; avoid overlapping edits until it is reviewed/merged. Free + Pro is a plan, **not permission to enable payment gates, collect money, demand accounts or claim paid features ship**. Permit-in-core/Commerce-server work remains gated by #81's engineering and release evidence, and already-published source rights stay intact (MIT for existing releases; BUSL-1.1 with MIT change date from the 2026-11-10 relicensing on).
 
 When implementing a bounded slice, check the current main/PR heads first; coordinate with active agents, avoid reverting their changes, use the shared Racket scheduler and three native hosts, record real packaged acceptance and upgrade/migration of already released 0.0.1 user data.
 
@@ -34,9 +33,9 @@ When implementing a bounded slice, check the current main/PR heads first; coordi
 **Execution order:** remove strong-break architecture and legacy UX with cross-host changes; wire semantic due/pending/ack/snooze cues through the backend, implement character-style native reminders and safe notification fallback on each host, simplify fresh-install settings/onboarding, then test and release. Each PR owns one bounded feature slice and includes CI + actual host verification. Screenshot or a green domain unit suite alone is not sufficient.
 
 
-## Authorization decision before implementation
+## Current owner decision — 2026-11-18 quality-first
 
-Decision `2026-10-auth-1`: No commercial Permit credentials, Commerce checkout or licensing account. Read the complete [local authorization decision](PRICING.md#authorization-decision-for-implementation) and its Chinese counterpart before commercial, trial, update-eligibility or credential work. Record this decision revision and the source/policy SHAs actually read in the PR/handoff. Refresh at each bounded slice; existing agent conversations do not receive this change automatically. Follow the existing product contract and implementation issue; do not activate a payment gate merely because a plan exists.
+This product is in **non-commercial development**. The prior 2026-10/11 product pricing, trial, paid-feature, Free/Pro and family Permit/Commerce rollout decisions are canceled. Do not introduce checkout, subscriptions, activation, commercial entitlement, paid update windows or a paywall. Do not change source-license terms or release signing and identity verification. Prioritize product correctness, reliable native experience, recovery, bilingual README and truthful website claims. The [current family portfolio](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.md) governs every slice.
 
 指引给 AI agent（及开发者）：如何理解、构建、运行、改动 MoveBit。
 
@@ -99,16 +98,11 @@ raco rivet acceptance --json # 当前平台的打包产品验收
 
 ## 组合定位（Portfolio placement）
 
-- 当前决策（2026-10-v2）：免费社区工具。具体价格、免费/付费边界和开卖门禁以本仓 [PRICING.md](PRICING.md) 为唯一权威；旧版收费候选与早鸟方案已被替代。
-- 组合归属：[PORTFOLIO](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.md)。当前全部产品开发中、没有实际用户；目标定价不表示已经开卖，不因此立即给开发版加收费墙。
-- 免费产品不接商业激活；付费层先实现可验证价值，再接 Commerce/Permit。优先完成本仓既有产品审查 issue；不修改现行源码 LICENSE。
+2026-11-18 起，以产品交付质量为目标，不推进收费版、试用、商业授权或结账。既有 LICENSE 和发行签名验证保持不变。当前权威是[产品组合策略](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.zh-CN.md)。
 
-## 产品交付与下一步（2026-10-23）
+## 产品交付与下一步（2026-11-18）
 
-- 家族[交付标准](https://github.com/turlamai/turlamai.github.io/blob/master/docs/PRODUCT-STANDARD.md)与[组合策略](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.md)是共用政策；本仓具体行为以 `README.md` 为准，不复制五库依赖图。
-- 当前**产品实施优先入口**：[v1 重启与旧功能退役 #55](https://github.com/turlamai/movebit/issues/55)。健康提醒产品目标见 [#51](https://github.com/turlamai/movebit/issues/51)，原生交互安全见 [#54](https://github.com/turlamai/movebit/issues/54)。旧版全屏强制休息已决定从 v1 移除；#48 属于旧版交付收尾历史，不阻塞新产品的代码重构。仍须通过新版本真实打包验收，保持 MIT 免费。
-- 开工先检查干净工作树与远端，以 fast-forward-only 更新并记录 SHA；共享文件一次一个写入者，保留其他 checkout 的未提交工作。
-- 每次只完成一个可验收切片，记录 owned files、依赖 pin、命令/平台/产物证据和回滚。已实现、已发布、实机验收分别陈述；不修改 requirements 或复用旧证据来制造通过。
+请以当前代码与验收证据推进用户主流程、恢复、跨平台原生体验、签名更新、文档和产品主页，不按任何历史商业规划开发。
 
 ## Documentation languages
 
