@@ -24,10 +24,9 @@
 ;;     Files) take the feed's signed .msi and hand off to msiexec instead.
 ;;   macOS — same shape as Windows: the zip carries movebit.app, the helper
 ;;     swaps the bundle with a backup + rollback rename and relaunches.
-;;   Linux — AppImage installs select a first-class Ed25519-signed .AppImage
-;;     artifact (size + digest verified before atomic replacement);
-;;     tarball/package installs stay manual, so `prepare-install!` refuses
-;;     and the host hands off the downloaded file or shows guidance.
+;;   Linux — no shipped host (issue #169): the engine still runs and tests
+;;     on Linux machines, but the feed carries no linux artifacts and
+;;     `prepare-install!` refuses; there is nothing to install.
 
 (require net/url
          rivet/app-info
@@ -66,9 +65,6 @@
          start-download!
          cancel-download!
          prepare-install!
-         appimage-flavor?
-         appimage-download-target
-         install-appimage!
          zip-apply-script
          msi-apply-script)
 
@@ -152,9 +148,9 @@
 ;; scope), where the in-place zip swap has no write access — those installs
 ;; take the signed .msi artifact and hand off to msiexec (one UAC consent);
 ;; per-user / portable installs keep the automatic zip swap. macOS zips are
-;; portable. Linux AppImage installs select the signed 'appimage artifact;
-;; deb/rpm/tarball installs stay manual. Same ProgramFiles* prefix
-;; signal taskly's IsMsiInstall uses.
+;; portable. Linux has no shipped install shape (issue #169): #f keeps the
+;; engine honest — the feed carries no linux artifacts anyway. Same
+;; ProgramFiles* prefix signal taskly's IsMsiInstall uses.
 
 ;; Pure over current-install-dir so tests can pin the decision.
 (define (install-dir-under-program-files? install-string)
@@ -181,8 +177,9 @@
           (path->string (current-install-dir)))
          'msi
          'portable)]
-    ;; AppImage MUST select its own signed artifact, never a tar.gz sibling.
-    [else (if (appimage-flavor?) 'appimage #f)]))
+    ;; No shipped Linux install shape (issue #169); the engine stays
+    ;; platform-neutral for tests on Linux machines.
+    [else #f]))
 
 ;; ---------- shared update state (UI-visible) ----------
 
@@ -343,32 +340,7 @@
   (string-append (regexp-replace* #rx"/+$" base-url "")
                  "/update-manifest.json"))
 
-;; The verified image installs in place: chmod, keep the previous runnable
-;; image as .previous, and atomically rename over the running file. Any
-;; failure before the final rename leaves the original untouched.
-(define (install-appimage! verified self)
-  (define backup-temp
-    (make-temporary-file "movebit-backup-~a.AppImage" #f (path-only self)))
-  (define backup
-    (string-append (path->string self) ".previous"))
-  (with-handlers ([exn?
-                   (lambda (e)
-                     (when (file-exists? backup-temp) (delete-file backup-temp))
-                     (raise e))])
-    (file-or-directory-permissions verified #o755)
-    ;; Copy into a unique sibling and rename atomically: never follow a
-    ;; pre-existing backup symlink or truncate a known-good backup in place.
-    (copy-file self backup-temp #t)
-    (file-or-directory-permissions backup-temp #o755)
-    (rename-file-or-directory backup-temp backup #t)
-    ;; Keep .previous after success for manual recovery if startup fails.
-    (rename-file-or-directory verified self #t)
-    self))
-
 (define (make-movebit-updater base-url)
-  ;; Set by the destination callback for an AppImage install and consumed
-  ;; by the after-download hook in the same instance.
-  (define appimage-self-box (box #f))
   (make-updater
    #:application-id "site.jrtx.movebit"
    #:current-version (effective-version)
@@ -387,63 +359,15 @@
    #:data-directory (or (unbox download-root-box) (current-directory))
    #:destination
    (lambda (candidate)
-     (cond
-       [(appimage-flavor?)
-        (define-values (self staged) (appimage-download-target))
-        (set-box! appimage-self-box self)
-        staged]
-       [else
-        (build-path (updates-dir (or (unbox download-root-box)
-                                     (current-directory)))
-                    (artifact-file-name candidate))]))
-   #:after-download
-   (lambda (verified candidate)
-     (define self (unbox appimage-self-box))
-     (if self
-         (install-appimage! verified self)
-         verified))
+     (build-path (updates-dir (or (unbox download-root-box)
+                                  (current-directory)))
+                 (artifact-file-name candidate)))
    #:rollout-bucket (rollout-bucket)
    #:maximum-manifest-bytes (* 4 1024 1024)
    #:maximum-download-bytes maximum-download-bytes))
 
 (define (updates-dir data-dir)
   (build-path data-dir "updates"))
-
-;; ---------- AppImage flavor (Linux installs run from an AppImage) ----------
-;;
-;; The signed release feed contains a first-class per-architecture AppImage
-;; artifact with the exact byte count and SHA-256 digest. Rivet verifies both
-;; under the embedded Ed25519 public key before any replacement; mutable
-;; .AppImage.sha256 sidecars are never consulted. The verified image downloads
-;; beside the running executable (same filesystem for atomic rename), saves
-;; the previous version as .previous, and replaces it only after verification.
-;; The host may re-exec the new image on user consent; the backup remains
-;; available for recovery if the new version fails to launch.
-
-;; $APPIMAGE (set by the AppImage runtime) is inherited by the embedded
-;; backend — its presence IS the install shape; no config plumbing needed.
-;; platform-symbol is the stable predicate: system-type's os is 'unix on
-;; Linux, so an (eq? (system-type 'os) 'linux) guard is never true there
-;; (the same trap the threadly suite documents).
-(define (appimage-flavor?)
-  (and (eq? (platform-symbol) 'linux)
-       (let ([self (getenv "APPIMAGE")])
-         (and self (not (string=? self ""))))))
-
-(define (appimage-download-target)
-  ;; Keep staging on the same filesystem for an atomic final rename; return
-  ;; paths end to end (the state publishes path->string of the result).
-  (define self-string (getenv "APPIMAGE"))
-  (unless (and self-string (non-empty-string? self-string))
-    (error 'start-download "APPIMAGE is not set; not running as an AppImage"))
-  (define self (string->path self-string))
-  ;; Reserve a unique name, then remove the file: a failed verification
-  ;; must not strand an empty staging file beside the running image
-  ;; (rivet's managed download cleans only its own .partial).
-  (define staged
-    (make-temporary-file "movebit-update-~a.AppImage" #f (path-only self)))
-  (delete-file staged)
-  (values self staged))
 
 (define (download-running?)
   (define instance (unbox updater-box))
@@ -487,10 +411,8 @@
 ;;     zip on macOS too), then apply-update.sh copies the staged bundle onto
 ;;     the install volume and swaps it with a backup + rollback rename
 ;;     before relaunching via `open`.
-;;   Linux — install is never automated here: AppImage swaps happened at
-;;     download time, tarball/package installs stay manual (the host shows
-;;     the downloaded file or the package-manager guidance), so
-;;     `prepare-install!` refuses honestly.
+;;   Linux — no shipped host (issue #169): `prepare-install!` refuses
+;;     honestly; the engine only runs tests there.
 
 (define (staged-dir data-dir)
   (build-path (updates-dir data-dir) "staged"))
@@ -757,8 +679,8 @@
   ;; Windows/macOS flow (found by the swap-chain test on CI).
   (case (platform-symbol)
     [(linux)
-     ;; AppImage swaps happen at download time; tarball/package installs are
-     ;; manual (the host shows the file or the guidance). Never pretend.
+     ;; No shipped Linux host (issue #169). Never pretend an install path
+     ;; exists; the engine runs tests here, nothing installs.
      (error 'prepare-install! "install is not automated on this platform")]
     [else
      (define downloaded
@@ -801,6 +723,6 @@
      (define-libsystem getpid (_fun -> _int))
      (lambda () (getpid))]
     [else
-     ;; Install preparation is not automated here (the host owns the three
-     ;; install shapes); no helper is ever written.
+     ;; Install preparation is not automated here (no shipped Linux host);
+     ;; no helper is ever written.
      (lambda () 0)]))
