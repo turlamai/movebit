@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=MoveBit
-Comment=Gentle movement reminders with the Mubi companion
-Exec=RivetHost
-Icon=site.jrtx.movebit
-Terminal=false
-Categories=Utility;
-StartupWMClass=MoveBit
