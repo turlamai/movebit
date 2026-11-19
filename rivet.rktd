@@ -10,9 +10,6 @@
         (windows-min-version . "10.0.19041.0")
         (macos-icon . "assets/movebit.icns")
         (windows-icon . "assets/icon.ico")
-        ;; The AppImage format requires a top-level icon PNG (rivet errors
-        ;; out without it); project-relative like windows-icon.
-        (linux-icon . "assets/icon.png")
         (backend . "app/backend.rkt")
         (module . "backend")
         (entry . "start")
