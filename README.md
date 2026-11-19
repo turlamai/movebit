@@ -1,7 +1,5 @@
 # MoveBit
 
-> **v0.0.1 — the fresh start (2026-10-27).** The rebooted MoveBit first shipped as v0.0.1 by owner decision: a historical restart of the version line, not a statement of the current release. For the latest published build, check Releases. The old experimental v0.5.0 line (with its fullscreen forced breaks) is retired history — v0.0.1 contains no fullscreen break anywhere and no migration path from v0.5.
-
 A desktop health reminder app: water, stand-up and eye-rest cues delivered by **Mubi（沐比）**, a small original character who walks onto your screen at each break, waits — topmost and unmissable — until you answer, and plays by itself while you work. It never steals keyboard focus, never covers your work, and everything outside Mubi itself stays click-through. One Racket domain core (the canonical reminder state machine) drives first-party native hosts on Windows, macOS, and Linux over [Rivet](https://github.com/turlamai/rivet)'s typed RPC.
 
 [![release](https://img.shields.io/github/v/release/turlamai/movebit)](https://github.com/turlamai/movebit/releases/latest) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey) ![built with](https://img.shields.io/badge/built%20with-Rivet-c15f3c) [![CI](https://github.com/turlamai/movebit/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/movebit/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
