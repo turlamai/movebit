@@ -1,7 +1,5 @@
 # MoveBit
 
-**产品：**[产品主页](https://movebit.jrtx.site/) · **支持：**[问题与反馈](https://github.com/turlamai/movebit/issues) · [当前交付策略](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.zh-CN.md)
-
 > **0.1.0 —— 平台收窄后的版本线重启（2026-11-19）。** MoveBit 只提供 macOS + Windows（[issue #169](https://github.com/turlamai/movebit/issues/169)）；版本线从 0.1.0 重新起算，重置前的全部发布退役为历史，不提供迁移路径。最新已发布版本请以 Releases 为准。
 
 一款桌面健康提醒应用：喝水、起身、护眼三类提醒，由原创小角色**沐比（Mubi）**交付——每次休息它都会走到你的工作区中央，置顶等你回应；你不工作时它就在旁边自己玩耍。它从不抢键盘焦点、从不遮挡你的工作，除了沐比本体以外的屏幕全部鼠标穿透。一份 Racket 领域核心（唯一的提醒状态机）通过 [Rivet](https://github.com/turlamai/rivet) 的类型化 RPC 驱动 Windows、macOS 上的第一方原生宿主。

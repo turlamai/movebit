@@ -1,7 +1,5 @@
 # MoveBit
 
-**Product:** [Website](https://movebit.jrtx.site/) · **Support:** [Issues & feedback](https://github.com/turlamai/movebit/issues) · [Development policy](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.md)
-
 > **0.1.0 — the platform-narrowed restart (2026-11-19).** MoveBit ships macOS + Windows only ([issue #169](https://github.com/turlamai/movebit/issues/169)); the version line restarts at 0.1.0 and every pre-reset release is retired history with no migration path. For the latest published build, check Releases.
 
 A desktop health reminder app: water, stand-up and eye-rest cues delivered by **Mubi（沐比）**, a small original character who walks onto your screen at each break, waits — topmost and unmissable — until you answer, and plays by itself while you work. It never steals keyboard focus, never covers your work, and everything outside Mubi itself stays click-through. One Racket domain core (the canonical reminder state machine) drives first-party native hosts on Windows and macOS over [Rivet](https://github.com/turlamai/rivet)'s typed RPC.
