@@ -28,7 +28,7 @@ Retention remains 370 days. A monotone SQLite watermark rejects expired arrivals
 
 ## Verification and recovery
 
-Build environments require Racket `db-lib` in addition to Rivet. Full Racket distributions include it; minimal embeddable runtimes must install it explicitly before compiling the backend. Linux CI and release builds install it into that same runtime.
+Build environments require Racket `db-lib` in addition to Rivet. Full Racket distributions include it; minimal embeddable runtimes must install it explicitly before compiling the backend. The macOS and Windows release builds install it into that same runtime.
 
 Tests use independent real databases and filesystem exchange, and cover restart, isolation, duplicates, out-of-order/equal-revision conflicts, corrupt/oversized/foreign records, symlinks, same-second updates, export failure and retry, retention replay and concurrent local writers. Wire tests assert actual SQLite persistence. Native acceptance fixtures seed through the real config API. Native controls and the reminder scheduler are unchanged.
 

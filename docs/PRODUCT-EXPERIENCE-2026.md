@@ -15,16 +15,16 @@ MoveBit is neither a bare timer nor a pet game. It makes drinking water, moving 
 - `racket/movebit/config.rkt`: 45 active minutes to move, 30 to drink, 30 for eye rest (20 seconds), 10 to snooze, 5 to reset after away. Appearance offers S/M/L, three motion levels and dock position, but there is no whole-day routine preset.
 - `racket/movebit/scheduler.rkt`: single scheduler and merged due kinds. Daily `sit-reminders/water-reminders/micro-breaks` are incremented **when a reminder fires**, not when users confirm doing something. UI must not imply completed care.
 - `racket/movebit/orchestrator.rkt` already models presented, acknowledged, snoozed and expired cue transitions; it is the right basis for truthful event data.
-- `macos-host/Sources/RivetHost/Companion.swift` has original vector shapes, an idle blink and short water/stand/eye gestures. Most idle time is deliberately quiet; richer but bounded expression is an opportunity, not proof of three-host readiness.
+- `macos-host/Sources/RivetHost/Companion.swift` has original vector shapes, an idle blink and short water/stand/eye gestures. Most idle time is deliberately quiet; richer but bounded expression is an opportunity, not proof of two-host readiness.
 - `macos-host/Sources/RivetHost/OnboardingView.swift` introduces the product with a droplet emoji and presets only for water, sit and sound. It lacks real Mubi preview, overall routine choice and explicit quiet preference.
-- The main macOS/Windows/Linux screens are heavy on activity totals, 7/30-day bars, statistics and numeric controls; everyday next action is less prominent.
+- The main macOS/Windows screens are heavy on activity totals, 7/30-day bars, statistics and numeric controls; everyday next action is less prominent.
 - Main-branch `AGENTS.md` and `PRICING*.md` contain a historical free-only directive. Open PR #82 proposes Free + Pro; do not create competing pricing edits, or pretend paid entitlements already exist.
 
 ## Four critical moments
 
 **First run (target under 30 seconds):** Meet the original Mubi, hear one sentence about water / movement / eye rest, and press **Start**. No mandatory dock choice, notification strength, noise setup, account, paywall, permission dialog or multi-page tutorial. An optional trial cue may be offered after entry.
 
-**At work:** Mubi stays at the user's chosen home position with sparse, delightful idle gestures. Users move it by dragging the character directly — the proven-safe path is hover-gated: the surface turns touchable only while the cursor rests on Mubi itself, and a tray **Reset Mubi** is the recovery hatch. Position is an action, not a maze of dock settings. Avoid continuous roaming and pointer theft. Wayland uses a frank native fallback.
+**At work:** Mubi stays at the user's chosen home position with sparse, delightful idle gestures. Users move it by dragging the character directly — the proven-safe path is hover-gated: the surface turns touchable only while the cursor rests on Mubi itself, and a tray **Reset Mubi** is the recovery hatch. Position is an action, not a maze of dock settings. Avoid continuous roaming and pointer theft.
 
 **A cue is due:** Mubi may make one short, charming **approach toward the usable central-third** and invite water, standing/moving or eye rest with distinct original motion and one readable compact non-blocking card. This should be a compelling default rather than several user-facing attention modes. A merged backend cue names all its kinds; Done (self-report), Later and Hide remain accessible through safe hit regions or tray. After response or fade Mubi returns to its saved home position. A disappearing cue is never completion. System Reduce Motion provides a legible static notice. Focus covers meetings: interrupt/cancel the approach immediately, defer due kinds, then offer one merged cue after Focus ends.
 
@@ -102,7 +102,7 @@ Proposed acceptance research: 5 fresh users performing common tasks (choose a pr
 
 - Racket `config/scheduler/orchestrator/history`: canonical health timing and event truth.
 - `app/backend.rkt` + `rivet-schema.json`: shared contract; hosts cannot invent independent schedulers.
-- macOS / Windows / Linux native host directories: precise safe rendering, accessible actions, OS capability fallback.
+- macOS / Windows native host directories: precise safe rendering, accessible actions, OS capability fallback.
 - `shared/i18n`: single localized content source; `assets/mubi`: original artwork.
 - #81 / PR #82 own `PRICING.md` and `PRICING.zh-CN.md`. **This docs PR deliberately does not touch those paths.**
 - Use small non-overlapping PRs, preserve concurrent checkout work, and never label untested UI or commerce as shipped.
