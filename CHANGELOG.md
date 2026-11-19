@@ -1,8 +1,21 @@
 # Changelog
 
-## Unreleased
+## [0.1.0] - unreleased
+
+Version numbering restarts here per the family reset discipline: the
+Rivet-era releases v0.0.1–v0.0.10 and the Avalonia-era v0.1.0–v0.5.0, and
+their tags, were deleted. 0.1.0 is the first release of the narrowed
+macOS + Windows product.
 
 ### Changed
+
+- **macOS + Windows platform focus (issue #169).** Linux desktop support is
+  retired: the Linux host, its CI legs and its release artifacts (deb, rpm,
+  AppImage, Flatpak, tar.gz) are removed; a release carries the macOS DMG
+  and portable zip (arm64 + x64) and the Windows MSI and portable zip
+  (x64). The signed update feed answers windows and macos candidates only.
+  The Racket engine stays host-agnostic — engine tests and the
+  contract/bridge acceptance suites still run on Linux machines.
 
 - Store local settings and daily history in SQLite. Optional folder sync now
   exchanges validated, revisioned device/day records instead of database
@@ -14,10 +27,9 @@
 - **The updater runs on the shared managed state machine.** Candidate
   selection, the download worker, the stall/total watchdog, cancellation
   and the terminal state now come from `rivet/distribution`'s
-  `make-updater`; MoveBit supplies the install-kind policy, staging paths
-  and the AppImage in-place swap (chmod → `.previous` backup → atomic
-  rename) through `#:destination`/`#:after-download`. The
-  `get-update-state` wire shape and the start/cancel toggle are unchanged.
+  `make-updater`; MoveBit supplies the install-kind policy and staging
+  paths through `#:destination`. The `get-update-state` wire shape and the
+  start/cancel toggle are unchanged.
 - **Mubi is freely draggable — no placement mode.** Grabbing the character
   moves it at any time on every desktop; the pointer-through surface turns
   touchable only while the cursor rests on Mubi itself, and the dropped
