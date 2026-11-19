@@ -8,10 +8,8 @@ permissions:
   contents: read
 
 env:
-  # Exact rivet pin, in lockstep with release.yml and acceptance.yml.
-  # Deliberately an unreleased main commit (v0.15.2-5): carries the
-  # #441/#444 installer fixes movebit needs; re-pin to the next released
-  # tag once one contains it. Family policy: rivet is consumed as a
+  # Exact rivet pin, in lockstep with release.yml and acceptance.yml:
+  # the v0.17.0 release commit. Family policy: rivet is consumed as a
   # package (this pin install), never as a linked source checkout — keeps
   # local and CI builds reproducible against one revision.
   RIVET_PIN: f682fbdf550e7599633efe28c5be8e425bc21c6c
@@ -21,29 +19,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  signed-appimage-feed-contract:
-    name: Offline signed AppImage feed contract
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Verify signed feed and attacker-negative fixtures
-        run: python3 scripts/check-signed-appimage-feed.py --self-test
-
-  appimage-updater-arm64:
-    name: Linux arm64 signed AppImage updater tests
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v7
-      - uses: Bogdanp/setup-racket@v1.16
-        with:
-          architecture: arm64
-          version: stable
-      - name: Install pinned Rivet
-        shell: bash
-        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}'
-      - name: Run signed update and attacker-negative tests natively
-        run: raco test racket/tests/update-test.rkt
-
   release-signing-contract:
     name: Offline Ed25519 release trust-root contract
     runs-on: ubuntu-latest
@@ -52,6 +27,9 @@ jobs:
       - name: Require release signing key validation and negative tests
         run: python3 scripts/check-release-update-key.py --self-test
 
+  # Engine tests stay all-machine (issue #169): the Racket domain core is
+  # platform-neutral and keeps running on Linux dev machines and CI even
+  # though no Linux host ships. Host jobs below cover the shipped platforms.
   racket-tests:
     strategy:
       fail-fast: false
@@ -89,7 +67,7 @@ jobs:
         shell: bash
         run: |
           raco rivet i18n
-          git diff --exit-code -- linux/GeneratedI18n.hpp windows/GeneratedI18n.hpp macos-host/Sources/RivetHost/GeneratedI18n.swift
+          git diff --exit-code -- windows/GeneratedI18n.hpp macos-host/Sources/RivetHost/GeneratedI18n.swift
       - name: Windows registry autostart probe
         if: runner.os == 'Windows'
         shell: pwsh
@@ -100,50 +78,6 @@ jobs:
       - name: Execute portable update launch and rollback fixtures on Windows
         if: runner.os == 'Windows'
         run: racket scripts/acceptance/windows-portable-update.rkt
-      - name: Additional product integration tests (Linux)
-        if: runner.os == 'Linux'
-        run: raco test tests/
-  # The Linux host needs an embeddable static libracketcs, which the standard
-  # Racket installers do not ship; rivet's own composite action builds and
-  # caches it (docs/ci.md — product workflows should not copy the recipe).
-  host-linux:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - name: Verify native Mubi input pass-through before expensive builds
-        run: python3 scripts/check-mubi-input-safety.py --self-test
-      - name: Set up embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@f682fbdf550e7599633efe28c5be8e425bc21c6c
-      - name: Install GTK4 and a virtual display
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes libgtk-4-dev xvfb
-      # Installed after the embeddable runtime so the dependency closure
-      # (cext-lib, crypto-lib, keel) resolves against the minimal build —
-      # it ships no packages of its own.
-      - name: Install pinned Rivet (tag package install)
-        shell: bash
-        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}' db-lib
-      - name: Build, package, and launch-smoke the GTK4 host
-        shell: bash
-        run: |
-          set -euo pipefail
-          raco rivet i18n
-          raco rivet doctor
-          xvfb-run -a raco rivet package
-
-      - name: Assert packaged Linux artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          dir="$(find dist -maxdepth 1 -type d -name '*linux*' -print -quit)"
-          if [[ -z "$dir" ]]; then
-            echo "no packaged linux directory under dist/" >&2
-            find dist -maxdepth 2 -print >&2 || true
-            exit 1
-          fi
-          test -x "$dir/RivetHost"
-          test -f "$dir/res/core.zo"
 
   host-macos:
     runs-on: macos-latest

@@ -1,11 +1,14 @@
 #hasheq(
  (version . 1)
+ ;; Issue #169: MoveBit ships macOS + Windows only. The engine-layer suites
+ ;; (contract, bridge) stay platform-neutral and still run on Linux machines;
+ ;; native build/package/UI acceptance exists only on the shipped platforms.
  (requirements
   . (#hasheq((kind . contract) (platforms . (windows macos linux)))
      #hasheq((kind . bridge) (platforms . (windows macos linux)))
-     #hasheq((kind . native-build) (platforms . (windows macos linux)))
-     #hasheq((kind . package) (platforms . (windows macos linux)))
-     #hasheq((kind . native-ui) (platforms . (windows macos linux)))))
+     #hasheq((kind . native-build) (platforms . (windows macos)))
+     #hasheq((kind . package) (platforms . (windows macos)))
+     #hasheq((kind . native-ui) (platforms . (windows macos)))))
  (suites
   . (#hasheq((id . core-contract) (kind . contract)
              (platforms . (windows macos linux))
@@ -15,7 +18,7 @@
              (command . ("raco" "test" "racket/tests/backend-server-test.rkt"))
              (timeout-seconds . 300))
      #hasheq((id . native-host) (kind . native-build)
-             (platforms . (windows macos linux))
+             (platforms . (windows macos))
              (command . ("raco" "rivet" "build")) (timeout-seconds . 2400))
      #hasheq((id . windows-package) (kind . package) (platforms . (windows))
              (command . ("racket" "scripts/acceptance/package.rkt")) (timeout-seconds . 2400)
@@ -23,9 +26,6 @@
      #hasheq((id . macos-package) (kind . package) (platforms . (macos))
              (command . ("racket" "scripts/acceptance/package.rkt")) (timeout-seconds . 2400)
              (evidence . (".rivet/acceptance/macos/package.json")))
-     #hasheq((id . linux-package) (kind . package) (platforms . (linux))
-             (command . ("racket" "scripts/acceptance/package.rkt")) (timeout-seconds . 2400)
-             (evidence . (".rivet/acceptance/linux/package.json")))
      #hasheq((id . windows-native-ui) (kind . native-ui) (platforms . (windows))
              (command . ("pwsh" "-NoProfile" "-File" "scripts/e2e/e2e-windows.ps1"))
              (timeout-seconds . 600)
@@ -33,8 +33,4 @@
      #hasheq((id . macos-native-ui) (kind . native-ui) (platforms . (macos))
              (command . ("bash" "scripts/e2e/e2e-macos.sh"))
              (timeout-seconds . 600)
-             (evidence . (".rivet/acceptance/macos/interaction-trace.json" ".rivet/acceptance/macos/accessibility.json")))
-     #hasheq((id . linux-native-ui) (kind . native-ui) (platforms . (linux))
-             (command . ("bash" "scripts/e2e/e2e-linux.sh"))
-             (timeout-seconds . 600)
-             (evidence . (".rivet/acceptance/linux/interaction-trace.json" ".rivet/acceptance/linux/accessibility.json"))))))
+             (evidence . (".rivet/acceptance/macos/interaction-trace.json" ".rivet/acceptance/macos/accessibility.json"))))))

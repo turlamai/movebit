@@ -10,17 +10,12 @@
 #                    movebit-<version>-macos-x64.zip
 #                    movebit-<version>-windows-x64.zip
 #                    movebit-<version>-windows-x64.msi
-#                    movebit-<version>-linux-x64.tar.gz
-#                    movebit-<version>-linux-arm64.tar.gz
-#                    movebit-<version>-linux-x64.AppImage
-#                    movebit-<version>-linux-arm64.AppImage
 #   <key-der-path> Ed25519 private key in DER (OneAsymmetricKey) form; the
 #                  CI secret stores it base64-encoded.
 #
 # The signing, artifact hashing, schema validation, and feed format live in
 # `raco rivet sign-manifest`; this wrapper owns only MoveBit's artifact
-# matrix and identity. The tarball installer is `targz` (the family feed
-# symbol), so an installed client selects it for its install kind.
+# matrix and identity. Issue #169: the feed answers windows + macos only.
 #
 # Env overrides: RELEASE_ASSET_BASE_URL, RIVET_UPDATE_KEY_ID.
 set -euo pipefail
@@ -61,10 +56,6 @@ raco rivet sign-manifest \
   --artifact "macos:x64:zip:$DIST/movebit-$VERSION-macos-x64.zip" \
   --artifact "windows:x64:zip:$DIST/movebit-$VERSION-windows-x64.zip" \
   --artifact "windows:x64:msi:$DIST/movebit-$VERSION-windows-x64.msi" \
-  --artifact "linux:x64:targz:$DIST/movebit-$VERSION-linux-x64.tar.gz" \
-  --artifact "linux:arm64:targz:$DIST/movebit-$VERSION-linux-arm64.tar.gz" \
-  --artifact "linux:x64:appimage:$DIST/movebit-$VERSION-linux-x64.AppImage" \
-  --artifact "linux:arm64:appimage:$DIST/movebit-$VERSION-linux-arm64.AppImage" \
   --rollback-allowed
 
-echo "manifest: $DIST/update-manifest.json (8 artifacts, key-id $KEY_ID)"
+echo "manifest: $DIST/update-manifest.json (4 artifacts, key-id $KEY_ID)"
