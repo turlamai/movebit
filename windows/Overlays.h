@@ -8,6 +8,7 @@
 // (issue #55) removed the forced-break fullscreen overlay from this file.
 
 #include "pch.h"
+#include "Glyphs.h"
 #include "MoveBitModel.h"
 
 #include <functional>
@@ -337,7 +338,8 @@ struct MicroCard {
     Controls::StackPanel head;
     head.Orientation(Controls::Orientation::Horizontal);
     head.Spacing(10);
-    head.Children().Append(make_text(L"👀", 22, false, "#26241F"));
+    head.Children().Append(make_health_glyph(HealthGlyph::eyes, 20,
+                                             L"#26241F", 1.5));
     auto title_block = make_text(wide(title), 18, true, "#26241F");
     title_block.HorizontalAlignment(HorizontalAlignment::Left);
     head.Children().Append(title_block);
