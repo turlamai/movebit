@@ -1,6 +1,9 @@
 #lang racket/base
 (require json racket/file racket/path racket/system)
-(define platform (case (system-type 'os) [(windows) "windows"] [(macosx) "macos"] [(unix) "linux"] [else (error 'acceptance "unsupported platform")]))
+;; Packaged acceptance exists only on the shipped platforms (issue #169).
+;; Linux machines still run the engine suites (raco test racket/); they have
+;; no native host to package.
+(define platform (case (system-type 'os) [(windows) "windows"] [(macosx) "macos"] [else (error 'acceptance "unsupported platform")]))
 (define raco (or (find-executable-path "raco") (error 'acceptance "raco was not found")))
 (unless (system* raco "rivet" "package" "--skip-launch-smoke") (error 'acceptance "package failed"))
 (define output (build-path ".rivet" "acceptance" platform))

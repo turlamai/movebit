@@ -1,7 +1,7 @@
 #hasheq((name . "movebit")
         (display-name . "MoveBit")
-        (version . "0.0.10")
-        (build . 7)
+        (version . "0.1.0")
+        (build . 1)
         (identifier . "site.jrtx.movebit")
         (release-channel . stable)
         (url-schemes . ())
@@ -10,9 +10,6 @@
         (windows-min-version . "10.0.19041.0")
         (macos-icon . "assets/movebit.icns")
         (windows-icon . "assets/icon.ico")
-        ;; The AppImage format requires a top-level icon PNG (rivet errors
-        ;; out without it); project-relative like windows-icon.
-        (linux-icon . "assets/icon.png")
         (backend . "app/backend.rkt")
         (module . "backend")
         (entry . "start")

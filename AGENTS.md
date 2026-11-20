@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Platform narrowing — issue #169 (2026-11-19)
+
+MoveBit ships **macOS + Windows only**. The Linux GTK4 host, its
+packaging (deb/rpm/AppImage/Flatpak/tar.gz) and Linux-only CI/acceptance
+legs are removed; the release matrix is 6 assets (DMG ×2 + MSI + update
+ZIP ×3) and the signed update feed answers windows + macos only. The
+Racket domain engine stays platform-neutral: `raco test racket/` and the
+contract/bridge acceptance suites still run on Linux machines. Dated
+decision logs below that say "three hosts / 三端" describe the pre-#169
+lineup; the version line restarts at 0.1.0 (autarx#56 playbook).
+
 ## 实现路由（agent 按任务读真源）
 
 - 实现界面以 `design/prototype/` 为准：对照 HTML/CSS/JS 与实物截图验收，不依赖散文复述。
@@ -13,14 +24,14 @@
 
 **Less is more.** Stop proposing a dashboard of attention strengths, motion levels, dock pickers and separate "meeting" modes as the main product. The user wants a lovable Mubi that comes to the central work area **at a genuine scheduled water, movement or eye-rest break** and WAITS there — topmost, above every window — until answered (owner decision #140: reminders that auto-retreat or get covered have no effect); then it returns to its home position. Between breaks it plays by itself near its dock (rolls, tilts, blinks, hops), never roaming. Petting Mubi is the Done gesture; the bubble's Later tag snoozes; no fullscreen mask, no forced input interception, no focus theft, no click-outside dismissal. Outside breaks, avoid uncontrolled roaming. Users must be able to move/quickly hide Mubi without studying Settings. **Existing Focus doubles as meeting defer**: cancel any approach and audio immediately, and present only one merged missed-cue invitation when Focus ends. Use the original Racket cue ledger; never infer completed behavior. No fullscreen mask, forced input interception, focus stealing, risky window controls, unsupported Wayland positioning or hidden meeting surveillance. System Reduce Motion gets readable static advice.
 
-**UX acceptance:** one-click first launch; the settings window holds sound, quiet hours, auto-update and language ONLY (issue #140: the rhythm, per-kind switches and presentation options are product defaults with no setters); Focus/Pause/Hide/Move Mubi are immediate actions, not added modes. Other options are rare, progressively disclosed technical needs. See [#90](https://github.com/turlamai/movebit/issues/90), [#102](https://github.com/turlamai/movebit/issues/102) and [#104](https://github.com/turlamai/movebit/issues/104). These are **implementation targets**, not claims of shipping. Coordinate with active PR #105 (four-corner interim baseline), #101 (macOS idle pose) and #103 (macOS optional sound), and require packaged three-host safety acceptance before release.
+**UX acceptance:** one-click first launch; the settings window holds sound, quiet hours, auto-update and language ONLY (issue #140: the rhythm, per-kind switches and presentation options are product defaults with no setters); Focus/Pause/Hide/Move Mubi are immediate actions, not added modes. Other options are rare, progressively disclosed technical needs. See [#90](https://github.com/turlamai/movebit/issues/90), [#102](https://github.com/turlamai/movebit/issues/102) and [#104](https://github.com/turlamai/movebit/issues/104). These are **implementation targets**, not claims of shipping. Coordinate with active PR #105 (four-corner interim baseline), #101 (macOS idle pose) and #103 (macOS optional sound), and require packaged two-host safety acceptance before release.
 
 ## Product experience direction (owner request 2026-10-31; proposal until reviewed)
 
 The owner requests a product-led experience and commercial viability reboot: [master #86](https://github.com/turlamai/movebit/issues/86), [bilingual detailed design](docs/PRODUCT-EXPERIENCE-2026.md) / [中文版](docs/PRODUCT-EXPERIENCE-2026.zh-CN.md). Delivery issues: #87 reminder UX, #88 truthful metrics, #89 expressive Mubi, #90 onboarding/UI, #94 opt-in guided microbreaks, #91 paid value, #92 real product acceptance. Existing #51/#54/#56 remain authoritative for safety, original art and the no-interruption rule, **but earlier prohibitions on all voluntary pet interactions or subtle ambient personality are proposed to be relaxed** within the strict limits in #89. This does NOT authorize feeding, punishment, attention loops, full-screen blocking, spying or unverified claims. Do not claim design hypotheses are completed implementation.
 
 
-When implementing a bounded slice, check the current main/PR heads first; coordinate with active agents, avoid reverting their changes, use the shared Racket scheduler and three native hosts, record real packaged acceptance and upgrade/migration of already released 0.0.1 user data.
+When implementing a bounded slice, check the current main/PR heads first; coordinate with active agents, avoid reverting their changes, use the shared Racket scheduler and two native hosts, record real packaged acceptance and upgrade/migration of already released 0.0.1 user data.
 
 ## Highest-priority product direction — MoveBit v1 reboot (owner approval 2026-10-26)
 
@@ -49,7 +60,6 @@ Avalonia/.NET 旧栈已彻底移除，仓库从 rivet 时代（0.1.0 起）起�
 |---|---|---|---|
 | macOS | SwiftUI 宿主 + 生成客户端 | `macos-host/` | 可用 |
 | Windows | C++/WinRT 宿主 + 生成客户端 | `windows/` | 可用 |
-| Linux | GTK4 宿主 + 生成客户端 | `linux/` | 可用 |
 | agent CLI | — | — | 不适用 |
 
 ## 快速命令
@@ -60,7 +70,7 @@ Avalonia/.NET 旧栈已彻底移除，仓库从 rivet 时代（0.1.0 起）起�
 
 raco rivet doctor --json   # 工具链自检
 raco rivet schema check rivet-schema.json --json # RPC 兼容性门禁
-raco rivet build           # 生成三端客户端 + 编译后端 bundle + 宿主构建
+raco rivet build           # 生成两端客户端 + 编译后端 bundle + 宿主构建
 raco rivet dev             # 开发循环
 raco test racket/          # 领域核心测试
 raco test racket/tests/backend-server-test.rkt # 真实 RVT1 wire test
@@ -72,13 +82,13 @@ raco rivet acceptance --json # 当前平台的打包产品验收
 - GUI 功能必须通过 `raco rivet acceptance --json`：领域契约、真实 RVT1、
   原生宿主、可分发包以及打包后的原生 UI 操作缺一不可。
 - 默认验收使用隔离配置启动打包应用，确认真实后端工作状态以及**喝水 / 久坐活动 / 护眼健康提醒动作**能被原生可访问性树与用户操作覆盖；只构建成功、只截图或只打开空窗口不算完成。旧版仅验证 `Active today` 的验收不再足够。
-- 跨平台交互要同步 macOS、Windows、Linux，或明确记录真实平台边界。
+- 跨平台交互要同步 macOS、Windows，或明确记录真实平台边界；领域引擎保持平台中立，Linux 机器仍跑引擎与 contract/bridge 测试（#169）。
 - 不得用 `continue-on-error`、空测试、跳过 UI 或强杀进程作为成功证据。
 
 ## 契约（不要破坏）
 
 - **本地持久化**：`racket/movebit/storage.rkt` 管 SQLite；`docs/STORAGE.md` 是数据与同步契约。设置与统计落本机 `movebit.sqlite3`；跨设备仅交换带版本的设备/日期记录，不同步数据库文件。引导信息只在本机，旧 JSON 存储与迁移路径已退役。
-- **v1 数据契约可全新定义**：没有真实用户，无需兼容旧版 `config.json`、`history.json`、旧字段或迁移旧路径。新格式必须有确定的 fresh-install 默认值、schema 版本、读写容错、隐私与测试；同一 v1 版本在 macOS / Linux / Windows 之间保持一致。保留本地数据优先。
+- **v1 数据契约可全新定义**：没有真实用户，无需兼容旧版 `config.json`、`history.json`、旧字段或迁移旧路径。新格式必须有确定的 fresh-install 默认值、schema 版本、读写容错、隐私与测试；同一 v1 版本在 macOS / Windows 之间保持一致（引擎层平台中立）。保留本地数据优先。
 - **i18n 单源**：`shared/i18n/{zh,en}.json`，平台副本必须逐字节一致；zh 为默认
 - **RPC 面**：`app/backend.rkt` 的 define-rpc 是宿主唯一数据通道；改签名 = 各端宿主 + 生成客户端同步改
 - **宿主只做渲染与交互**：业务一律走 RPC；定时器/调度/HTTP/存储都在 Racket 后端
@@ -92,8 +102,7 @@ raco rivet acceptance --json # 当前平台的打包产品验收
 ├── racket/             Racket 领域核心 + tests/
 ├── shared/i18n/        zh.json / en.json 单源
 ├── macos-host/         SwiftUI 宿主
-├── windows/            WinUI3 宿主
-└── linux/              GTK4 宿主
+└── windows/            WinUI3 宿主
 ```
 
 ## 组合定位（Portfolio placement）

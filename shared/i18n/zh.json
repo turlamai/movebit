@@ -312,7 +312,6 @@
   "upd.actionRetry": "重试",
   "upd.actionUpdate": "更新并重启",
   "upd.actionUpdating": "更新中…",
-  "upd.appImageHint": "更新已就位，重启 MoveBit 即可切换到新版本。",
   "upd.availableTitle": "发现新版本",
   "upd.cancelled": "更新已取消，当前版本保持不变。",
   "upd.checkCancelled": "检查更新已取消。",

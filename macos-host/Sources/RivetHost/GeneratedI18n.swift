@@ -319,7 +319,6 @@ enum GeneratedI18n {
         "upd.actionRetry": ["zh": "重试", "en": "Retry"],
         "upd.actionUpdate": ["zh": "更新并重启", "en": "Update & restart"],
         "upd.actionUpdating": ["zh": "更新中…", "en": "Updating…"],
-        "upd.appImageHint": ["zh": "更新已就位，重启 MoveBit 即可切换到新版本。", "en": "The update is in place — restart MoveBit to switch to the new version."],
         "upd.availableTitle": ["zh": "发现新版本", "en": "Update available"],
         "upd.cancelled": ["zh": "更新已取消，当前版本保持不变。", "en": "Update cancelled — current version unchanged."],
         "upd.checkCancelled": ["zh": "检查更新已取消。", "en": "Update check cancelled."],

@@ -10,9 +10,9 @@ Current public preview: source-available under BUSL-1.1 (MIT change date) and no
 
 ## Platforms and installation
 
-Official releases target Windows x64, macOS (Apple silicon and Intel) and Linux x64/arm64. Every platform ships a portable archive; Windows adds an MSI, macOS a DMG, Linux a deb, rpm, AppImage and Flatpak bundle. Use the [official Releases](https://github.com/turlamai/movebit/releases), select an explicitly listed OS/architecture asset, and check the release's `SHA256SUMS` file. On Linux the Flatpak bundle installs with `flatpak --user install ./movebit-<version>-linux-<arch>.flatpak` (app id `site.jrtx.movebit`; it carries the app payload only, and the GNOME Platform runtime is pulled from your Flatpak remote on first install). Preview assets may lack publisher signing or notarization; do not disable system-wide security protections to install them.
+Official releases target Windows x64 and macOS (Apple silicon and Intel); Linux desktop support was retired in the 0.1.0 restart (issue #169). Every platform ships a portable archive; Windows adds an MSI and macOS a DMG. Use the [official Releases](https://github.com/turlamai/movebit/releases), select an explicitly listed OS/architecture asset, and check the release's `SHA256SUMS` file. Preview assets may lack publisher signing or notarization; do not disable system-wide security protections to install them.
 
-Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / CoreGraphics / XScreenSaver). On Linux, Mubi's card docks on X11 sessions; on Wayland the compositor does not let an app place a click-through card, so cues deliver as in-app reminder cards instead (reminders, history and updates work as usual).
+Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / CoreGraphics).
 
 ## Your first session
 
@@ -24,11 +24,11 @@ Platform notes: idle detection uses the native desktop APIs (GetLastInputInfo / 
 ## Mubi, focus mode and honesty
 
 - The three gestures map to the three reminders: sit → stretch, water → raised cup, eye rest → closed eyes. Several due reminders merge into one cue with every meaning preserved.
-- **Focus mode** (the tray toggle on Windows / macOS, a header button on Linux) queues cues silently during presentations and delivers ONE bounded summary when it ends — never a pile-up. Cues that were already on screen are not re-emitted.
+- **Focus mode** (the tray toggle on Windows / macOS) queues cues silently during presentations and delivers ONE bounded summary when it ends — never a pile-up. Cues that were already on screen are not re-emitted.
 - An unanswered invitation stays on screen — silence is never counted as completion, and nothing is lost. A reminder firing while one is open merges into the same invitation: always exactly one Mubi, every meaning preserved.
 - While a water / stand / eye cue is open, the menu can offer an optional **20 s eye rest** or **2 min stretch** card: nothing counts down until you press Start, Done is your explicit self-report, and Hide/Esc ends it without claiming a break.
 - Mubi plays by itself between reminders — rolls, tilts, blinks, little hops near its dock — like a pet waiting nearby. System Reduce Motion renders everything static.
-- **Drag Mubi anywhere** — grabbing the character moves it at any time, in any state, on every desktop; the pointer-through surface only becomes touchable while the cursor rests on Mubi itself, and the dropped position is remembered (scaled and clamped on monitor/DPI changes). **Reset Mubi** in the menu (macOS, the Windows tray, and the Linux X11 tray or header) parks it back at the default corner. On Wayland the compositor owns placement, so the character keeps the notification fallback.
+- **Drag Mubi anywhere** — grabbing the character moves it at any time, in any state, on every desktop; the pointer-through surface only becomes touchable while the cursor rests on Mubi itself, and the dropped position is remembered (scaled and clamped on monitor/DPI changes). **Reset Mubi** in the menu (macOS and the Windows tray) parks it back at the default corner.
 - There is no fullscreen forced break anywhere in v0.0.1, and no way to opt back into one — that contract was removed on purpose.
 
 ## Rhythm, quiet hours and honesty
@@ -46,7 +46,7 @@ Today's active minutes, presented invitations and self-reported Done counts, plu
 
 ## Data, backup and recovery
 
-Settings and history are stored in the machine-local `movebit.sqlite3` database: `~/Library/Application Support/movebit` on macOS, `~/.config/movebit` on Linux, `%APPDATA%\movebit` on Windows. Quit MoveBit and back up the local profile directory as a whole, including any SQLite `-wal` / `-shm` files that remain. Back up the machine-local `bootstrap.json` separately if the profile directory was changed. Copying only an open database file is not a consistent backup. Restore into an isolated local directory first; unknown-schema or corrupt databases are never silently overwritten. Retired JSON settings and history are not imported.
+Settings and history are stored in the machine-local `movebit.sqlite3` database: `~/Library/Application Support/movebit` on macOS, `%APPDATA%\movebit` on Windows. Quit MoveBit and back up the local profile directory as a whole, including any SQLite `-wal` / `-shm` files that remain. Back up the machine-local `bootstrap.json` separately if the profile directory was changed. Copying only an open database file is not a consistent backup. Restore into an isolated local directory first; unknown-schema or corrupt databases are never silently overwritten. Retired JSON settings and history are not imported.
 
 Optional cross-device statistics use a separate record-exchange directory. Set `MOVEBIT_SYNC_DIR` to each machine’s local copy of the same Resilio/Syncthing folder, or configure the backend `set-sync-dir` RPC, then restart. These are advanced configuration paths, not extra controls in the four-setting window. Only versioned device/day statistics are exchanged: settings, bootstrap identity, updates and SQLite files remain local. Repeated and out-of-order records do not count twice. Each device’s counters are added across devices; longest continuous time uses the maximum. Keep the local database outside the synchronized folder. Sync is not a backup. [Storage contract](STORAGE.md).
 
@@ -56,19 +56,18 @@ Reminder and accounting work is local. Update checks and release downloads conta
 
 ## Updates and removal
 
-The in-app **Check for updates** reads the Ed25519-signed `update-manifest.json`, verifies size and SHA-256 after download, and swaps the payload only through **Update & restart**. A failed check aborts without touching the current install. AppImage installs take that in-place update; deb, rpm and Flatpak installs are owned by their package managers, and portable tar.gz installs are yours to manage — for all of these the updater downloads the verified artifact and shows guidance instead of swapping. Update with the package manager (`flatpak --user update site.jrtx.movebit` for the Flatpak bundle) or install the new release over the old one.
+The in-app **Check for updates** reads the Ed25519-signed `update-manifest.json`, verifies size and SHA-256 after download, and swaps the payload only through **Update & restart**. A failed check aborts without touching the current install. The signed feed carries Windows and macOS artifacts only.
 
 For Windows portable ZIP updates, a failed copy or an executable that Windows cannot start restores the previous installation and attempts to relaunch it. The updater records the failure in `updates/update-failed.txt` under the application data directory. Acceptance of a launch by Windows is not a full application-health check: a later crash, complete GUI restart and real-version rollback remain separate qualification gates. MSI updates use the Windows Installer handoff instead of this portable swap.
 
 Before replacing a Windows portable installation, the helper waits up to two minutes for the previous process to exit. If exit cannot be confirmed, it leaves the installation untouched and records that the update was not applied; it does not force the application to quit. Close the existing application normally before trying the update again.
 
-Removing the program does not erase your data. The SQLite database and its local profile files live in the separate data directory (`~/Library/Application Support/movebit` on macOS, `~/.config/movebit` on Linux, `%APPDATA%\movebit` on Windows; a Flatpak install keeps its sandboxed copy under `~/.var/app/site.jrtx.movebit/`, and `flatpak --user uninstall --delete-data site.jrtx.movebit` removes it together with the app). Uninstall the program per platform:
+Removing the program does not erase your data. The SQLite database and its local profile files live in the separate data directory (`~/Library/Application Support/movebit` on macOS, `%APPDATA%\movebit` on Windows). Uninstall the program per platform:
 
 - **Windows** — remove the MSI from Settings → Apps (Apps & Features); a portable ZIP is removed by deleting its folder.
 - **macOS** — drag MoveBit from Applications to the Trash.
-- **Linux** — remove the deb/rpm with the package manager that installed it (the deb installs to `/opt/movebit`), delete an AppImage, tar.gz or zip copy like any standalone file or folder, and remove the Flatpak bundle with `flatpak --user uninstall site.jrtx.movebit`.
 
-Login-autostart entries the app manages itself — the `MoveBit` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows, `~/Library/LaunchAgents/com.turlamai.movebit.plist` on macOS, and `~/.config/autostart/movebit.desktop` on Linux — are user-level settings that can outlive the program; delete them if you no longer want MoveBit to start at login. Deleting personal data is a separate, explicit action after you have verified your backup.
+Login-autostart entries the app manages itself — the `MoveBit` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows and `~/Library/LaunchAgents/com.turlamai.movebit.plist` on macOS — are user-level settings that can outlive the program; delete them if you no longer want MoveBit to start at login. Deleting personal data is a separate, explicit action after you have verified your backup.
 
 ## Get help
 

@@ -312,7 +312,6 @@
   "upd.actionRetry": "Retry",
   "upd.actionUpdate": "Update & restart",
   "upd.actionUpdating": "Updating…",
-  "upd.appImageHint": "The update is in place — restart MoveBit to switch to the new version.",
   "upd.availableTitle": "Update available",
   "upd.cancelled": "Update cancelled — current version unchanged.",
   "upd.checkCancelled": "Update check cancelled.",
