@@ -11,7 +11,7 @@ env:
   # Exact rivet pin, in lockstep with ci.yml and release.yml: the v0.17.0
   # release commit (recursive (List <Enum>) wire decoding — movebit issue
   # #151 / rivet #480).
-  RIVET_PIN: f682fbdf550e7599633efe28c5be8e425bc21c6c
+  RIVET_PIN: c1f0d921e2136c0cfb2c1c1f6d273f2b26222a19
 concurrency:
   # Superseded PR runs may be cancelled; main checks must finish for each SHA.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
