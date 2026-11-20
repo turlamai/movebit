@@ -12,7 +12,7 @@ env:
   # the v0.17.0 release commit. Family policy: rivet is consumed as a
   # package (this pin install), never as a linked source checkout — keeps
   # local and CI builds reproducible against one revision.
-  RIVET_PIN: 179319936c6a22b2fa676c0fd557bcdb05ee5205
+  RIVET_PIN: c1f0d921e2136c0cfb2c1c1f6d273f2b26222a19
 concurrency:
   # Superseded PR runs may be cancelled; main checks must finish for each SHA.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
