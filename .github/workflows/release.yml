@@ -14,7 +14,7 @@ env:
   # v0.17.0 release commit. Family policy: rivet is consumed as a package
   # (this pin install), never as a linked source checkout — keeps local
   # and release builds reproducible against one revision.
-  RIVET_PIN: f682fbdf550e7599633efe28c5be8e425bc21c6c
+  RIVET_PIN: c1f0d921e2136c0cfb2c1c1f6d273f2b26222a19
 jobs:
   validate:
     name: Validate release tag
