@@ -84,3 +84,7 @@ html,body{min-height:100%;background:var(--desk)}body{font-size:14px}#app{min-he
 
 /* Speech belongs to a recent interaction; quiet states stay quiet. */
 .resident-companion .pet-character:not([data-chat="true"]) .pet-caption{display:none}
+
+/* Keep auxiliary content mounted while its application menu is open. */
+.window-slot.menu-over-window{position:relative}
+.window-slot.menu-over-window>.resident-menu{position:absolute;top:8px;right:8px;z-index:3;max-height:calc(100dvh - 112px)}
