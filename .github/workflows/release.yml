@@ -10,14 +10,11 @@ permissions:
   attestations: write
 
 env:
-  # Exact rivet pin, in lockstep with ci.yml and acceptance.yml.
-  # Deliberately an unreleased main commit (v0.15.2-5): carries the
-  # #441/#444 installer fixes movebit needs; re-pin to the next released
-  # tag once one contains it. Family policy: rivet is consumed as a
-  # package (this pin install), never as a linked source checkout — keeps
-  # local and release builds reproducible against one revision, and the
-  # setup-embed-racket action ref must stay in lockstep with this pin.
-  RIVET_PIN: c96673ded75651c94a1d513b122691f85d76ccf5
+  # Exact rivet pin, in lockstep with ci.yml and acceptance.yml: the
+  # v0.17.0 release commit. Family policy: rivet is consumed as a package
+  # (this pin install), never as a linked source checkout — keeps local
+  # and release builds reproducible against one revision.
+  RIVET_PIN: c1f0d921e2136c0cfb2c1c1f6d273f2b26222a19
 jobs:
   validate:
     name: Validate release tag
@@ -270,150 +267,9 @@ jobs:
           path: movebit-*
           if-no-files-found: error
 
-  # The Linux host needs an embeddable static libracketcs, which the standard
-  # Racket installers do not ship; same recipe as ci.yml's host-linux job.
-  # Both family architectures build from source on their native runner
-  # (x64: ubuntu-24.04, arm64: ubuntu-24.04-arm); the cache key carries
-  # runner.arch so each arch keeps its own embeddable runtime. Each leg
-  # runs one `raco rivet release` and adopts rivet's own artifacts: the
-  # tar.gz (update-feed payload), the portable zip (+ sidecar), and the
-  # native installers (deb, rpm, AppImage — both arches, rivet pins an
-  # aarch64 appimagetool), then wraps the tar.gz payload into a Flatpak
-  # bundle from the flatpak/ manifest template. The release flow cleans
-  # the unpacked payload tree from dist/ at the end, so nothing may
-  # re-zip or re-package after.
-  linux:
-    name: Linux ${{ matrix.arch }}
-    needs: validate
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@c96673ded75651c94a1d513b122691f85d76ccf5
-      - name: Install GTK4, a virtual display, and packaging tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes libgtk-4-dev xvfb file desktop-file-utils squashfs-tools rpm
-      # Installed after the embeddable runtime so the dependency closure
-      # (cext-lib, crypto-lib, keel) resolves against the minimal build —
-      # it ships no packages of its own.
-      - name: Install pinned Rivet (tag package install)
-        shell: bash
-        run: raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#${{ env.RIVET_PIN }}' db-lib
-      - name: Cache appimagetool and its runtime through the authenticated API
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          case "${{ matrix.arch }}" in x64) ARCH=x86_64 ;; arm64) ARCH=aarch64 ;; esac
-          mkdir -p .rivet/bin
-          gh release download 1.9.0 -R AppImage/appimagetool \
-            -p "appimagetool-${ARCH}.AppImage" -D .rivet/bin --clobber
-          gh release download continuous -R AppImage/type2-runtime \
-            -p "runtime-${ARCH}" -D .rivet/bin --clobber
-          # appimagetool otherwise downloads the type2 runtime from the same
-          # currently-504 public asset URL. Wrap it so rivet's invocation gets
-          # the pre-fetched runtime through the documented --runtime-file flag.
-          mv ".rivet/bin/appimagetool-${ARCH}.AppImage" \
-             ".rivet/bin/appimagetool-${ARCH}.AppImage.real"
-          chmod +x ".rivet/bin/appimagetool-${ARCH}.AppImage.real"
-          {
-            echo '#!/bin/sh'
-            echo "exec \"\$(dirname \"\$0\")/appimagetool-${ARCH}.AppImage.real\" --runtime-file \"\$(dirname \"\$0\")/runtime-${ARCH}\" \"\$@\""
-          } > ".rivet/bin/appimagetool-${ARCH}.AppImage"
-          chmod +x ".rivet/bin/appimagetool-${ARCH}.AppImage"
-          test -s ".rivet/bin/runtime-${ARCH}"
-      - name: Package (rivet release, development signing)
-        shell: bash
-        env:
-          RIVET_UPDATE_BASE_URL: https://github.com/turlamai/movebit/releases/download/${{ github.ref_name }}
-          RIVET_UPDATE_KEY_ID: movebit-2026-10
-          RIVET_UPDATE_PRIVATE_KEY_B64: ${{ secrets.UPDATE_ED25519_PRIVATE_KEY_B64 }}
-          # Lets appimagetool (itself an AppImage) run on the runner while
-          # rivet assembles the AppImage's GTK4 dependency closure.
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-        run: |
-          set -euo pipefail
-          KEY_DER="$(mktemp -d)/update-ed25519-private.der"
-          printf '%s' "$RIVET_UPDATE_PRIVATE_KEY_B64" | base64 -d > "$KEY_DER"
-          export RIVET_UPDATE_PRIVATE_KEY="$KEY_DER"
-          xvfb-run -a raco rivet release --development
-          rm -f "$KEY_DER"
-      - name: Flatpak bundle
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          ARCH="${{ matrix.arch }}"
-          case "$ARCH" in x64) FPARCH=x86_64 ;; arm64) FPARCH=aarch64 ;; esac
-          sudo apt-get install --yes flatpak flatpak-builder
-          # User-level everything: runner accounts install runtimes and
-          # build without root. GNOME 50 is the oldest supported platform
-          # runtime (48 went EOL 2026-03-24); its glibc 2.42 covers the
-          # ubuntu-24.04-built payload.
-          flatpak --user remote-add --if-not-exists flathub \
-            https://flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y --noninteractive flathub \
-            "org.gnome.Platform/${FPARCH}/50" "org.gnome.Sdk/${FPARCH}/50"
-          # The manifest template carries version/arch/sha placeholders so
-          # the archive source's checksum is exact per release.
-          cp "dist/movebit-${VERSION}-linux-${ARCH}.tar.gz" .
-          SHA="$(sha256sum "movebit-${VERSION}-linux-${ARCH}.tar.gz" | cut -d' ' -f1)"
-          sed -e "s/__VERSION__/${VERSION}/" -e "s/__ARCH__/${ARCH}/" \
-              -e "s/__SHA256__/${SHA}/" \
-              flatpak/site.jrtx.movebit.yml > site.jrtx.movebit.gen.yml
-          # --disable-rofiles-fuse: runners have no /dev/fuse.
-          flatpak-builder --user --force-clean --disable-rofiles-fuse \
-            --repo=flatpak-repo flatpak-build site.jrtx.movebit.gen.yml
-          flatpak build-bundle flatpak-repo \
-            "movebit-${VERSION}-linux-${ARCH}.flatpak" site.jrtx.movebit stable
-          rm -rf flatpak-build flatpak-repo "movebit-${VERSION}-linux-${ARCH}.tar.gz"
-          test -f "movebit-${VERSION}-linux-${ARCH}.flatpak"
-      - name: Collect rivet artifacts + checksums
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          ARCH="${{ matrix.arch }}"
-          rm -f dist/update-*.json
-          # rivet names the tarball after the building machine's arch, which
-          # equals the matrix arch by construction of the runner matrix.
-          test -f "dist/movebit-${VERSION}-linux-${ARCH}.tar.gz"
-          mv "dist/movebit-${VERSION}-linux-${ARCH}.tar.gz" .
-          # rivet's portable zip (with its own sidecar) joins the set.
-          test -f "dist/movebit-${VERSION}-linux-${ARCH}.zip"
-          test -f "dist/movebit-${VERSION}-linux-${ARCH}.zip.sha256"
-          mv "dist/movebit-${VERSION}-linux-${ARCH}.zip" \
-             "dist/movebit-${VERSION}-linux-${ARCH}.zip.sha256" .
-          # The native installers keep rivet's ecosystem spellings (deb
-          # amd64/arm64, rpm embeds the build number + x86_64/aarch64,
-          # AppImage x86_64/aarch64); rename them to the release contract
-          # names (deb/AppImage x64|arm64, rpm native arch spelling).
-          mv dist/movebit-*-linux-*.deb "movebit-${VERSION}-linux-${ARCH}.deb"
-          case "$ARCH" in x64) RPM_ARCH=x86_64 ;; arm64) RPM_ARCH=aarch64 ;; esac
-          mv dist/movebit-*-linux-*.rpm "movebit-${VERSION}-linux-${RPM_ARCH}.rpm"
-          mv dist/movebit-*-linux-*.AppImage "movebit-${VERSION}-linux-${ARCH}.AppImage"
-          # Sidecars for everything rivet did not already checksum.
-          for f in movebit-${VERSION}-linux-*; do
-            case "$f" in *.sha256) continue ;; esac
-            sha256sum "$f" > "$f.sha256"
-          done
-        shell: bash
-      - uses: actions/upload-artifact@v7
-        with:
-          name: linux-${{ matrix.arch }}
-          path: movebit-*
-          if-no-files-found: error
-
   release:
     name: Sign manifest + publish
-    needs: [macos, windows, linux]
+    needs: [macos, windows]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -443,20 +299,14 @@ jobs:
           python3 scripts/check-release-update-key.py "$KEY_DER"
           bash scripts/make-update-manifest.sh "${{ github.ref_name }}" dist "$KEY_DER"
           rm -f "$KEY_DER"
-      - name: Verify signed AppImage feed matches x64/arm64 bytes
-        run: python3 scripts/check-signed-appimage-feed.py dist/update-manifest.json dist
-      - name: Validate and stage the canonical 18-asset desktop matrix
+      - name: Validate and stage the canonical 6-asset desktop matrix
         run: |
           set -euo pipefail
           VERSION="$(printf '%s' "$GITHUB_REF_NAME" | cut -c2-)"
           mkdir -p public
           for suffix in \
             macos-arm64.dmg macos-arm64.zip macos-x64.dmg macos-x64.zip \
-            windows-x64.msi windows-x64.zip \
-            linux-arm64.AppImage linux-arm64.deb linux-arm64.flatpak \
-            linux-arm64.tar.gz linux-arm64.zip linux-aarch64.rpm \
-            linux-x64.AppImage linux-x64.deb linux-x64.flatpak \
-            linux-x64.tar.gz linux-x64.zip linux-x86_64.rpm; do
+            windows-x64.msi windows-x64.zip; do
             name="movebit-$VERSION-$suffix"
             test -s "dist/$name" || { echo "::error::Missing or empty release asset $name"; exit 1; }
             cp "dist/$name" "public/$name"
@@ -466,7 +316,7 @@ jobs:
           cd public
           shasum -a 256 movebit-* | LC_ALL=C sort -k2 > SHA256SUMS
           shasum -a 256 --check SHA256SUMS
-          test "$(grep -c '^' SHA256SUMS)" -eq 18
+          test "$(grep -c '^' SHA256SUMS)" -eq 6
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

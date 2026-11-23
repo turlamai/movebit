@@ -22,28 +22,18 @@ In scope:
   (`racket/movebit/update.rkt`, `scripts/make-update-manifest.sh`,
   `scripts/update-keys.sh`; key id `movebit-2026-10`)
 - Local data handling: the config file, the per-device daily history
-  shards (`racket/movebit/history.rkt`), the per-machine bootstrap file
-  (`racket/movebit/paths.rkt`) and the machine-local license store
-  (`racket/movebit/license-store.rkt`)
+  shards (`racket/movebit/history.rkt`) and the per-machine bootstrap file
+  (`racket/movebit/paths.rkt`)
 - Idle detection: everything MoveBit learns from the OS about input
-  presence (`GetLastInputInfo` / CoreGraphics / XScreenSaver / the Mutter
-  IdleMonitor and freedesktop ScreenSaver session-bus interfaces) and
-  what is recorded as a result
-- The Flatpak sandbox surface declared in `flatpak/site.jrtx.movebit.yml`
-  (finish-args: the X11 socket, `dri`, `ipc`, and the
-  `org.gnome.Mutter.IdleMonitor` bus name) — anything the app does that
-  needs a permission the manifest does not declare is a bug
-- The commercial licensing boundary (`racket/movebit/commercial-policy.rkt`,
-  `racket/movebit/permit-adapter.rkt`): credential verification must stay
-  fail-closed against an application-owned public trust store, and Free
-  builds must keep working with no Permit dependency at all
+  presence (`GetLastInputInfo` / CoreGraphics) and what is recorded as a
+  result
 - The host/backend boundary: hosts render and install; the Racket backend
   (`app/backend.rkt`) decides. Crypto or policy sneaking into a native
   host is a bug.
 
 Out of scope: social engineering, physical access attacks, and defects in
-the OS-provided idle APIs themselves (GetLastInputInfo, CoreGraphics,
-XScreenSaver, Mutter IdleMonitor) — those belong to the platform vendors.
+the OS-provided idle APIs themselves (GetLastInputInfo, CoreGraphics) —
+those belong to the platform vendors.
 
 ## Design notes reviewers should know
 
@@ -59,11 +49,9 @@ XScreenSaver, Mutter IdleMonitor) — those belong to the platform vendors.
   verifies the Ed25519-signed manifest and the downloaded artifact's size
   and SHA-256 before any swap, and only self-applies where the install
   shape allows it: Windows portable ZIP swap (with backup and rollback) or
-  a passive msiexec handoff for MSI installs under Program Files, macOS
-  bundle swap, Linux AppImage atomic replacement. deb, rpm, Flatpak and
-  tar.gz installs are owned by their package managers (or by you, for the
-  tarball); `install-kind` returns no auto-apply artifact for them, so the
-  updater downloads and hands off instead of swapping.
+  a passive msiexec handoff for MSI installs under Program Files, and the
+  macOS bundle swap. The signed feed answers windows + macos only
+  (issue #169).
 - The signed update feed **does not imply a publisher-signed installer**.
   macOS builds are ad-hoc signed (not notarized) and release binaries
   carry no publisher code signature; releases do publish a checked
@@ -77,10 +65,6 @@ XScreenSaver, Mutter IdleMonitor) — those belong to the platform vendors.
   telemetry: activity history stays on disk — or in a folder the user
   points MoveBit at for their own cross-device sync — and is never
   uploaded anywhere.
-- The Flatpak sandbox grants no filesystem or network permission: only
-  the X11 socket, GPU access (`dri`), X11 IPC and the Mutter IdleMonitor
-  bus name. Idle queries go to the session bus; data written by the
-  sandboxed app lands under `~/.var/app/site.jrtx.movebit/`.
 
 ## Supported versions
 

@@ -10,9 +10,9 @@
 
 ## 平台与安装
 
-正式发布覆盖 Windows x64、macOS（Apple silicon 与 Intel）和 Linux x64/arm64。每个平台都有便携压缩包；Windows 另有 MSI，macOS 有 DMG，Linux 有 deb、rpm、AppImage 与 Flatpak 包。请使用[官方 Releases](https://github.com/turlamai/movebit/releases)，选择明确列出的系统/架构资产并核对发布页的 `SHA256SUMS` 校验文件。Linux 的 Flatpak 包用 `flatpak --user install ./movebit-<version>-linux-<arch>.flatpak` 安装（app id 为 `site.jrtx.movebit`；包内只含应用本体，GNOME Platform 运行时会在首次安装时从 Flatpak 远端拉取）。预览资产可能缺少签名或公证；不要为安装关闭系统级安全保护。
+正式发布覆盖 Windows x64 与 macOS（Apple silicon 与 Intel）；Linux 桌面支持已在 0.1.0 重启中退役（issue #169）。每个平台都有便携压缩包；Windows 另有 MSI，macOS 有 DMG。请使用[官方 Releases](https://github.com/turlamai/movebit/releases)，选择明确列出的系统/架构资产并核对发布页的 `SHA256SUMS` 校验文件。预览资产可能缺少签名或公证；不要为安装关闭系统级安全保护。
 
-平台说明：空闲检测使用系统原生 API（GetLastInputInfo / CoreGraphics / XScreenSaver）。Linux 上沐比角色卡在 X11 会话停靠；Wayland 合成器不允许应用自行放置穿透卡片，提醒改为应用内提醒卡投递（提醒、历史与更新照常工作）。
+平台说明：空闲检测使用系统原生 API（GetLastInputInfo / CoreGraphics）。
 
 ## 你的第一次使用
 
@@ -24,10 +24,10 @@
 ## 沐比、专注与诚实
 
 - 三种手势对应三类提醒：久坐→起身拉伸、喝水→举小蓝杯、护眼→闭眼远眺。多个提醒同时到期会合并成一条，含义全部保留。
-- **专注模式**（Windows / macOS 用托盘开关，Linux 用主窗口头栏按钮）在演示、会议时静默排队提醒，结束后只送回一条有界汇总——绝不堆积。开专注前已经显示的提醒不会被重发。
+- **专注模式**（Windows / macOS 用托盘开关）在演示、会议时静默排队提醒，结束后只送回一条有界汇总——绝不堆积。开专注前已经显示的提醒不会被重发。
 - 无人回应的邀请会一直留在屏幕上——沉默不会被记成完成，也不会丢失任何提醒。新一轮提醒触发时会合并进未回应的那条：屏幕上永远只有一只沐比，每种含义都保留。
 - 没有提醒时，沐比会在自己的角落自己玩耍——翻滚、歪头、眨眼、小跳，像宠物在旁边耐心等主人。系统「减弱动态」会让一切保持静态。
-- **直接拖拽沐比**——按住角色即可随时移动它，任何状态、所有桌面都一致；穿透表面只在光标停在沐比身上时变得可触，松手后的位置会被记住（随显示器/DPI 变化按比例缩放并钳制）。**复位沐比**（macOS / Windows 托盘、Linux X11 托盘或头栏）把它送回默认角落。Wayland 由合成器管理窗口位置，角色走如实告知的通知降级路径。
+- **直接拖拽沐比**——按住角色即可随时移动它，任何状态、所有桌面都一致；穿透表面只在光标停在沐比身上时变得可触，松手后的位置会被记住（随显示器/DPI 变化按比例缩放并钳制）。**复位沐比**（macOS / Windows 托盘）把它送回默认角落。
 - v0.0.1 里没有任何全屏强制休息，也没有开关能把它找回来——这是有意删除的契约。
 
 ## 节奏、免打扰与诚实
@@ -45,7 +45,7 @@
 
 ## 数据、备份与恢复
 
-设置与历史保存在本机 `movebit.sqlite3`：macOS `~/Library/Application Support/movebit`，Linux `~/.config/movebit`，Windows `%APPDATA%\movebit`。退出 MoveBit 后备份整个本地数据目录，包括仍存在的 SQLite `-wal` / `-shm` 文件；如果更改过本地数据位置，也要单独备份默认目录里的 `bootstrap.json`。仅复制正在使用的数据库主文件不构成一致备份。先恢复到隔离的本地目录再验证；未知版本或损坏数据库不会被静默覆盖。退役的 JSON 设置与历史不会自动导入。
+设置与历史保存在本机 `movebit.sqlite3`：macOS `~/Library/Application Support/movebit`，Windows `%APPDATA%\movebit`。退出 MoveBit 后备份整个本地数据目录，包括仍存在的 SQLite `-wal` / `-shm` 文件；如果更改过本地数据位置，也要单独备份默认目录里的 `bootstrap.json`。仅复制正在使用的数据库主文件不构成一致备份。先恢复到隔离的本地目录再验证；未知版本或损坏数据库不会被静默覆盖。退役的 JSON 设置与历史不会自动导入。
 
 跨设备统计使用独立的记录交换目录。将各设备的 `MOVEBIT_SYNC_DIR` 指向同一 Resilio/Syncthing 同步文件夹在本机的副本，或调用后端 `set-sync-dir` RPC 配置，然后重启。这些是高级配置途径，不会在四项设置窗口中增加控件。只交换带版本的设备/日期统计；设置、设备引导信息、更新文件和 SQLite 数据库留在本机。重复或乱序到达的记录不重复计数，各设备计数相加，最长连续时段取最大值。本地数据库必须放在同步目录之外，同步不能代替备份。技术细节见[存储契约](STORAGE.md)。
 
@@ -55,19 +55,18 @@
 
 ## 更新与卸载
 
-应用内「检查更新」读取 Ed25519 签名的 `update-manifest.json`，下载后校验大小与 SHA-256，只通过「更新并重启」换新。任何校验失败都会中止，当前安装原封不动。AppImage 安装由应用内更新原地替换；deb、rpm 与 Flatpak 安装由各自的包管理器接管，便携 tar.gz 由你自己管理——对这些形态，更新器只下载已验签的安装包并给出指引，不会自行替换。请用包管理器更新（Flatpak 包用 `flatpak --user update site.jrtx.movebit`），或用新版本直接覆盖安装。
+应用内「检查更新」读取 Ed25519 签名的 `update-manifest.json`，下载后校验大小与 SHA-256，只通过「更新并重启」换新。任何校验失败都会中止，当前安装原封不动。签名 feed 只包含 Windows 与 macOS 资产。
 
 Windows 便携 ZIP 更新中，复制失败或 Windows 无法启动新程序时，会恢复旧安装并尝试重新启动它；失败原因写入应用数据目录下的 `updates/update-failed.txt`。Windows 接受启动请求不等于应用健康检查通过：后续崩溃、完整界面重启及真实版本回滚仍是独立验收门禁。MSI 更新交给 Windows Installer，不采用便携版目录替换流程。
 
 替换 Windows 便携版安装前，辅助程序最多等待两分钟让旧进程退出。如果无法确认退出，会保持安装不变并记录「更新未应用」，不会强制结束应用。请正常关闭原应用后再重试更新。
 
-卸载程序不会删除你的数据。SQLite 数据库及本地配置文件位于独立的数据目录（macOS `~/Library/Application Support/movebit`、Linux `~/.config/movebit`、Windows `%APPDATA%\movebit`；Flatpak 安装的沙箱数据在 `~/.var/app/site.jrtx.movebit/`，用 `flatpak --user uninstall --delete-data site.jrtx.movebit` 可连同应用一并删除）。按平台移除程序本体：
+卸载程序不会删除你的数据。SQLite 数据库及本地配置文件位于独立的数据目录（macOS `~/Library/Application Support/movebit`、Windows `%APPDATA%\movebit`）。按平台移除程序本体：
 
 - **Windows** —— 在「设置 → 应用」（应用和功能）卸载 MSI；便携 ZIP 直接删除其文件夹。
 - **macOS** —— 在「应用程序」里把 MoveBit 拖入废纸篓。
-- **Linux** —— 用安装时的包管理器卸载 deb/rpm（deb 安装在 `/opt/movebit`）；AppImage、tar.gz、zip 副本删除对应文件或目录即可；Flatpak 包用 `flatpak --user uninstall site.jrtx.movebit` 卸载。
 
-应用自己管理的开机自启项——Windows 的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下 `MoveBit` 值、macOS 的 `~/Library/LaunchAgents/com.turlamai.movebit.plist`、Linux 的 `~/.config/autostart/movebit.desktop`——属于用户级设置，可能比程序本身留存更久；不再需要 MoveBit 随登录启动时请自行删除。删除个人数据须在确认备份后另行、显式地操作。
+应用自己管理的开机自启项——Windows 的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下 `MoveBit` 值、macOS 的 `~/Library/LaunchAgents/com.turlamai.movebit.plist`——属于用户级设置，可能比程序本身留存更久；不再需要 MoveBit 随登录启动时请自行删除。删除个人数据须在确认备份后另行、显式地操作。
 
 ## 获取帮助
 

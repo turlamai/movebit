@@ -21,6 +21,11 @@ try { $env:MOVEBIT_DATA_DIR=$data;$env:MOVEBIT_BOOTSTRAP_DIR=$data;$env:MOVEBIT_
   # Acceptance mode creates exactly ONE window (the companion is gated off
   # headless), so the R1-era probe on the first window is the proven form.
   try { [void](Wait-Until 'backend activity state' { Contains-Text $window 'Active today' }) } catch { Save-Snapshot $window (Join-Path $output 'accessibility-failure.json');throw }
-  Save-Snapshot $window (Join-Path $output 'accessibility.json');[ordered]@{platform='windows';actions=@('launch:isolated-config');assertions=@('packaged WinUI window activated','RVT1 backend activity state reached native accessibility tree')} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
+  # 2026-11-15 contract: the four segment tabs expose their localized
+  # titles in the same tree (the seed profile pins language=en).
+  foreach ($segment in @('Today','History','Settings','About')) {
+    [void](Wait-Until "segment $segment" { Contains-Text $window $segment })
+  }
+  Save-Snapshot $window (Join-Path $output 'accessibility.json');[ordered]@{platform='windows';actions=@('launch:isolated-config');assertions=@('packaged WinUI window activated','four segment tabs exposed','RVT1 backend activity state reached native accessibility tree')} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
   $pattern=$window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern);([System.Windows.Automation.WindowPattern]$pattern).Close();[void](Wait-Until 'process exit' {$process.Refresh();$process.HasExited} 30)
 } finally { $env:MOVEBIT_DATA_DIR=$oldData;$env:MOVEBIT_BOOTSTRAP_DIR=$oldBootstrap;$env:MOVEBIT_ACCEPTANCE=$oldAcceptance;if($process -and -not $process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue};if($process){$process.Dispose()} }

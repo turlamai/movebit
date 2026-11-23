@@ -251,8 +251,12 @@
 (define water-loop
   (findf (lambda (l) (string=? (list-ref l 0) "water")) loops-wire))
 (check-true (pair? water-loop))
-(check-equal? (list-ref water-loop 2) 50)                 ; 60 - 10 accumulated
-(check-equal? (list-ref water-loop 1) 10)                 ; due-in = 60 - 50
+;; Later defers by ACTIVE time: the due point lands snooze minutes after
+;; now, i.e. accumulated + due-in == the interval with due-in <= snooze.
+;; Under load extra tick rounds advance the accumulator, so pin the
+;; RELATION, never the exact machine-dependent numbers.
+(check-equal? (+ (list-ref water-loop 2) (list-ref water-loop 1)) 60)
+(check-true (<= (list-ref water-loop 1) 10))
 (check-false (member wa-id (pending-ids)))
 
 ;; --- 3. quiet mode queues, and exits with a bounded summary -----------------
@@ -295,7 +299,42 @@
 (check-true (pair? (list-ref qs 1)))
 (check-not-false
  (andmap (lambda (k) (member k (list "sit" "water" "micro"))) (list-ref qs 1)))
-(check-true (>= (length (get-state "pending-cues")) 1))
+  (check-true (>= (length (get-state "pending-cues")) 1))
+
+;; --- 3b. partial acknowledgement over the wire (只做了一部分) -----------------
+;; While quiet holds the open set stable, settle ONE kind of the summary cue:
+;; the residual kinds stay pending under the same id; an empty selection is a
+;; no-op (零选择不提交). The full lifecycle matrix lives in the orchestrator
+;; tests; the wire contract here is shape + residual persistence.
+(define-values (_quiet-hold-result _quiet-hold-ev) (call "set-quiet" #t))
+(check-true (void? _quiet-hold-result))
+(define partial-cue
+  (for/first ([c (in-list (get-state "pending-cues"))]
+              #:when (= (list-ref c 0) (list-ref qs 0)))
+    c))
+(check-true (pair? partial-cue) "the quiet summary must still be open")
+(define summary-kinds (list-ref partial-cue 1))
+(when (>= (length summary-kinds) 2)
+  (define-values (pk-result _pk-ev)
+    (call "acknowledge-cue-kinds" (list-ref qs 0) (list (car summary-kinds))))
+  (check-true (void? pk-result))
+  (define residual
+    (for/first ([c (in-list (get-state "pending-cues"))]
+                #:when (= (list-ref c 0) (list-ref qs 0)))
+      c))
+  (check-true (pair? residual) "a partially acknowledged cue stays open")
+  (check-equal? (list-ref residual 1) (cdr summary-kinds)))
+;; zero selection: void, and nothing settles
+(define-values (zero-result _zero-ev)
+  (call "acknowledge-cue-kinds" (list-ref qs 0) '()))
+(check-true (void? zero-result))
+(define still-open
+  (for/first ([c (in-list (get-state "pending-cues"))]
+              #:when (= (list-ref c 0) (list-ref qs 0)))
+    c))
+(check-true (pair? still-open) "zero selection leaves the cue untouched")
+(define-values (_quiet-release-result _quiet-release-ev) (call "set-quiet" #f))
+(check-true (void? _quiet-release-result))
 
 ;; --- 4. set-config clamps + announces ---------------------------------------
 

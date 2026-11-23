@@ -7,6 +7,7 @@
 // screen cannot nag on every launch.
 
 #include "pch.h"
+#include "Glyphs.h"
 #include "MoveBitModel.h"
 #include "Overlays.h"
 
@@ -49,10 +50,12 @@ struct OnboardingWizard {
     root.HorizontalAlignment(HorizontalAlignment::Center);
     root.VerticalAlignment(VerticalAlignment::Center);
 
-    // Mubi's water-drop motif stands in for the layered character surface,
-    // which cannot be embedded in a WinUI view; the real Mubi idles on screen
-    // behind this window at first launch.
-    auto glyph = make_text(L"💧", 64, false, "#26241F");
+    // A static vector Mubi in the hello pose (prototype pet geometry and
+    // palette). The layered live character surface still cannot be embedded
+    // in a WinUI view and the real Mubi idles on screen behind this window;
+    // the welcome art now matches that character instead of an emoji
+    // stand-in (#167).
+    auto glyph = make_mubi_welcome();
     glyph.HorizontalAlignment(HorizontalAlignment::Center);
     root.Children().Append(glyph);
 
@@ -69,12 +72,17 @@ struct OnboardingWizard {
     line.HorizontalAlignment(HorizontalAlignment::Center);
     root.Children().Append(line);
 
+    auto pat_hint = make_text(winrt::to_hstring(l10n::t("ob.patHint")), 11.5,
+                              false, "#655F55");
+    pat_hint.TextWrapping(TextWrapping::Wrap);
+    pat_hint.HorizontalAlignment(HorizontalAlignment::Center);
+    root.Children().Append(pat_hint);
     auto privacy = make_text(winrt::to_hstring(l10n::t("ob.privacy")), 11.5,
                              false, "#A39B8D");
     privacy.HorizontalAlignment(HorizontalAlignment::Center);
     root.Children().Append(privacy);
 
-    auto start = make_button(winrt::to_hstring(l10n::t("ob.start")), "#C25E3E",
+    auto start = make_button(winrt::to_hstring(l10n::t("ob.launch")), "#A7472C",
                              "#FFFFFF", false);
     start.CornerRadius(CornerRadius{8, 8, 8, 8});
     start.Padding(Thickness{18, 9, 18, 9});
@@ -83,11 +91,6 @@ struct OnboardingWizard {
       Finish();
     });
     root.Children().Append(start);
-
-    auto hint = make_text(winrt::to_hstring(l10n::t("ob.startHint")), 11,
-                          false, "#A39B8D");
-    hint.HorizontalAlignment(HorizontalAlignment::Center);
-    root.Children().Append(hint);
 
     Controls::ScrollViewer scroll;
     scroll.Content(root);

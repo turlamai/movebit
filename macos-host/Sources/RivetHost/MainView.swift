@@ -1,7 +1,13 @@
 import SwiftUI
 import AppKit
 
-// MARK: - palette (warm paper, light/dark follows system; parity with App.axaml)
+// The utility window per the 2026-11-15 contract (design/DESIGN.md 辅助
+// 窗口): compact titlebar, four in-window segments (今日 / 历史 / 设置 /
+// 关于) with per-segment scroll preservation, and a statusbar. No web
+// navigation, marketing headline or footer. All four segments stay mounted
+// so each keeps its scroll position while hidden (prototype tabScroll).
+
+// MARK: - palette (2026-11-15 tokens, light/dark paired)
 
 enum Palette {
     static func dynamic(light: String, dark: String) -> Color {
@@ -11,20 +17,22 @@ enum Palette {
         }))
     }
 
-    static let appBg = dynamic(light: "#F5F2EB", dark: "#201D1A")
+    // Window surfaces + type (design/DESIGN.md 视觉规范 table).
+    static let appBg = dynamic(light: "#F8F7F3", dark: "#282622")
+    static let titlebarBg = dynamic(light: "#F0EEE8", dark: "#302D28")
     static let cardBg = dynamic(light: "#FFFFFF", dark: "#2A2622")
-    static let cardBorder = dynamic(light: "#EAE2D6", dark: "#3A352E")
-    static let inkPrimary = dynamic(light: "#26241F", dark: "#EDE7DA")
-    static let inkSecondary = dynamic(light: "#6E6A5E", dark: "#B0A696")
-    static let inkMuted = dynamic(light: "#A39B8D", dark: "#7A7264")
-    static let accent = dynamic(light: "#C25E3E", dark: "#D97B54")
-    static let accentSoft = dynamic(light: "#FBEFE2", dark: "#3A2A20")
-    static let trackBg = dynamic(light: "#EAE6DC", dark: "#38332D")
-    static let chartBar = dynamic(light: "#D2C8B2", dark: "#4E4638")
-    static let waterBlue = dynamic(light: "#3E7EC2", dark: "#7AB0E8")
-    static let okGreen = dynamic(light: "#4E9A6A", dark: "#6FBF8A")
+    static let cardBorder = dynamic(light: "#E5DED2", dark: "#3A352E")
+    static let inkPrimary = dynamic(light: "#26241F", dark: "#F1EBDF")
+    static let inkSecondary = dynamic(light: "#655F55", dark: "#C0B5A4")
+    static let inkMuted = dynamic(light: "#8B857A", dark: "#8F8676")
+    static let accent = dynamic(light: "#A7472C", dark: "#EFAA85")
+    static let accentSoft = dynamic(light: "#FBEFE2", dark: "#413025")
+    static let trackBg = dynamic(light: "#EAE3D7", dark: "#39332C")
+    static let chartBar = dynamic(light: "#AEA08A", dark: "#9C8C75")
+    static let waterBlue = dynamic(light: "#488BBE", dark: "#95C6F7")
+    static let okGreen = dynamic(light: "#267344", dark: "#8BCE9D")
     static let pausedOrange = Color(red: 0xEA / 255, green: 0x58 / 255, blue: 0x0C / 255)
-    static let runningGreen = Color(red: 0x16 / 255, green: 0xA3 / 255, blue: 0x4A / 255)
+    static let runningGreen = dynamic(light: "#267344", dark: "#8BCE9D")
 
     static func kindAccent(_ kind: ReminderKind) -> Color {
         switch kind {
@@ -152,193 +160,240 @@ extension MoveBitModel {
 
 // MARK: - root layout
 
-/// Main window: two-column card layout, single column when narrow.
+/// The utility window content: compact titlebar + four segments + statusbar.
+/// All segments stay mounted so each keeps its scroll position while hidden
+/// (the prototype's per-tab scroll memory).
 struct MainView: View {
     @EnvironmentObject var model: MoveBitModel
+    // Dev/acceptance-only entry segment (MOVEBIT_DEBUG_SEGMENT); e2e asserts
+    // each segment without synthetic clicks. Always "today" in production.
+    @State private var segment = ProcessInfo.processInfo.environment[
+        "MOVEBIT_DEBUG_SEGMENT"] ?? "today"
 
     var body: some View {
-        GeometryReader { geo in
-            ScrollView {
-                columns(narrow: geo.size.width < 700)
+        VStack(spacing: 0) {
+            titlebar
+            Divider().overlay(Palette.cardBorder)
+            segmentTabs
+            ZStack {
+                segmentScroll("today") { TodaySegment() }
+                segmentScroll("history") { HistorySegment() }
+                segmentScroll("settings") { SettingsSegment() }
+                segmentScroll("about") { AboutSegment() }
             }
-            .background(Palette.appBg)
+            Divider().overlay(Palette.cardBorder)
+            statusbar
         }
+        .background(Palette.appBg)
+        .frame(minWidth: 460, minHeight: 420)
+    }
+
+    /// Compact titlebar: the leaf mark + MoveBit on the platform titlebar
+    /// row (traffic lights stay at the leading edge — 按平台标准窗口实现).
+    private var titlebar: some View {
+        HStack(spacing: 7) {
+            leafMark
+                .padding(.leading, 72) // traffic-light clearance
+            Text("MoveBit")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Palette.inkPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Palette.titlebarBg)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(L10n.t("win.utilityA11y"))
+    }
+
+    /// The linear SVG leaf vocabulary (prototype glyph('leaf')).
+    private var leafMark: some View {
+        LeafIcon()
+            .frame(width: 14, height: 14)
+            .foregroundColor(Palette.inkSecondary)
+    }
+
+    private var segmentTabs: some View {
+        HStack(spacing: 2) {
+            segmentButton("today", L10n.t("seg.today"))
+            segmentButton("history", L10n.t("seg.history"))
+            segmentButton("settings", L10n.t("seg.settings"))
+            segmentButton("about", L10n.t("seg.about"))
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Palette.titlebarBg)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func segmentButton(_ key: String, _ label: String) -> some View {
+        Button {
+            segment = key
+        } label: {
+            Text(label)
+                .font(.system(size: 12.5, weight: segment == key ? .semibold : .regular))
+                .foregroundColor(segment == key ? Palette.inkPrimary : Palette.inkSecondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(segment == key ? Color.primary.opacity(0.07)
+                                             : Color.clear))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(segment == key ? .isSelected : [])
     }
 
     @ViewBuilder
-    private func columns(narrow: Bool) -> some View {
-        let left = leftColumn
-        let right = rightColumn
-        if narrow {
-            VStack(spacing: 16) { left; right }
-                .padding(20)
-        } else {
-            HStack(alignment: .top, spacing: 14) {
-                left.frame(maxWidth: .infinity)
-                right.frame(maxWidth: .infinity)
-            }
-            .padding(24)
+    private func segmentScroll<Content: View>(_ key: String,
+                                              @ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            content()
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
         }
+        .opacity(segment == key ? 1 : 0)
+        .allowsHitTesting(segment == key)
+        .accessibilityHidden(segment != key)
     }
 
-    private var leftColumn: some View {
-        VStack(spacing: 16) {
-            TodayCard()
-            HistoryCard()
-            InsightCard()
-        }
-    }
-
-    private var rightColumn: some View {
-        VStack(spacing: 16) {
-            SettingsCard()
-            AboutCard()
-            configPathFooter
-        }
-    }
-
-    @ViewBuilder
-    private var configPathFooter: some View {
-        if !model.dataDir.isEmpty {
-            Text(L10n.t("main.configPath", model.dataDir))
+    private var statusbar: some View {
+        HStack(spacing: 8) {
+            Text(L10n.t("win.dataLocal"))
                 .font(.system(size: 11))
                 .foregroundColor(Palette.inkMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
+            CompanionMenuButton { windowRect in
+                AppDelegate.shared?.popupFromUtilityStatusbar(windowRect)
+            }
+            .frame(width: 28, height: 24)
+            .accessibilityLabel(L10n.t("pet.menuOpen"))
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(Palette.titlebarBg)
     }
 }
 
-// MARK: - card chrome
-
-private struct CardBackground: ViewModifier {
-    var palette: Color = Palette.cardBg
-
-    func body(content: Content) -> some View {
-        content
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(palette))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Palette.cardBorder, lineWidth: 1))
-            .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+/// The linear leaf glyph (canonical prototype icon vocabulary; not emoji).
+struct LeafIcon: View {
+    var body: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 12, y: 21))
+            path.addCurve(to: CGPoint(x: 12, y: 5),
+                          control1: CGPoint(x: 3, y: 21),
+                          control2: CGPoint(x: 3, y: 11))
+            path.addCurve(to: CGPoint(x: 12, y: 5),
+                          control1: CGPoint(x: 21, y: 11),
+                          control2: CGPoint(x: 21, y: 21))
+            path.closeSubpath()
+            path.move(to: CGPoint(x: 12, y: 5))
+            path.addCurve(to: CGPoint(x: 6, y: 2),
+                          control1: CGPoint(x: 9, y: 1),
+                          control2: CGPoint(x: 6, y: 2))
+            path.addCurve(to: CGPoint(x: 12, y: 5),
+                          control1: CGPoint(x: 6, y: 6),
+                          control2: CGPoint(x: 10, y: 7))
+        }
+        .aspectRatio(contentMode: .fit)
     }
 }
 
-// MARK: - today card
+// MARK: - today segment
 
-private struct TodayCard: View {
+private struct TodaySegment: View {
     @EnvironmentObject var model: MoveBitModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text(L10n.t("today.title"))
-                    .font(.system(size: 13))
-                    .foregroundColor(Palette.inkSecondary)
+                statusPill
                 Spacer()
-                HStack(spacing: 6) {
-                    Circle().fill(statusColor).frame(width: 8, height: 8)
-                    Text(statusText)
-                        .font(.system(size: 12.5))
-                        .foregroundColor(statusColor)
-                }
-            }
-
-            Text(CopyFormat.duration(model.today.active_mins))
-                .font(.system(size: 44, weight: .bold, design: .rounded))
-                .foregroundColor(Palette.inkPrimary)
-
-            sitCycleBar
-
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(sitCycleText)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Palette.inkPrimary)
-                    Text(L10n.t("today.sitCycle"))
-                        .font(.system(size: 11))
+                Button {
+                    model.togglePause()
+                } label: {
+                    Text(model.isPaused ? L10n.t("tray.resume") : L10n.t("tray.pause"))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Palette.inkSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .overlay(RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
                 }
-                Spacer()
-                nextCueBadge
+                .buttonStyle(.plain)
             }
 
-            outcomeRows
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.t("today.title"))
+                    .font(.system(size: 12))
+                    .foregroundColor(Palette.inkSecondary)
+                Text(CopyFormat.duration(model.today.active_mins))
+                    .font(.system(size: 40, weight: .semibold, design: .rounded))
+                    .foregroundColor(Palette.inkPrimary)
+                Text(L10n.t("today.activityNote"))
+                    .font(.system(size: 12))
+                    .foregroundColor(Palette.inkSecondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(L10n.t("today.sitCycle"))
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundColor(Palette.inkPrimary)
+                    Spacer()
+                    Text(sitCycleText)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(Palette.inkPrimary)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Palette.trackBg)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Palette.accent)
+                            .frame(width: barWidth(in: geo.size.width))
+                    }
+                }
+                .frame(height: 8)
+            }
+            .padding(.top, 4)
+
+            kindMetrics
 
             Text(L10n.t("today.outcomeLegend"))
                 .font(.system(size: 11))
                 .foregroundColor(Palette.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-        .modifier(CardBackground())
-    }
 
-    /// The nearest countdown the user can actually expect, or an honest
-    /// "paused"/"off" instead of a promise.
-    @ViewBuilder
-    private var nextCueBadge: some View {
-        if model.isPaused {
-            Text(L10n.t("tpl.running"))
-                .font(.system(size: 11.5))
-                .foregroundColor(Palette.inkMuted)
-        } else if let next = model.nextCue {
-            Text(L10n.t("today.nextCue", "\(next.minutes)"))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Palette.kindAccent(next.kind))
-                .multilineTextAlignment(.trailing)
-        } else {
-            Text(L10n.t("set.nextCueOff"))
-                .font(.system(size: 11.5))
-                .foregroundColor(Palette.inkMuted)
+            Divider()
+                .overlay(Palette.cardBorder)
+
+            nextReminderRow
         }
     }
 
-    /// Shown vs self-reported done, per kind. Delivery ("presented") and the
-    /// user's own "Done" are deliberately separate numbers (issue #88); a kind
-    /// with no recorded event is omitted rather than displayed as zero.
-    @ViewBuilder
-    private var outcomeRows: some View {
-        let kinds: [ReminderKind] = [.sit, .water, .micro]
-        let visible = kinds.compactMap { kind -> (ReminderKind, CueOutcomeTotals)? in
-            guard let totals = model.outcome(kind) else { return nil }
-            return (kind, totals)
-        }
-        VStack(spacing: 6) {
-            if visible.isEmpty {
-                Text(L10n.t("today.outcomeEmpty"))
-                    .font(.system(size: 12))
-                    .foregroundColor(Palette.inkMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ForEach(visible, id: \.0) { kind, totals in
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Palette.kindAccent(kind))
-                            .frame(width: 6, height: 6)
-                        Text(model.kindLabel(kind))
-                            .font(.system(size: 12))
-                            .foregroundColor(Palette.inkSecondary)
-                        Spacer()
-                        Text(L10n.t("today.outcome",
-                                    "\(totals.presented)",
-                                    "\(totals.self_reported_done)"))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(Palette.inkPrimary)
-                    }
-                }
-            }
+    private var statusPill: some View {
+        HStack(spacing: 6) {
+            Circle().fill(statusColor).frame(width: 8, height: 8)
+            Text(statusText)
+                .font(.system(size: 12))
+                .foregroundColor(statusColor)
         }
     }
 
-    private var statusColor: Color { model.isPaused ? Palette.pausedOrange : Palette.runningGreen }
+    private var statusColor: Color {
+        if model.isPaused { return Palette.pausedOrange }
+        if model.quiet { return Palette.inkSecondary }
+        return Palette.runningGreen
+    }
 
     private var statusText: String {
         if model.isPaused, let until = model.paused.until_ms {
             return L10n.t("tpl.pausedUntil", Date(timeIntervalSince1970: Double(until) / 1000))
         }
+        if model.quiet { return L10n.t("tpl.focus") }
         return L10n.t("tpl.running")
     }
 
@@ -346,19 +401,6 @@ private struct TodayCard: View {
         if model.isPaused { return "—" }
         let accumulated = model.loop(.sit)?.accumulated_mins ?? 0
         return L10n.t("tpl.sitCycleMin", "\(accumulated)", "\(model.sitIntervalMins)")
-    }
-
-    private var sitCycleBar: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Palette.trackBg)
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Palette.accent)
-                    .frame(width: barWidth(in: geo.size.width))
-            }
-        }
-        .frame(height: 9)
     }
 
     private func barWidth(in width: CGFloat) -> CGFloat {
@@ -369,27 +411,159 @@ private struct TodayCard: View {
         let fraction = min(1, max(0, accumulated / interval))
         return width * CGFloat(fraction)
     }
+
+    /// Per-kind response counters (prototype todayPanel metrics): shown as
+    /// icon + kind + N 次回应 + 提醒 M 次. Reminder counts are FIRED counts;
+    /// responses are the user's own reports — nothing implies verified breaks.
+    private var kindMetrics: some View {
+        let kinds: [ReminderKind] = [.sit, .water, .micro]
+        return HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(kinds.enumerated()), id: \.1) { index, kind in
+                if index > 0 {
+                    Divider()
+                        .overlay(Palette.cardBorder)
+                        .frame(height: 44)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        KindGlyph(kind: kind)
+                            .frame(width: 13, height: 13)
+                            .foregroundColor(Palette.inkSecondary)
+                        Text(kindWordLabel(kind))
+                            .font(.system(size: 12))
+                            .foregroundColor(Palette.inkSecondary)
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(model.outcome(kind)?.self_reported_done ?? 0)")
+                            .font(.system(size: 19, weight: .semibold, design: .rounded))
+                            .foregroundColor(Palette.inkPrimary)
+                        Text(L10n.t("today.responses"))
+                            .font(.system(size: 11))
+                            .foregroundColor(Palette.inkSecondary)
+                    }
+                    Text(L10n.t("today.reminderCount",
+                                "\(reminderCount(kind))"))
+                        .font(.system(size: 11))
+                        .foregroundColor(Palette.inkMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, index == 0 ? 0 : 12)
+            }
+        }
+    }
+
+    private func kindWordLabel(_ kind: ReminderKind) -> String {
+        switch kind {
+        case .sit: return L10n.t("kind.sit")
+        case .water: return L10n.t("kind.water")
+        case .micro: return L10n.t("kind.micro")
+        }
+    }
+
+    private func reminderCount(_ kind: ReminderKind) -> Int {
+        switch kind {
+        case .sit: return Int(model.today.sit_breaks)
+        case .water: return Int(model.today.water_reminders)
+        case .micro: return Int(model.today.micro_breaks)
+        }
+    }
+
+    @ViewBuilder
+    private var nextReminderRow: some View {
+        if model.isPaused || model.quiet {
+            Text(L10n.t("today.suspendedNote"))
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundColor(Palette.inkSecondary)
+        } else if !model.pendingCues.isEmpty {
+            HStack {
+                Text(L10n.t("today.pendingNote"))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundColor(Palette.inkPrimary)
+                Spacer()
+                Button {
+                    // The invitation lives on the pet; closing the window
+                    // returns the user to the same desktop.
+                    NSApp.windows.first { $0 is NSPanel }?.orderOut(nil)
+                    AppDelegate.shared?.hideUtilityWindow()
+                } label: {
+                    Text(L10n.t("today.backToMubi"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Palette.accent)
+                }
+                .buttonStyle(.plain)
+            }
+        } else if let next = model.nextCue {
+            Text(L10n.t("today.nextMove", "\(next.minutes)"))
+                .font(.system(size: 12.5))
+                .foregroundColor(Palette.kindAccent(next.kind))
+        } else {
+            Text(L10n.t("set.nextCueOff"))
+                .font(.system(size: 12.5))
+                .foregroundColor(Palette.inkMuted)
+        }
+    }
 }
 
-// MARK: - history card
+/// Linear kind glyphs (prototype healthIcon vocabulary; never emoji).
+struct KindGlyph: View {
+    let kind: ReminderKind
 
-private struct HistoryCard: View {
+    var body: some View {
+        Path { path in
+            switch kind {
+            case .sit:
+                // Walking figure (simplified linear stroke).
+                path.addEllipse(in: CGRect(x: 9, y: 1, width: 5, height: 5))
+                path.move(to: CGPoint(x: 10.5, y: 8))
+                path.addLine(to: CGPoint(x: 13.5, y: 11))
+                path.addLine(to: CGPoint(x: 15, y: 16))
+                path.move(to: CGPoint(x: 12, y: 9.5))
+                path.addLine(to: CGPoint(x: 9.5, y: 15))
+                path.move(to: CGPoint(x: 11, y: 13))
+                path.addLine(to: CGPoint(x: 6, y: 17))
+            case .water:
+                // Droplet outline.
+                path.move(to: CGPoint(x: 9, y: 2))
+                path.addCurve(to: CGPoint(x: 9, y: 20),
+                              control1: CGPoint(x: 3.5, y: 9),
+                              control2: CGPoint(x: 3.5, y: 14))
+                path.addCurve(to: CGPoint(x: 9, y: 2),
+                              control1: CGPoint(x: 14.5, y: 14),
+                              control2: CGPoint(x: 14.5, y: 9))
+                path.move(to: CGPoint(x: 6, y: 13.5))
+                path.addArc(center: CGPoint(x: 9, y: 14.5), radius: 3,
+                            startAngle: .degrees(200), endAngle: .degrees(320),
+                            clockwise: false)
+            case .micro:
+                // Eye outline.
+                path.move(to: CGPoint(x: 1, y: 11))
+                path.addCurve(to: CGPoint(x: 17, y: 11),
+                              control1: CGPoint(x: 6, y: 3),
+                              control2: CGPoint(x: 12, y: 3))
+                path.addCurve(to: CGPoint(x: 1, y: 11),
+                              control1: CGPoint(x: 12, y: 19),
+                              control2: CGPoint(x: 6, y: 19))
+                path.addEllipse(in: CGRect(x: 7, y: 8, width: 4, height: 4))
+            }
+        }
+        .stroke(style: StrokeStyle(lineWidth: 1.6, lineCap: .round,
+                                   lineJoin: .round))
+        .aspectRatio(contentMode: .fit)
+    }
+}
+
+// MARK: - history segment
+
+private struct HistorySegment: View {
     @EnvironmentObject var model: MoveBitModel
 
     var body: some View {
-        let isMonth = model.historyDays >= 30
-        let slices = model.historySlice(days: model.historyDays)
-        let total = model.historyTotal(slices: slices)
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(isMonth ? L10n.t("hist.range30") : L10n.t("hist.range7"))
-                        .font(.system(size: 13))
-                        .foregroundColor(Palette.inkSecondary)
-                    Text(totalText(total))
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundColor(Palette.inkPrimary)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                Text(L10n.t("today.countsNote"))
+                    .font(.system(size: 11.5))
+                    .foregroundColor(Palette.inkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Picker("", selection: $model.historyDays) {
                     Text(L10n.t("hist.toggle7")).tag(7)
@@ -399,19 +573,95 @@ private struct HistoryCard: View {
                 .labelsHidden()
                 .frame(width: 120)
             }
-            HistoryChart(slices: slices, isMonth: isMonth)
+
+            let slices = model.historySlice(days: model.historyDays)
+            let active = slices.filter { $0.stats.active_mins > 0 }
+            if active.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.t("hist.empty"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Palette.inkPrimary)
+                    Text(L10n.t("hist.emptyHint"))
+                        .font(.system(size: 12))
+                        .foregroundColor(Palette.inkSecondary)
+                }
+                .padding(.vertical, 24)
+            } else {
+                HistoryChart(slices: slices, isMonth: model.historyDays >= 30)
+                chartCaption(slices)
+            }
+
+            Text(L10n.t("insight.title"))
+                .font(.system(size: 12))
+                .foregroundColor(Palette.inkSecondary)
+                .padding(.top, 6)
+
+            let summary = model.insightSummary(days: 30)
+            insightGrid(summary)
+
+            Text(busiestLine(summary))
+                .font(.system(size: 11.5))
+                .foregroundColor(Palette.inkSecondary)
         }
-        .modifier(CardBackground())
     }
 
-    private func totalText(_ total: Int64) -> String {
-        total >= 60 ? L10n.t("hist.totalLong", "\(total / 60)", "\(total % 60)")
-                    : L10n.t("hist.totalShort", "\(total)")
+    /// The caption under the chart: the selected bar's detail or the range
+    /// total (prototype chartCaption; honest totals, no invented data).
+    @ViewBuilder
+    private func chartCaption(_ slices: [DaySlice]) -> some View {
+        let total = model.historyTotal(slices: slices)
+        let text = total >= 60
+            ? L10n.t("hist.totalLong", "\(total / 60)", "\(total % 60)")
+            : L10n.t("hist.totalShort", "\(total)")
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundColor(Palette.inkMuted)
+    }
+
+    private func busiestLine(_ summary: InsightSummary) -> String {
+        guard let busiest = summary.busiest,
+              let date = MoveBitModel.keyFormatter.date(from: busiest.date) else {
+            return L10n.t("insight.noData")
+        }
+        let label = MoveBitModel.monthDayFormatter.string(from: date)
+        return "\(L10n.t("insight.busiest")): \(label) · \(CopyFormat.minutes(busiest.active_mins))."
+    }
+
+    private func insightGrid(_ summary: InsightSummary) -> some View {
+        VStack(spacing: 0) {
+            insightRow(L10n.t("insight.current"),
+                       CopyFormat.minutes(model.currentSessionMins))
+            Divider().overlay(Palette.cardBorder)
+            insightRow(L10n.t("insight.todayLongest"),
+                       CopyFormat.minutes(model.today.longest_session_mins))
+            Divider().overlay(Palette.cardBorder)
+            insightRow(L10n.t("insight.recentLongest"),
+                       CopyFormat.minutes(summary.longest))
+            Divider().overlay(Palette.cardBorder)
+            insightRow(L10n.t("insight.recentAvg"),
+                       CopyFormat.minutes(summary.average))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(Palette.cardBorder, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func insightRow(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundColor(Palette.inkSecondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundColor(Palette.inkPrimary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 }
 
-/// Bar chart of active minutes: zero-filled gaps, today highlighted, dashed
-/// daily-average line (parity with the old HistoryChart grid).
+/// Bar chart of active minutes: zero-filled gaps, today highlighted.
 private struct HistoryChart: View {
     let slices: [DaySlice]
     let isMonth: Bool
@@ -421,17 +671,12 @@ private struct HistoryChart: View {
 
     var body: some View {
         let maxMinutes = max(60, slices.map(\.stats.active_mins).max() ?? 0)
-        let active = slices.filter { $0.stats.active_mins > 0 }.map(\.stats.active_mins)
-        let average = averageLabel(active: active)
         return VStack(spacing: 0) {
             ZStack(alignment: .bottom) {
                 HStack(alignment: .bottom, spacing: 0) {
                     ForEach(slices.indices, id: \.self) { index in
                         column(slices[index], maxMinutes: maxMinutes)
                     }
-                }
-                if let average {
-                    averageLine(average, maxMinutes: maxMinutes)
                 }
             }
             .frame(height: 110)
@@ -445,11 +690,6 @@ private struct HistoryChart: View {
                 }
             }
         }
-    }
-
-    private func averageLabel(active: [Int64]) -> Int64? {
-        guard !active.isEmpty else { return nil }
-        return (active.reduce(0, +) + Int64(active.count) / 2) / Int64(active.count)
     }
 
     private func column(_ slice: DaySlice, maxMinutes: Int64) -> some View {
@@ -467,19 +707,6 @@ private struct HistoryChart: View {
         }
         .frame(maxWidth: .infinity)
         .help(tooltip(slice))
-    }
-
-    private func averageLine(_ average: Int64, maxMinutes: Int64) -> some View {
-        let offset = barMin + (barMax - barMin) * CGFloat(average) / CGFloat(maxMinutes)
-        return VStack(spacing: 3) {
-            Text(L10n.t("hist.avg", CopyFormat.compact(average)))
-                .font(.system(size: 10))
-                .foregroundColor(Palette.inkMuted)
-            Rectangle()
-                .fill(Palette.inkMuted.opacity(0.55))
-                .frame(height: 1)
-        }
-        .offset(y: -offset)
     }
 
     private func label(_ slice: DaySlice) -> some View {
@@ -512,170 +739,98 @@ private struct HistoryChart: View {
     }
 }
 
-// MARK: - insight card
+// MARK: - settings segment
 
-private struct InsightCard: View {
-    @EnvironmentObject var model: MoveBitModel
-
-    var body: some View {
-        let summary = model.insightSummary(days: 30)
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.t("insight.title"))
-                .font(.system(size: 13))
-                .foregroundColor(Palette.inkSecondary)
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    metric(title: L10n.t("insight.current"),
-                           value: CopyFormat.minutes(model.currentSessionMins))
-                    metric(title: L10n.t("insight.todayLongest"),
-                           value: CopyFormat.minutes(model.today.longest_session_mins))
-                }
-                HStack(spacing: 10) {
-                    metric(title: L10n.t("insight.recentLongest"),
-                           value: CopyFormat.minutes(summary.longest))
-                    metric(title: L10n.t("insight.recentAvg"),
-                           value: CopyFormat.minutes(summary.average))
-                }
-            }
-            HStack(alignment: .top, spacing: 8) {
-                Text(L10n.t("insight.busiest"))
-                    .font(.system(size: 11.5))
-                    .foregroundColor(Palette.inkMuted)
-                Text(busiestText(summary.busiest))
-                    .font(.system(size: 11.5))
-                    .foregroundColor(Palette.inkPrimary)
-            }
-            Text(sedentaryText(summary))
-                .font(.system(size: 11.5))
-                .foregroundColor(Palette.inkSecondary)
-        }
-        .modifier(CardBackground())
-    }
-
-    private func metric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.system(size: 11))
-                .foregroundColor(Palette.inkMuted)
-            Text(value)
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
-                .foregroundColor(Palette.inkPrimary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.trackBg))
-    }
-
-    private func busiestText(_ busiest: DayStats?) -> String {
-        guard let busiest,
-              let date = MoveBitModel.keyFormatter.date(from: busiest.date) else {
-            return L10n.t("insight.none")
-        }
-        let label = MoveBitModel.monthDayFormatter.string(from: date)
-        return "\(label) · \(CopyFormat.minutes(busiest.active_mins))"
-    }
-
-    /// Parity with RebuildInsights: threshold against the sit interval.
-    private func sedentaryText(_ summary: InsightSummary) -> String {
-        let longest = summary.longest
-        let sit = model.sitIntervalMins
-        if longest <= 0 { return L10n.t("insight.noData") }
-        if longest >= sit * 2 { return L10n.t("insight.long2", CopyFormat.minutes(longest)) }
-        if longest >= sit { return L10n.t("insight.long1", CopyFormat.minutes(longest)) }
-        return L10n.t("insight.long0", CopyFormat.minutes(longest))
-    }
-}
-
-// MARK: - settings card
-
-/// Companion-first settings (issues #87/#90): one rhythm choice and sound are
-/// the everyday surface; cadence steppers, quiet hours and character details
-/// live behind one explicit "Customize" disclosure.
-private struct SettingsCard: View {
+/// Exactly four items per the contract: sound, quiet hours (with times),
+/// launch-at-login, language. No cadence setters — the rhythm is a product
+/// default (issue #140), stated once at the top.
+private struct SettingsSegment: View {
     @EnvironmentObject var model: MoveBitModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .top) {
-                    Text(L10n.t("set.title"))
-                        .font(.system(size: 13))
-                        .foregroundColor(Palette.inkSecondary)
-                    Spacer()
-                    Text(model.configStatus.isEmpty
-                         ? L10n.t("set.statusDefault") : model.configStatus)
-                        .font(.system(size: 11.5))
-                        .foregroundColor(Palette.accent)
-                        .multilineTextAlignment(.trailing)
+            Text(L10n.t("set.intro"))
+                .font(.system(size: 12))
+                .foregroundColor(Palette.inkMuted)
+
+            settingRow(label: L10n.t("set.sound"),
+                       hint: L10n.t("set.soundHint")) {
+                Toggle("", isOn: Binding(
+                    get: { model.config.sound_enabled },
+                    set: { model.saveConfig(model.config.with(sound_enabled: $0)) }))
+                    .labelsHidden()
+            }
+
+            settingRow(label: L10n.t("set.quietHours"),
+                       hint: L10n.t("set.quietHoursHint")) {
+                Toggle("", isOn: Binding(
+                    get: { model.config.quiet_hours_enabled },
+                    set: { model.saveConfig(model.config.with(quiet_hours_enabled: $0)) }))
+                    .labelsHidden()
+            }
+            if model.config.quiet_hours_enabled {
+                timeRow(label: L10n.t("set.quietStart"),
+                        minutes: model.config.quiet_hours_start_minutes) {
+                    model.saveConfig(model.config.with(quiet_hours_start_minutes: $0))
                 }
-                Text(L10n.t("set.defaultsHint"))
+                timeRow(label: L10n.t("set.quietEnd"),
+                        minutes: model.config.quiet_hours_end_minutes) {
+                    model.saveConfig(model.config.with(quiet_hours_end_minutes: $0))
+                }
+                Text(L10n.t("set.quietOvernight"))
+                    .font(.system(size: 11))
+                    .foregroundColor(Palette.inkMuted)
+                    .padding(.leading, 12)
+            }
+
+            settingRow(label: L10n.t("set.autostart"),
+                       hint: L10n.t("set.autostartHint")) {
+                Toggle("", isOn: Binding(
+                    get: { model.autostart },
+                    set: { model.setAutostart($0) }))
+                    .labelsHidden()
+            }
+
+            settingRow(label: L10n.t("set.language"),
+                       hint: L10n.t("set.languageHint")) {
+                Picker("", selection: languageBinding) {
+                    Text(L10n.t("lang.auto")).tag("auto")
+                    Text("中文").tag("zh")
+                    Text("English").tag("en")
+                }
+                .labelsHidden()
+                .frame(width: 132)
+            }
+
+            Text(model.configStatus.isEmpty
+                 ? L10n.t("set.autosaveNote") : model.configStatus)
+                .font(.system(size: 11))
+                .foregroundColor(model.configStatus.isEmpty
+                                 ? Palette.inkMuted : Palette.accent)
+        }
+    }
+
+    private var languageBinding: Binding<String> {
+        Binding(get: { model.config.language },
+                set: { model.saveConfig(model.config.with(language: $0)) })
+    }
+
+    private func settingRow<Control: View>(label: String, hint: String,
+                                           @ViewBuilder control: () -> Control) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(Palette.inkPrimary)
+                Text(hint)
                     .font(.system(size: 11))
                     .foregroundColor(Palette.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            nextCueLine
-
-            Divider()
-
-            ToggleRow(label: L10n.t("set.sound"),
-                      isOn: model.config.sound_enabled) {
-                save(model.config.with(sound_enabled: $0))
-            }
-            Text(L10n.t("set.soundHint"))
-                .font(.system(size: 11))
-                .foregroundColor(Palette.inkMuted)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Divider()
-
-            ToggleRow(label: L10n.t("set.quietHours"),
-                      isOn: model.config.quiet_hours_enabled) {
-                save(model.config.with(quiet_hours_enabled: $0))
-            }
-            Text(L10n.t("set.quietHoursHint"))
-                .font(.system(size: 11))
-                .foregroundColor(Palette.inkMuted)
-            if model.config.quiet_hours_enabled {
-                timeRow(label: L10n.t("set.quietStart"),
-                        minutes: model.config.quiet_hours_start_minutes) {
-                    save(model.config.with(quiet_hours_start_minutes: $0))
-                }
-                timeRow(label: L10n.t("set.quietEnd"),
-                        minutes: model.config.quiet_hours_end_minutes) {
-                    save(model.config.with(quiet_hours_end_minutes: $0))
-                }
-            }
-
-            Divider()
-
-            ToggleRow(label: L10n.t("set.autostart"), isOn: model.autostart) {
-                model.setAutostart($0)
-            }
-            languageRow
+            Spacer()
+            control()
         }
-        .modifier(CardBackground())
-    }
-
-    private func save(_ draft: ReminderConfig) {
-        model.saveConfig(draft)
-    }
-
-    @ViewBuilder
-    private var nextCueLine: some View {
-        HStack(spacing: 6) {
-            if let next = model.nextCue {
-                Text(L10n.t("set.nextCue", "\(next.minutes)"))
-                    .foregroundColor(Palette.kindAccent(next.kind))
-            } else if model.isPaused {
-                Text(L10n.t("tpl.running"))
-                    .foregroundColor(Palette.inkMuted)
-            } else {
-                Text(L10n.t("set.nextCueOff"))
-                    .foregroundColor(Palette.inkMuted)
-            }
-        }
-        .font(.system(size: 12, weight: .medium))
+        .padding(.vertical, 6)
     }
 
     private func timeRow(label: String, minutes: Int64,
@@ -685,8 +840,9 @@ private struct SettingsCard: View {
         let snapped = (minutes / 30) * 30
         return HStack {
             Text(label)
-                .font(.system(size: 12.5))
+                .font(.system(size: 12))
                 .foregroundColor(Palette.inkSecondary)
+                .padding(.leading, 12)
             Spacer()
             Picker("", selection: Binding(get: { snapped },
                                           set: { onChange($0) })) {
@@ -702,120 +858,91 @@ private struct SettingsCard: View {
     static func timeText(_ minutes: Int64) -> String {
         String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
-
-    private var languageRow: some View {
-        HStack {
-            Text(L10n.t("set.language"))
-                .font(.system(size: 12.5))
-                .foregroundColor(Palette.inkSecondary)
-            Spacer()
-            Picker("", selection: languageBinding) {
-                Text(L10n.t("lang.auto")).tag("auto")
-                Text("中文").tag("zh")
-                Text("English").tag("en")
-            }
-            .labelsHidden()
-            .frame(width: 132)
-        }
-    }
-
-    private var languageBinding: Binding<String> {
-        Binding(get: { model.config.language },
-                set: { save(model.config.with(language: $0)) })
-    }
 }
 
-private struct ToggleRow: View {
-    let label: String
-    let isOn: Bool
-    let onChange: (Bool) -> Void
+// MARK: - about segment
 
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 13))
-                .foregroundColor(Palette.inkPrimary)
-            Spacer()
-            Toggle("", isOn: Binding(get: { isOn }, set: { onChange($0) }))
-                .labelsHidden()
-        }
-    }
-}
-
-// MARK: - about card
-
-private struct AboutCard: View {
+private struct AboutSegment: View {
     @EnvironmentObject var model: MoveBitModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(L10n.t("upd.currentVersion", RivetGeneratedConfig.version))
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(Palette.inkPrimary)
-            // The button IS the update state machine (parity with the
-            // Windows host): check → download with progress → restart-install.
-            HStack(spacing: 12) {
+            Text(L10n.t("ob.privacy"))
+                .font(.system(size: 12))
+                .foregroundColor(Palette.inkSecondary)
+
+            HStack(spacing: 10) {
                 Button(action: model.handleUpdateButton) {
                     Text(updateButtonLabel)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(colorScheme == .dark
+                                         ? Color(hex: "#241C16")
+                                         : Palette.appBg)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                 }
-                .buttonStyle(.bordered)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accent))
+                .buttonStyle(.plain)
                 .disabled(!updateButtonEnabled)
-                if model.updatePhase == .downloading {
+                .opacity(updateButtonEnabled ? 1 : 0.5)
+
+                quietLink(L10n.t("about.website"),
+                          URL(string: "https://movebit.jrtx.site")!)
+                quietLink(L10n.t("about.reportIssue"),
+                          URL(string: "https://github.com/turlamai/movebit/issues")!)
+                Button {
+                    AppDelegate.shared?.revealDataLocation()
+                } label: {
+                    Text(L10n.t("about.dataFolder"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Palette.inkSecondary)
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+
+            if model.updatePhase == .downloading {
+                HStack(spacing: 10) {
                     ProgressView(value: Double(model.updatePercent), total: 100)
-                        .frame(maxWidth: 140)
+                        .frame(maxWidth: 160)
                     Text("\(model.updatePercent)%")
                         .font(.system(size: 11))
                         .foregroundColor(Palette.inkSecondary)
-                    Button(action: model.cancelUpdateDownload) {
-                        Text(L10n.t("upd.actionCancel"))
-                            .font(.system(size: 12, weight: .medium))
+                    Button(L10n.t("upd.actionCancel")) {
+                        model.cancelUpdateDownload()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundColor(Palette.inkSecondary)
                 }
-                Spacer()
             }
+
             if !updateHint.isEmpty {
                 Text(updateHint)
                     .font(.system(size: 11))
                     .foregroundColor(model.updatePhase == .failed
-                                        ? Palette.pausedOrange
-                                        : Palette.inkMuted)
+                                     ? Palette.pausedOrange : Palette.inkMuted)
                     .multilineTextAlignment(.leading)
                     // Failure text must leave the screen with the user —
                     // selectable, so it can be copied into a bug report.
                     .textSelection(.enabled)
             }
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.t("about.autoUpdate"))
-                        .font(.system(size: 13))
-                        .foregroundColor(Palette.inkPrimary)
-                    Text(L10n.t("about.autoUpdateHint"))
-                        .font(.system(size: 11))
-                        .foregroundColor(Palette.inkMuted)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { model.config.auto_check_updates },
-                    set: { model.saveConfig(model.config.with(auto_check_updates: $0)) }))
-                    .labelsHidden()
-            }
-            // Website / issue tracker / license — the family About rows.
-            HStack(spacing: 16) {
-                Link(L10n.t("about.website"),
-                     destination: URL(string: "https://movebit.jrtx.site")!)
-                Link(L10n.t("about.reportIssue"),
-                     destination: URL(string:
-                        "https://github.com/turlamai/movebit/issues")!)
-            }
-            .font(.system(size: 12))
-            .tint(Palette.accent)
-            Text(L10n.t("about.license"))
+
+            Text("\(L10n.t("about.autoUpdate")) · \(L10n.t("about.autoUpdateHint")) \(L10n.t("about.license"))")
                 .font(.system(size: 11))
                 .foregroundColor(Palette.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .modifier(CardBackground())
+    }
+
+    private func quietLink(_ label: String, _ url: URL) -> some View {
+        Link(label, destination: url)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(Palette.inkSecondary)
     }
 
     private var updateButtonLabel: String {

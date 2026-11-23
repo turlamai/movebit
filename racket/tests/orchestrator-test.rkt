@@ -173,6 +173,71 @@
   (check-equal? (h-session-ms (orch-harness-h oh)) (* 20 minute-ms))
   (check-equal? (orchestrator-sit-acks-today (orch-harness-o oh)) 0))
 
+;; --- partial acknowledgement (2026-11-15 contract 只做了一部分) --------------
+
+;; A water+micro tick merges into one cue; acknowledging only water settles
+;; that kind, keeps the residual invitation open under the same id with a
+;; re-planned presentation, and fires exactly one outcome event.
+(let ([oh (make-oh)])
+  (oh-step-minutes! oh 50)
+  (orchestrator-acknowledge-cue! (orch-harness-o oh)
+                                 (cue-record-id (oh-last-cue oh)))
+  (oh-step-minutes! oh 10)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (check-equal? (cue-record-kinds (orchestrator-find-cue (orch-harness-o oh) id))
+                '(water micro))
+  (check-equal?
+   (orchestrator-acknowledge-cue! (orch-harness-o oh) id #:kinds '(water))
+   '(water))
+  (define record (orchestrator-find-cue (orch-harness-o oh) id))
+  (check-equal? (cue-record-status record) 'pending)
+  (check-equal? (cue-record-kinds record) '(micro))
+  (check-equal? (companion-cue-action (cue-record-planned record)) 'rest-eyes)
+  (check-equal? (length (oh-open oh)) 1)
+  ;; outcomes so far: the minute-50 full ack (sit+micro) plus this partial
+  (check-equal? (oh-outcomes oh)
+                '((sit self-reported-done) (micro self-reported-done)
+                  (water self-reported-done)))
+  ;; The residual half still answers normally: full ack closes the cue.
+  (check-equal? (orchestrator-acknowledge-cue! (orch-harness-o oh) id)
+                '(micro))
+  (check-equal? (length (oh-open oh)) 0)
+  (check-equal? (oh-outcomes oh)
+                '((sit self-reported-done) (micro self-reported-done)
+                  (water self-reported-done) (micro self-reported-done))))
+
+;; Zero selection never submits: empty kinds (and kinds the cue does not
+;; carry) are no-ops that leave the invitation untouched (零选择不提交).
+(let ([oh (make-oh)])
+  (oh-step-minutes! oh 20)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (check-false (orchestrator-acknowledge-cue! (orch-harness-o oh) id #:kinds '()))
+  (check-false (orchestrator-acknowledge-cue!
+                (orch-harness-o oh) id #:kinds '(sit)))
+  (check-equal? (length (oh-open oh)) 1)
+  (check-equal? (oh-outcomes oh) '()))
+
+;; Unanswered ticks supersede into one cue of all three kinds; settling the
+;; sit and water kinds ends the counted session and advances the celebration
+;; counter, while the micro residual keeps waiting.
+(let ([oh (make-oh)])
+  (oh-step-minutes! oh 60)
+  (define id (cue-record-id (oh-last-cue oh)))
+  (check-equal? (cue-record-kinds (orchestrator-find-cue (orch-harness-o oh) id))
+                '(sit water micro))
+  (check-equal? (h-session-ms (orch-harness-h oh)) (* 60 minute-ms))
+  (check-equal?
+   (orchestrator-acknowledge-cue! (orch-harness-o oh) id #:kinds '(sit water))
+   '(sit water))
+  (check-equal? (h-session-ms (orch-harness-h oh)) 0)
+  (check-equal? (orchestrator-sit-acks-today (orch-harness-o oh)) 1)
+  (check-equal? (cue-record-status (orchestrator-find-cue (orch-harness-o oh) id))
+                'pending)
+  (check-equal? (cue-record-kinds (orchestrator-find-cue (orch-harness-o oh) id))
+                '(micro))
+  (check-equal? (oh-outcomes oh)
+                '((sit self-reported-done) (water self-reported-done))))
+
 ;; Milestones fire at exactly 3/5/8 acknowledged sit cues per day. With the
 ;; fixed cadence a sit cue arrives every 50 active minutes; answering the
 ;; latest cue each time also settles the snowball.

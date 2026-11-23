@@ -380,6 +380,34 @@ final class MoveBitModel: ObservableObject {
         }
     }
 
+    /// Partial completion (2026-11-15 contract 只做了一部分): settle only
+    /// the listed kinds of the merged cue; the rest keep waiting in place.
+    /// Zero selection is a backend no-op (零选择不提交).
+    func acknowledgeCueKinds(_ id: Int64, kinds: [String]) {
+        guard !kinds.isEmpty, let api = api() else { return }
+        // Wire symbols ("sit"/"water"/"micro") -> generated enum values.
+        let mapped = kinds.compactMap(RivetTypes.ReminderKind.init(rawValue:))
+        guard mapped.count == kinds.count else { return }
+        Task {
+            try? await api.acknowledge_cue_kinds(id: id, kinds: mapped)
+            if let q = try? await api.get_pending_cues() { pendingCues = q }
+        }
+    }
+
+    /// Apply a cue action to EVERY open cue of the merged invitation (the
+    /// invitation is one surface; the backend normally holds exactly one).
+    func acknowledgeAllPending() {
+        for cue in pendingCues { acknowledgeCue(cue.id) }
+    }
+
+    func snoozeAllPending() {
+        for cue in pendingCues { snoozeCue(cue.id) }
+    }
+
+    func dismissAllPending() {
+        for cue in pendingCues { dismissCue(cue.id) }
+    }
+
     /// Later — defers every kind merged into the cue by the snooze minutes.
     func snoozeCue(_ id: Int64) {
         guard let api = api() else { return }

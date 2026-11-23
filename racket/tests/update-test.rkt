@@ -6,10 +6,9 @@
 ;; same way the live checker does — then the REAL download paths against a
 ;; local TCP server: the manifest-verified chain into the swap chain
 ;; (chmod -> rename -> staged apply helper via prepare-install!), the
-;; first-class signed AppImage verification and rejection of a malicious
-;; checksum sidecar, the persistent 4-hour silent-check throttle stamp,
-;; and the failed-check contract
-;; against an unreachable feed.
+;; narrowed windows+macos feed offering nothing to linux installs, the
+;; persistent 4-hour silent-check throttle stamp, and the failed-check
+;; contract against an unreachable feed.
 ;;
 ;; (fetch-update-manifest itself only accepts HTTPS, so the live-feed
 ;; signature compatibility of the embedded key is the release pipeline's
@@ -149,8 +148,8 @@
 
 ;; ---- local artifact server ------------------------------------------------------
 ;; A minimal one-shot HTTP file server: every connection gets the bytes for
-;; the path it asked for, so the manifest-verified download and the AppImage
-;; sidecar flow can share the same shape.
+;; the path it asked for, so the manifest-verified download and the cancel
+;; flow can share the same shape.
 
 (define (serve-files! responses)
   ;; responses: (list (cons path-suffix bytes))
@@ -235,10 +234,9 @@
 
     (case (upd:platform-symbol)
       [(linux)
-       ;; AppImage swaps happen at download time; tarball/package installs
-       ;; are manual — prepare-install! refuses honestly. platform-symbol,
-       ;; not system-type's os ('unix on Linux — the same trap the module
-       ;; had).
+       ;; No shipped Linux host (issue #169): prepare-install! refuses
+       ;; honestly. platform-symbol, not system-type's os ('unix on Linux —
+       ;; the same trap the module had).
        (check-exn exn:fail? (lambda () (upd:prepare-install! test-data-dir)))]
       [else
        (define helper (upd:prepare-install! test-data-dir))
@@ -261,110 +259,38 @@
 
   (stop-server!))
 
-;; ---- AppImage: signed manifest identity, exact payload and atomic swap ----
+;; ---- narrowed feed: windows + macos only (issue #169) -------------------------
 
-(test-case "signed AppImage entry is selected only for matching platform and version"
-  (define digest (make-string 64 #\a))
-  (define artifact
-    (update-artifact 'linux (upd:architecture-symbol)
-           "https://downloads.example/movebit-9.9.9-linux.AppImage"
-           digest 100 'appimage '() #f))
+(test-case "the narrowed feed offers nothing to linux installs"
+  (define (artifact platform arch installer)
+    (update-artifact platform arch
+           (format "https://dl.example/movebit-9.9.9-~a-~a.~a"
+                   platform arch installer)
+           payload-sha256 (file-size payload-zip) installer '() #f))
   (define manifest
-    (update-manifest "site.jrtx.movebit" "9.9.9" 7 'stable
-                     "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-                     (list artifact)))
+    (update-manifest
+     "site.jrtx.movebit" "9.9.9" 7 'stable
+     "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
+     (list (artifact 'macos 'arm64 'zip)
+           (artifact 'macos 'x64 'zip)
+           (artifact 'windows 'x64 'zip)
+           (artifact 'windows 'x64 'msi))))
   (define wrapped (open-output-bytes))
+  (write-signed-manifest manifest priv "movebit-test" wrapped)
   (define verified
-    (begin
-      (write-signed-manifest manifest priv "movebit-test" wrapped)
-      (verify-signed-manifest (open-input-bytes (get-output-bytes wrapped))
-                              pub #:key-id "movebit-test")))
-  (define (config platform version)
-    (updater-config "site.jrtx.movebit" version 'stable
-           platform (upd:architecture-symbol) pub "movebit-test" 0
-           download-limit #f))
-  (define selected (select-update (config 'linux "0.1.0") verified
-                                  #:install-kind 'appimage))
-  (check-true (update-candidate? selected))
-  (check-equal? (update-artifact-sha256 (update-candidate-artifact selected)) digest)
-  (check-false (select-update (config 'windows "0.1.0") verified
-                              #:install-kind 'appimage))
-  (check-false (select-update (config 'linux "9.9.9") verified
-                              #:install-kind 'appimage))
-  (check-false (select-update (config 'linux "10.0.0") verified
-                              #:install-kind 'appimage))
-  (check-false (select-update (config 'linux "0.1.0")
-                              (struct-copy update-manifest verified [artifacts '()])
-                              #:install-kind 'appimage)))
-
-(test-case "AppImage rejects tampered payload and size through the signed manifest"
-  (when (eq? (upd:platform-symbol) 'linux)
-    (define arch (symbol->string (upd:architecture-symbol)))
-    (define asset (format "movebit-9.9.9-linux-~a.AppImage" arch))
-    (define payload (make-bytes 65536 7))
-    (define tampered (make-bytes 65536 8))
-    (define digest (bytes->hex-string (sha256-bytes payload)))
-    (define-values (port-number stop-server!)
-      (serve-files!
-       (list (cons (string-append "/valid/" asset) payload)
-             (cons (string-append "/tampered/" asset) tampered))))
-    (define image-dir (make-temporary-file "movebit-appimage-~a" 'directory))
-    (define image-path (build-path image-dir "movebit.AppImage"))
-    (define original (make-bytes 16 3))
-    (define old-appimage (getenv "APPIMAGE"))
-    (define (manifest suffix sha size)
-      (update-manifest
-       "site.jrtx.movebit" "9.9.9" 7 'stable
-       "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
-       (list (update-artifact
-              'linux (upd:architecture-symbol)
-              (format "http://127.0.0.1:~a/~a/~a" port-number suffix asset)
-              sha size 'appimage '() #f))))
-    (define (run! suffix sha size)
-      (upd:reset-update-state!)
-      (check-equal? (hash-ref (check-with-manifest! (manifest suffix sha size))
-                              'status)
-                    "available")
-      (upd:start-download! image-dir)
-      (wait-for-terminal-phase! 60))
-    (define (dir-files)
-      (sort (map (lambda (p) (path->string (file-name-from-path p)))
-                 (directory-list image-dir))
-            string<?))
-    (call-with-output-file image-path #:exists 'truncate
-      (lambda (out) (write-bytes original out)))
-    (putenv "APPIMAGE" (path->string image-path))
-    (dynamic-wind
-      void
-      (lambda ()
-        ;; The signed manifest vouches for the valid bytes; the server sends
-        ;; the tampered ones. Only the exact signed bytes may replace the
-        ;; image.
-        (check-equal? (run! "tampered" digest (bytes-length payload)) "error")
-        (check-equal? (file->bytes image-path) original)
-        ;; a rejected download leaves no staging/partial residue
-        (check-equal? (dir-files) '("movebit.AppImage"))
-        (check-equal? (run! "valid" digest (sub1 (bytes-length payload)))
-                      "error")
-        (check-equal? (file->bytes image-path) original)
-        (check-equal? (dir-files) '("movebit.AppImage"))
-        (check-equal? (run! "valid" digest (bytes-length payload))
-                      "downloaded")
-        (check-equal? (hash-ref (upd:update-state-snapshot) 'downloadedPath)
-                      (path->string image-path))
-        (check-equal? (sha256-file/hex image-path) digest)
-        (check-equal? (hash-ref (upd:update-state-snapshot) 'percent) 100)
-        ;; the previous runnable image stays for recovery; nothing else does
-        (check-equal? (file->bytes (string-append (path->string image-path) ".previous"))
-                      original)
-        (check-equal? (dir-files)
-                      '("movebit.AppImage" "movebit.AppImage.previous"))
-        (check-not-false
-         (memq 'execute (file-or-directory-permissions image-path))))
-      (lambda ()
-        (putenv "APPIMAGE" (or old-appimage ""))
-        (delete-directory/files image-dir #:must-exist? #f)
-        (stop-server!)))))
+    (verify-signed-manifest (open-input-bytes (get-output-bytes wrapped))
+                            pub #:key-id "movebit-test"))
+  (define (config platform arch)
+    (updater-config "site.jrtx.movebit" "0.1.0" 'stable
+           platform arch pub "movebit-test" 0 download-limit #f))
+  ;; Linux keeps running the engine, but the feed carries no linux entry —
+  ;; nothing selects, so no update is ever offered there.
+  (check-false (select-update (config 'linux 'x64) verified))
+  (check-false (select-update (config 'linux 'arm64) verified))
+  ;; The shipped platforms still select their own artifacts.
+  (check-true (update-candidate? (select-update (config 'macos 'arm64) verified)))
+  (check-true (update-candidate? (select-update (config 'windows 'x64) verified
+                                                #:install-kind 'msi))))
 
 ;; ---- persistent silent-check throttle ------------------------------------------
 

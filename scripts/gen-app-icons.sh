@@ -5,7 +5,7 @@
 #
 #   scripts/gen-app-icons.sh
 #
-# Outputs: assets/movebit.icns, assets/icon.ico, assets/icon.png
+# Outputs: assets/movebit.icns, assets/icon.ico
 # Requires: jq, rsvg-convert, iconutil (macOS), python3 (stdlib only — the
 # ICO container is assembled by hand, no Pillow).
 #
@@ -13,7 +13,7 @@
 #   - macOS keeps the Apple grid: 824pt squircle on a 1024 canvas (100px
 #     margins, ~184 corner radius). macOS composites the canvas as-is, so
 #     the margins are part of the platform shape.
-#   - Windows/Linux use a dense tile: both hosts composite the raw frame
+#   - Windows uses a dense tile: the host composites the raw frame
 #     with no system mask or backdrop, so Apple-grid margins only shrink
 #     the glyph on the taskbar/desktop. The squircle fills ~95% instead.
 #
@@ -53,7 +53,7 @@ BODY_MID="$(jq -r '.colors["mubi.body"]' "$TOKENS")"
 BODY_DEEP="$(jq -r '.colors["mubi.body.deep"]' "$TOKENS")"
 SHADOW="$(jq -r '.colors["mubi.shadow"]' "$TOKENS")"
 # The lower-form shade path is host-embedded master data (tokens.json does
-# not carry it); same string as the Linux/Windows hosts embed.
+# not carry it); same string as the Windows host embeds.
 LOWER_SHADE='M 16 96 C 24 118, 42 126, 60 126 C 80 126, 98 116, 105 94 C 100 116, 84 128, 60 128 C 38 128, 20 114, 16 96 Z'
 
 # ---- compose the app icon: water-blue squircle, Mubi front and center ----
@@ -157,8 +157,5 @@ with open(out, "wb") as f:
     f.write(header + directory + payload)
 PY
 
-# ---- png (Linux: AppImage/desktop entry, dense tile) ----
-rsvg-convert -w 512 -h 512 "$TMP/icon-dense.svg" -o "$OUT/icon.png"
-
 echo "app icons regenerated:"
-ls -la "$OUT/movebit.icns" "$OUT/icon.ico" "$OUT/icon.png"
+ls -la "$OUT/movebit.icns" "$OUT/icon.ico"

@@ -121,7 +121,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: RivetMenuBarController?
     private var menuBarGlyphState: GlyphState?
     private var companion: CompanionController?
-    private var toastController: ToastPanelController?
     private var microController: MicroPanelController?
     // Retained for the process lifetime: dropping it releases the lease.
     private var instanceLease: RivetSingleInstance?
@@ -146,12 +145,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onConfigChanged = { [weak self] in self?.handleConfigChanged() }
         model.onCue = { [weak self] cue in self?.handleHealthCue(cue) }
         model.onPendingCuesChanged = { [weak self] in self?.syncCuePresentation() }
-        model.onSitAcknowledged = { [weak self] count in
-            self?.handleSitAcknowledged(count)
-        }
         // Restart-install handoff: the backend staged the update and spawned
         // the apply helper; quitting lets it swap the bundle and relaunch.
-        model.onQuitRequested = { [weak self] in self?.quit() }
+        // The handoff quit must not hit the exit-confirmation dialog.
+        model.onQuitRequested = { [weak self] in
+            self?.suppressTerminateConfirmation = true
+            self?.quit()
+        }
 
         installReminderPanels()
         rebuildMenuBar()
@@ -178,22 +178,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.saveConfig(model.config.with(companion_free_x: x,
                                                companion_free_y: y))
         }
-        // Petting = Done on the newest open cue (the same gesture the tray's
-        // Done offers); the Later tag = snooze. The teary act may chime,
-        // rate-limited so begging never becomes noise.
-        companion?.onPet = { [weak self] in
-            guard let self, let model = self.model, let cue = model.pendingCues.last
-            else { return }
-            model.acknowledgeCue(cue.id)
-            companion?.showAck()
+        // 2026-11-15 contract: petting is companionship ONLY — completion
+        // submits through the invitation's buttons, the tray items or the
+        // micro window's 做好了. The pet surface never acknowledges.
+        companion?.onPat = { _ = self }
+        companion?.onDoneAll = { [weak self] in
+            guard let self, let model = self.model else { return }
+            model.acknowledgeAllPending()
+            self.companion?.showAck()
         }
         companion?.onLater = { [weak self] in
-            guard let self, let model = self.model, let cue = model.pendingCues.last
-            else { return }
-            model.snoozeCue(cue.id)
-            companion?.show(state: .idle, message: L10n.t("mubi.laterNote"))
+            guard let self, let model = self.model else { return }
+            model.snoozeAllPending()
+            self.companion?.react(.later)
         }
-        companion?.onTearyAct = { [weak self] in self?.playCueChime() }
+        companion?.onHideThis = { [weak self] in
+            self?.model?.dismissAllPending()
+        }
+        companion?.onConfirmPartial = { [weak self] symbols in
+            guard let self, let model = self.model else { return }
+            for cue in model.pendingCues {
+                let selected = cue.kinds
+                    .map { $0.rawValue }
+                    .filter { symbols.contains($0) }
+                if !selected.isEmpty {
+                    model.acknowledgeCueKinds(cue.id, kinds: selected)
+                }
+            }
+            self.companion?.showAck()
+        }
+        companion?.onMenuButton = { [weak self] rect in
+            self?.popupCompanionMenu(at: rect)
+        }
         syncCompanionConfig()
         companion?.showIdle()
         if ProcessInfo.processInfo.environment["MOVEBIT_ACCEPTANCE"] == "1" {
@@ -208,17 +224,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: main window (settings & stats)
 
     private func installMainWindow(model: MoveBitModel) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 840),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 560),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable,
+                                          .fullSizeContentView],
                               backing: .buffered, defer: false)
+        // Compact titlebar (2026-11-15 辅助窗口): the platform titlebar row
+        // carries the traffic lights; the title text is hidden and the leaf
+        // mark + wordmark render inside the content's titlebar row.
         window.title = "MoveBit"
-        window.minSize = NSSize(width: 460, height: 320)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
+        window.minSize = NSSize(width: 460, height: 420)
         window.contentView = NSHostingView(rootView: MainView().environmentObject(model))
         window.center()
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("MoveBitMainWindow")
         window.delegate = self
         mainWindow = window
+    }
+
+    /// 今日 ▸ 回到沐比身边: the utility window steps aside; the invitation
+    /// waits with the pet on the same desktop (reminders are never cleared).
+    func hideUtilityWindow() {
+        mainWindow?.orderOut(nil)
+    }
+
+    /// 关于 ▸ 数据位置: reveal the real local data directory in Finder.
+    func revealDataLocation() {
+        guard let model else { return }
+        let dir = model.dataDir
+        guard !dir.isEmpty else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: dir))
+    }
+
+    /// The utility statusbar's ••• opens the same compact menu as the tray.
+    func popupFromUtilityStatusbar(_ windowRect: NSRect) {
+        guard let window = mainWindow else { return }
+        popupCompanionMenu(at: window.convertToScreen(windowRect))
     }
 
     func showMainWindow() {
@@ -232,76 +275,132 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // swaps with the paused state and labels follow the language, so refresh
     // the menu entries in place (no status-item flicker on rebuild).
 
-    private func rebuildMenuBar() {
-        guard let model else { return }
+    /// The shared menu content (tray status item AND the pet's ••• button
+    /// popup): the 2026-11-15 contract's compact menu. Response items act on
+    /// the whole merged invitation; the character surface never does.
+    private func makeTrayItems() -> [RivetMenuItem] {
+        guard let model else { return [] }
         var items: [RivetMenuItem] = [
             .action(label: L10n.t("tray.open"), identifier: "tray-open",
                     handler: { [weak self] in self?.showMainWindow() }),
         ]
-        // Mandatory reminder controls (issue #54): the character surface is
-        // fully pointer-through, so Done/Later/Hide live here, acting on the
-        // newest open cue. Always accessible, even mid-presentation.
-        if let cue = model.pendingCues.last {
-            items.append(.action(label: cueActionLabel(cue, done: L10n.t("tray.cueDone")),
+        if !model.pendingCues.isEmpty {
+            items.append(.separator)
+            items.append(.action(label: L10n.t("tray.cueDone"),
                                  identifier: "tray-cue-done",
                                  handler: { [weak self] in
-                                     self?.model?.acknowledgeCue(cue.id)
+                                     self?.model?.acknowledgeAllPending()
                                      self?.companion?.showAck()
+                                 }))
+            items.append(.action(label: L10n.t("tray.confirmIndividually"),
+                                 identifier: "tray-cue-partial",
+                                 handler: { [weak self] in
+                                     self?.companion?.revealPartial()
                                  }))
             items.append(.action(label: L10n.t("tray.cueLater"),
                                  identifier: "tray-cue-later",
                                  handler: { [weak self] in
-                                     self?.model?.snoozeCue(cue.id)
-                                     // #56 §4 `later`: a tiny quiet settle.
-                                     self?.companion?.show(state: .idle,
-                                                           message: L10n.t("mubi.laterNote"))
+                                     self?.model?.snoozeAllPending()
+                                     self?.companion?.react(.later)
                                  }))
             items.append(.action(label: L10n.t("tray.cueHide"),
                                  identifier: "tray-cue-hide",
-                                 handler: { [weak self] in self?.model?.dismissCue(cue.id) }))
-            // Opt-in guided sessions (#94): only offered while a real cue is
-            // open, never as ambient entertainment.
-            if cue.kinds.contains(.micro) {
-                items.append(.action(
-                    label: L10n.t("tray.eyeRest"), identifier: "tray-eye-rest",
-                    handler: { [weak self] in
-                        guard let self, let model = self.model else { return }
-                        self.microController?.show(
-                            durationSeconds: 20,
-                            title: L10n.t("tray.eyeRest"),
-                            hint: L10n.t("micro.hint"),
-                            cueId: cue.id)
-                    }))
-            }
-            if cue.kinds.contains(.sit) {
-                items.append(.action(
-                    label: L10n.t("tray.stretch"), identifier: "tray-stretch",
-                    handler: { [weak self] in
-                        self?.microController?.show(
-                            durationSeconds: 120,
-                            title: L10n.t("stretch.title"),
-                            hint: L10n.t("stretch.hint"),
-                            cueId: cue.id)
-                    }))
+                                 handler: { [weak self] in
+                                     self?.model?.dismissAllPending()
+                                 }))
+        }
+        // Opt-in guided sessions (#94): only offered while a real cue is
+        // open, never as ambient entertainment.
+        if model.pendingCues.contains(where: { $0.kinds.contains(.micro) }) {
+            items.append(.separator)
+            items.append(.action(
+                label: L10n.t("tray.eyeRest"), identifier: "tray-eye-rest",
+                handler: { [weak self] in
+                    self?.microController?.show(cueIds: self?.openCueMap() ?? [:],
+                                                eyes: true)
+                }))
+        }
+        if model.pendingCues.contains(where: { $0.kinds.contains(.sit) }) {
+            items.append(.action(
+                label: L10n.t("tray.stretch"), identifier: "tray-stretch",
+                handler: { [weak self] in
+                    self?.microController?.show(cueIds: self?.openCueMap() ?? [:],
+                                                eyes: false)
+                }))
+        }
+        items.append(.separator)
+        items.append(.action(label: model.paused.paused ? L10n.t("tray.resume") : L10n.t("tray.pause"),
+                             identifier: "tray-pause",
+                             handler: { [weak self] in self?.model?.togglePause() }))
+        items.append(.action(label: model.quiet ? L10n.t("tray.focusOff") : L10n.t("tray.focusOn"),
+                             identifier: "tray-focus",
+                             handler: { [weak self] in
+                                 guard let self, let model = self.model else { return }
+                                 let next = !model.quiet
+                                 model.setQuiet(next)
+                                 self.companion?.setSuspended(next || model.isPaused)
+                             }))
+        items.append(.action(label: L10n.t("tray.resetMubi"), identifier: "tray-mubi-reset",
+                             handler: { [weak self] in self?.companion?.resetHome() }))
+        items.append(.separator)
+        items.append(.action(label: L10n.t("tray.checkUpdate"), identifier: "tray-update",
+                             handler: { [weak self] in
+                                 self?.showMainWindow()
+                             }))
+        items.append(.separator)
+        items.append(.action(label: L10n.t("tray.exit"), identifier: "tray-exit",
+                             handler: { [weak self] in self?.quit() }))
+        return items
+    }
+
+    /// Open cue ids by kind symbol for the micro window's 做好了 mapping.
+    private func openCueMap() -> [String: Int64] {
+        guard let model else { return [:] }
+        var map: [String: Int64] = [:]
+        for cue in model.pendingCues {
+            for kind in cue.kinds { map[kind.rawValue] = cue.id }
+        }
+        return map
+    }
+
+    /// The pet's ••• button pops the same menu as the tray at its anchor.
+    private var companionMenuHandlers: [String: () -> Void] = [:]
+
+    func popupCompanionMenu(at screenRect: NSRect) {
+        let menu = NSMenu()
+        companionMenuHandlers.removeAll()
+        for item in makeTrayItems() {
+            switch item {
+            case .action(let label, let identifier, let handler):
+                let menuItem = NSMenuItem(
+                    title: label,
+                    action: #selector(invokeCompanionMenuItem(_:)),
+                    keyEquivalent: "")
+                menuItem.identifier =
+                    NSUserInterfaceItemIdentifier(identifier)
+                menuItem.target = self
+                menu.addItem(menuItem)
+                companionMenuHandlers[identifier] = handler
+            case .separator:
+                menu.addItem(.separator())
             }
         }
-        items.append(contentsOf: [
-            .action(label: L10n.t("tray.resetMubi"), identifier: "tray-mubi-reset",
-                    handler: { [weak self] in self?.companion?.resetHome() }),
-            .action(label: model.paused.paused ? L10n.t("tray.resume") : L10n.t("tray.pause"),
-                    identifier: "tray-pause",
-                    handler: { [weak self] in self?.model?.togglePause() }),
-            .action(label: model.quiet ? L10n.t("tray.focusOff") : L10n.t("tray.focusOn"),
-                    identifier: "tray-focus",
-                    handler: { [weak self] in
-                        guard let self, let model = self.model else { return }
-                        let next = !model.quiet
-                        model.setQuiet(next)
-                        self.companion?.setQuiet(next)
-                    }),
-            .action(label: L10n.t("tray.exit"), identifier: "tray-exit",
-                    handler: { [weak self] in self?.quit() }),
-        ])
+        menu.autoenablesItems = false
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: screenRect.minX,
+                               y: screenRect.maxY + 6),
+                   in: nil)
+    }
+
+    @objc private func invokeCompanionMenuItem(_ sender: NSMenuItem) {
+        guard let identifier = sender.identifier?.rawValue,
+              let handler = companionMenuHandlers[identifier] else { return }
+        handler()
+    }
+
+    private func rebuildMenuBar() {
+        guard let model else { return }
+        let items = makeTrayItems()
         if let menuBar {
             // The glyph is the character's bell: droplet at rest, Mubi
             // while a reminder is on screen, moon when quiet or paused.
@@ -339,25 +438,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// "Done — drink water" style label: the control names BOTH the action
-    /// and the health advice, so the tray is self-explanatory.
-    private func cueActionLabel(_ cue: HealthCue, done: String) -> String {
-        let advice: String
-        switch cue.action {
-        case .drink_water: advice = L10n.t("notif.waterTitle")
-        case .rest_eyes: advice = L10n.t("micro.hint")
-        default: advice = L10n.t("notif.sitTitle")
-        }
-        return "\(done) · \(advice)"
-    }
-
-    /// The open-cue ledger changed: idle the character when nothing is open
-    /// (acknowledged, snoozed, hidden, expired or quiet-settled) and refresh
-    /// the tray's mandatory cue controls.
+    /// The open-cue ledger changed: re-derive the invitation attached to
+    /// the pet and refresh the tray's response items. Suspended states
+    /// (pause / focus / quiet hours) tuck the invitation away.
     private func syncCuePresentation() {
-        if model?.pendingCues.isEmpty != false {
-            companion?.showIdle()
-        }
+        guard let model else { return }
+        let suspended = model.isPaused || model.quiet
+        let words = model.pendingCues
+            .flatMap { $0.kinds.map { $0.rawValue } }
+        let kinds = ["sit", "water", "micro"].filter { words.contains($0) }
+        companion?.update(
+            invitation: kinds.isEmpty ? nil : CompanionInvitation(kinds: kinds),
+            suspended: suspended)
         rebuildMenuBar()
     }
 
@@ -370,22 +462,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleConfigChanged() {
         syncCompanionConfig()
-        rebuildMenuBar()
-    }
-
-    /// A milestone of SELF-REPORTED sit acknowledgments: one quiet cheer.
-    /// A cheer claims nothing clinical (charter #51).
-    private func handleSitAcknowledged(_ count: Int64) {
-        guard let model, CopyPool.celebrateAt.contains(count) else { return }
-        showToast(title: L10n.t("notif.cheerTitle"),
-                  lines: [L10n.t("notif.cheerBody", "\(count)",
-                                  CopyFormat.duration(model.today.active_mins))],
-                  accent: .sit)
+        syncCuePresentation()
     }
 
     func quit() {
         model?.flushNowSync()
         NSApp.terminate(nil)
+    }
+
+    /// 退出必须确认（2026-11-15 contract）。The update handoff and the
+    /// acceptance driver terminate without a dialog.
+    private var suppressTerminateConfirmation = false
+
+    func applicationShouldTerminate(_ sender: NSApplication)
+        -> NSApplication.TerminateReply {
+        if suppressTerminateConfirmation
+            || ProcessInfo.processInfo.environment["MOVEBIT_ACCEPTANCE"] == "1" {
+            return .terminateNow
+        }
+        model?.flushNowSync()
+        let alert = NSAlert()
+        alert.messageText = L10n.t("tray.exit")
+        alert.informativeText = L10n.t("quit.confirmBody")
+        alert.addButton(withTitle: L10n.t("dialog.cancel"))
+        alert.addButton(withTitle: L10n.t("tray.exit"))
+        alert.alertStyle = .informational
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        return response == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
     }
 
     // MARK: main menu
@@ -462,100 +566,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if cue.delivery == .character {
             // Character cues (water, move, eye rest, including merged kinds)
-            // honor the user-selected one-shot sound setting. Quiet/focus
-            // cues are normally withheld by the backend.
+            // honor the user-selected one-shot sound setting. The invitation
+            // attaches to the pet and waits there (2026-11-15: no visit, no
+            // toast). Quiet/focus cues are normally withheld by the backend.
             playCueChime()
-            companion?.show(state: cue.action.mubiState,
-                            message: cueMessage(cue))
             model.cueDisplayed(cue.id)
             return
         }
 
-        // Notification fallback (transitional cards, R1-era presentation).
-        let kinds: [ReminderKind] = cue.kinds
-        if kinds == [.micro] {
-            // Micro-only cue: the eye-rest invitation card (opt-in start).
-            microController?.show(durationSeconds: 20,
-                                  title: CopyPool.pickMicro(),
-                                  hint: L10n.t("micro.hint"),
-                                  cueId: cue.id)
-            model.cueDisplayed(cue.id)
-            return
-        }
-
-        let lines = cueLines(kinds: kinds, model: model)
-        let title: String
-        if kinds.contains(.sit) {
-            title = L10n.t("notif.sitTitle")
-        } else {
-            title = L10n.t("notif.waterTitle")
-        }
-        let accent: ReminderKind = kinds.contains(.sit) ? .sit
-            : kinds.contains(.water) ? .water : .micro
-
-        if model.config.sound_enabled {
-            NSSound(named: "Ping")?.play()
-        }
-        toastController?.onDone = { [weak self] id in self?.model?.acknowledgeCue(id) }
-        toastController?.onSnooze = { [weak self] id in self?.model?.snoozeCue(id) }
-        toastController?.onHide = { [weak self] id in self?.model?.dismissCue(id) }
-        toastController?.show(ToastContent(title: title, lines: lines, accent: accent,
-                                           snoozeMinutes: 10,
-                                           cueId: cue.id))
+        // Notification fallback (no character surface): the system
+        // notification center carries the cue; the tray/main window keep the
+        // response paths reachable (2026-11-15 contract, 常驻系统入口 row).
         model.cueDisplayed(cue.id)
     }
 
-    /// One small, genuinely actionable invitation. When the Racket backend
-    /// merges several due kinds (including after Focus), the bubble must name
-    /// EVERY kind — the character pose alone communicates only the priority.
-    private func cueMessage(_ cue: HealthCue) -> String {
-        if cue.kinds.count > 1 {
-            var parts: [String] = []
-            if cue.kinds.contains(.sit) { parts.append(L10n.t("notif.sitTitle")) }
-            if cue.kinds.contains(.water) { parts.append(L10n.t("notif.waterTitle")) }
-            if cue.kinds.contains(.micro) { parts.append(L10n.t("micro.defaultTitle")) }
-            return parts.joined(separator: " · ")
-        }
-        switch cue.action {
-        case .drink_water: return CopyPool.pickWater()
-        // Unlike micro.hint, this doesn't incorrectly promise clicking the
-        // entirely pointer-through character to dismiss the notification.
-        case .rest_eyes: return L10n.t("micro.defaultTitle")
-        default: return L10n.t("notif.sitTitle")
-        }
-    }
-
-    /// Per-kind line + a rotating pool line.
-    private func cueLines(kinds: [ReminderKind], model: MoveBitModel) -> [String] {
-        var lines: [String] = []
-        if kinds.contains(.sit) {
-            lines.append(L10n.t("notif.sitBody",
-                                CopyFormat.duration(model.today.active_mins),
-                                "\(model.today.sit_breaks)"))
-            lines.append(L10n.pick(CopyPool.sitToasts.0, CopyPool.sitToasts.1))
-        }
-        if kinds.contains(.water) {
-            lines.append(L10n.t("notif.waterCount", "\(model.today.water_reminders)"))
-            lines.append(CopyPool.pickWater())
-        }
-        if kinds.contains(.micro) {
-            lines.append(CopyPool.pickMicro())
-        }
-        return lines
-    }
-
-    func showToast(title: String, lines: [String], accent: ReminderKind) {
-        toastController?.show(ToastContent(title: title, lines: lines, accent: accent,
-                                           snoozeMinutes: 10,
-                                           cueId: 0))
-    }
 
     // MARK: reminder panels
 
     private func installReminderPanels() {
-        let toast = ToastPanelController()
-        toastController = toast
-
         microController = MicroPanelController()
         microController?.onDone = { [weak self] id in self?.model?.acknowledgeCue(id) }
         microController?.onHide = { [weak self] id in self?.model?.abandonCue(id) }
@@ -575,7 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 520),
                               styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
-        window.title = L10n.t("ob.title")
+        window.title = "MoveBit"
         window.contentView = NSHostingView(
             rootView: OnboardingView(state: state, model: model))
         window.center()
@@ -592,14 +620,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboardingState = nil
     }
 
-    /// Called by the wizard's finish/skip: mark seen + settled toast (parity).
+    /// Called by the onboarding Start: mark seen. The pet's hello caption
+    /// is the settle feedback (2026-11-15: no toast surfaces).
     func onboardingFinished() {
         if let state = onboardingState {
             state.finished = true
         }
-        showToast(title: L10n.t("ob.settled"),
-                  lines: [L10n.t("ob.settledBody")],
-                  accent: .water)
     }
 }
 
