@@ -596,7 +596,7 @@ inside the app.
 - The About card on every host (settings & stats window) now carries the
   family About rows alongside version and the auto-update toggle: links
   to the website (<https://movebit.jrtx.site>) and the issue tracker
-  (<https://github.com/turinglambdaai/movebit/issues>), plus the MIT
+  (<https://github.com/turlamai/movebit/issues>), plus the MIT
   license line.
 - Windows update failures can leave the screen with the user: every
   error hint in the check/download flow (check failure, download start,
