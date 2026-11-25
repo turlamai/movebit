@@ -33,4 +33,4 @@ commit — say which ran and on which platform.
 - [ ] Docs updated in the same change (USER-GUIDE / README, both languages)
 - [ ] Safety contract intact: no fullscreen takeover, no focus theft, no
       forced input interception (issue #54)
-- [ ] Security-relevant behavior flagged per [SECURITY.md](SECURITY.md)
+- [ ] Security-relevant behavior flagged per [SECURITY.md](../SECURITY.md)
