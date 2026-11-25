@@ -423,3 +423,14 @@ html[data-theme="dark"] .start-links a { color: var(--kit-accent); }
 /* ---------- Icon visibility per theme ---------- */
 html[data-theme="light"] .kit-icon-moon { display: none; }
 html[data-theme="dark"] .kit-icon-sun { display: none; }
+
+/* The all-formats button label is long; kit buttons are nowrap by default,
+   so below 420px let this one wrap instead of widening the page. */
+@media (max-width: 420px) {
+    .dl-all .kit-btn {
+        height: auto;
+        min-height: 46px;
+        padding: 8px 22px;
+        white-space: normal;
+    }
+}
